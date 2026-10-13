@@ -48,6 +48,22 @@ public sealed class QdrantServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddCollection_WithAnInvalidDefinition_ThrowsAnE3Message_NamingTheCode_AndNeverTheErrorText()
+    {
+        var services = new ServiceCollection();
+        var builder = services.AddSharedKernelQdrant(BuildValidConfig());
+
+        var act = () => builder.AddCollection<TestVectorRecord>("products", _ => { });
+
+        var message = act.Should().Throw<InvalidOperationException>().Which.Message;
+        message.Should().EndWith(".")
+            .And.Contain("'products'")
+            .And.Contain("'intelligence.invalid_collection_definition'")
+            .And.Contain("AddCollection")
+            .And.NotContain("must be called before Build()");
+    }
+
+    [Fact]
     public void AddCollection_Resolves_IVectorCollection_AsScoped_DifferentInstancesAcrossScopes()
     {
         var provider = BuildProviderWithOneCollection();

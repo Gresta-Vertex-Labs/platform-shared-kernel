@@ -40,7 +40,7 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
     {
         var grpcUri = new Uri(_fixture.GrpcEndpoint);
         _client = new QdrantClient(grpcUri.Host, grpcUri.Port);
-        _provisioner = new QdrantCollectionProvisioner(_client, NullLogger<QdrantCollectionProvisioner>.Instance);
+        _provisioner = new QdrantCollectionProvisioner(_client, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         return Task.CompletedTask;
     }
 

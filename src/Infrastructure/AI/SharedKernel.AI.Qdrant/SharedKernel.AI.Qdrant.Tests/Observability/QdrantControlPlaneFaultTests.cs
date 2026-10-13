@@ -69,12 +69,12 @@ public sealed class QdrantControlPlaneFaultTests
     {
         using var client = DeadClient();
         var logger = new InMemoryLogger<QdrantCollectionProvisioner>();
-        var provisioner = new QdrantCollectionProvisioner(client, logger);
+        var provisioner = new QdrantCollectionProvisioner(client, TestMeterFactory.NewTelemetry(), logger);
 
         var error = await RunAsync(operation, provisioner, CancellationToken.None);
 
         error.Should().NotBeNull();
-        error!.Code.Should().Be("intelligence.unreachable");
+        error!.Code.Should().Be("intelligence.unavailable");
         error.Type.Should().Be(ErrorType.Unavailable);
         error.Message.Should().NotContain(Host);
         var record = logger.Records.Should().ContainSingle(r => r.EventId.Id == 10113).Which;
@@ -89,7 +89,7 @@ public sealed class QdrantControlPlaneFaultTests
     {
         using var client = DeadClient();
         var logger = new InMemoryLogger<QdrantCollectionProvisioner>();
-        var provisioner = new QdrantCollectionProvisioner(client, logger);
+        var provisioner = new QdrantCollectionProvisioner(client, TestMeterFactory.NewTelemetry(), logger);
         var token = Cancelled();
 
         var act = () => RunAsync(operation, provisioner, token);
@@ -103,7 +103,7 @@ public sealed class QdrantControlPlaneFaultTests
     {
         using var client = DeadClient();
         var logger = new InMemoryLogger<QdrantCollectionProvisioner>();
-        var provisioner = new QdrantCollectionProvisioner(client, logger);
+        var provisioner = new QdrantCollectionProvisioner(client, TestMeterFactory.NewTelemetry(), logger);
 
         var result = await provisioner.ProbeAsync("c-1");
 
@@ -123,7 +123,7 @@ public sealed class QdrantControlPlaneFaultTests
     public async Task Probe_CallersCancellation_Propagates_AsOperationCanceled_InsteadOfDegrading()
     {
         using var client = DeadClient();
-        var provisioner = new QdrantCollectionProvisioner(client, new InMemoryLogger<QdrantCollectionProvisioner>());
+        var provisioner = new QdrantCollectionProvisioner(client, TestMeterFactory.NewTelemetry(), new InMemoryLogger<QdrantCollectionProvisioner>());
         var token = Cancelled();
 
         var act = () => provisioner.ProbeAsync("c-1", token);
@@ -156,7 +156,7 @@ public sealed class QdrantControlPlaneFaultTests
 
         var result = await accessor.QueryHybridAsync(query, "sparse", [new QdrantSparseVectorEntry { Index = 1, Value = 0.5f }], TenantScope.Global);
 
-        result.Error.Code.Should().Be("intelligence.unreachable");
+        result.Error.Code.Should().Be("intelligence.unavailable");
         result.Error.Message.Should().NotContain(TextSentinel);
         controller.Calls.Should().NotBeEmpty();
         logger.Records.Should().ContainSingle(r => r.EventId.Id == 10113).Which.Exception.Should().BeOfType<RpcException>();
@@ -183,17 +183,17 @@ public sealed class QdrantControlPlaneFaultTests
     {
         var (client, _) = FaultingQdrantClient.Create(() => new RpcException(new Status(StatusCode.Unavailable, $"{TextSentinel} {Host}")));
         var logger = new InMemoryLogger<QdrantQuantizationProfileAccessor>();
-        var accessor = new QdrantQuantizationProfileAccessor(client, logger);
+        var accessor = new QdrantQuantizationProfileAccessor(client, TestMeterFactory.NewTelemetry(), logger);
 
         var result = await accessor.GetQuantizationProfileAsync("c-1");
 
-        result.Error.Code.Should().Be("intelligence.unreachable");
+        result.Error.Code.Should().Be("intelligence.unavailable");
         result.Error.Message.Should().NotContain(TextSentinel).And.NotContain(Host);
         logger.Records.Should().ContainSingle(r => r.EventId.Id == 10113).Which.Exception.Should().BeOfType<RpcException>();
 
         var (cancelClient, _) = FaultingQdrantClient.Create(() => new RpcException(new Status(StatusCode.Cancelled, "x", new OperationCanceledException())));
         var token = Cancelled();
-        var act = () => new QdrantQuantizationProfileAccessor(cancelClient, logger).GetQuantizationProfileAsync("c-1", token);
+        var act = () => new QdrantQuantizationProfileAccessor(cancelClient, TestMeterFactory.NewTelemetry(), logger).GetQuantizationProfileAsync("c-1", token);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -202,7 +202,7 @@ public sealed class QdrantControlPlaneFaultTests
     {
         var defect = new InvalidOperationException("defect");
         var (client, _) = FaultingQdrantClient.Create(() => defect);
-        var accessor = new QdrantQuantizationProfileAccessor(client, new InMemoryLogger<QdrantQuantizationProfileAccessor>());
+        var accessor = new QdrantQuantizationProfileAccessor(client, TestMeterFactory.NewTelemetry(), new InMemoryLogger<QdrantQuantizationProfileAccessor>());
 
         var act = () => accessor.GetQuantizationProfileAsync("c-1");
 

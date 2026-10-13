@@ -228,9 +228,9 @@ Provider-only contracts: `IQdrantHybridQueryAccessor<TRecord>.QueryHybridAsync`,
 | `NotFound` | `intelligence.collection_not_found` |
 | `AlreadyExists` | `intelligence.collection_already_exists` |
 | `InvalidArgument`, `FailedPrecondition` | `intelligence.invalid_query` |
-| `PermissionDenied`, `Unauthenticated` | `intelligence.unauthorized` |
+| `PermissionDenied`, `Unauthenticated` | `intelligence.engine_unauthorized` (Unexpected: the engine rejected the kernel's own key) |
 | `ResourceExhausted` | `intelligence.rate_limited` (Unavailable, HTTP 503) |
-| `Unavailable` | `intelligence.unreachable` (Unavailable, HTTP 503) |
+| `Unavailable` | `intelligence.unavailable` (Unavailable, HTTP 503) |
 | `DeadlineExceeded` | `intelligence.timeout` (Timeout, HTTP 504) |
 | any other status, and `QdrantException` | `intelligence.engine_fault` (names only the gRPC status) |
 
@@ -256,14 +256,14 @@ Checked before I/O: `intelligence.tenant_scope_missing`, `.embedding_model_misma
 | 10102 | Debug | Records upserted |
 | 10103 | Debug | Records deleted |
 | 10104 | Warning | Bulk operation partially failed |
-| 10105 | Debug | Query executed (hit count, duration) |
+| 10105 | Debug | Query executed (hit count, elapsed milliseconds) |
 | 10106 | Warning | Request rejected before any I/O (error type and code, never the message or a record id) |
 | 10107 | Warning | Tenant-declaring collection called with `TenantScope.Global` |
-| 10108 | Information | Alias cut over to the staging collection |
+| 10108 | Information | Alias cut over from the staging collection |
 | 10109 | Warning | Previous collection retained after cutover |
 | 10110 | Warning | Raw client access enabled |
 | 10111 | Warning | Readiness probe degraded (carries the first exception) |
-| 10112 | Warning | Schema fingerprint mismatch |
+| 10112 | Warning | Schema fingerprint mismatch (actual and expected fingerprint) |
 | 10113 | Warning | Qdrant operation faulted: a classified failure, logged once with its error code and the exception |
 | 10114 | Debug | Record walk (scroll) started |
 
@@ -282,7 +282,7 @@ One `ActivitySource` and one `Meter`, both named `SharedKernel.AI` (the host's `
 Every call is one span and one duration observation, a pre-I/O rejection included. A recognised failure sets the span status
 to `Error` with `error.code` and `error.type`; a defect is recorded as an exception event; a cancellation leaves the
 status unset. A scroll span ends when the enumerator completes, faults or is disposed, and never replaces the
-consumer's `Activity.Current`. The readiness probe and `WaitUntilQueryableAsync` produce no span. Record ids, vectors,
+consumer's `Activity.Current`. The control plane is spanned too: `ai ensure_collection`, `ai collection_exists`, `ai delete_collection`, `ai cutover` (the two-step alias swap is one span, tagged with the live collection) and `ai quantization_profile`, with the same tags, the same duration histogram and the same outcome vocabulary. The readiness probe and `WaitUntilQueryableAsync` produce no span. Record ids, vectors,
 filter values, metadata values and hosts are never tags.
 
 ### Health

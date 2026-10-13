@@ -2,7 +2,7 @@ using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using Qdrant.Client;
 using SharedKernel.AI.Abstractions.Errors;
-using SharedKernel.AI.Qdrant.Logging;
+using SharedKernel.AI.Qdrant.Diagnostics;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.AI.Qdrant.Errors;
@@ -121,7 +121,7 @@ internal static class QdrantFaults
     /// <summary>Logs a classified failure once, at Warning, with the exception, and returns <paramref name="error"/>.</summary>
     public static Error Report(Exception exception, Error error, ILogger logger, string operation, string collectionName)
     {
-        logger.QdrantEngineFault(operation, collectionName, error.Code, exception);
+        QdrantLog.QdrantEngineFault(logger, operation, collectionName, error.Code, exception);
         return error;
     }
 
@@ -150,9 +150,9 @@ internal static class QdrantFaults
             StatusCode.AlreadyExists => IntelligenceErrors.CollectionAlreadyExists(collectionName),
             StatusCode.InvalidArgument or StatusCode.FailedPrecondition =>
                 IntelligenceErrors.InvalidQuery($"The engine rejected the request as invalid (gRPC {rpc.StatusCode})."),
-            StatusCode.PermissionDenied or StatusCode.Unauthenticated => IntelligenceErrors.Unauthorized(collectionName, operation),
+            StatusCode.PermissionDenied or StatusCode.Unauthenticated => IntelligenceErrors.EngineUnauthorized(collectionName, operation),
             StatusCode.ResourceExhausted => IntelligenceErrors.RateLimited(providerName, retryAfter: null),
-            StatusCode.Unavailable => IntelligenceErrors.Unreachable(providerName),
+            StatusCode.Unavailable => IntelligenceErrors.Unavailable(providerName),
             StatusCode.DeadlineExceeded => IntelligenceErrors.Timeout(operation),
 
             // The closed StatusCode enum names the rest (Internal, Unknown, DataLoss, Unimplemented, Aborted,

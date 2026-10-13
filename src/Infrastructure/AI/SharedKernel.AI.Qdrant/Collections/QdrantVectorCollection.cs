@@ -11,7 +11,6 @@ using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Diagnostics;
 using SharedKernel.AI.Qdrant.Errors;
-using SharedKernel.AI.Qdrant.Logging;
 using SharedKernel.AI.Qdrant.Querying;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
@@ -99,12 +98,12 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
         var result = await RunAsync(IntelligenceOperations.Upsert, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<VectorWriteReceipt>(tenantError);
             }
 
-            if (ValidateRecord(record) is { } recordError)
+            if (ValidateRecord(record) is { Type: not ErrorType.None } recordError)
             {
                 return Reject<VectorWriteReceipt>(recordError);
             }
@@ -120,7 +119,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
                 .ConfigureAwait(false);
 
             var receipt = BuildReceipt(updateResult.OperationId, affectedCount: 1);
-            _logger.QdrantRecordsUpserted(CollectionName, 1, receipt.ProviderToken);
+            QdrantLog.QdrantRecordsUpserted(_logger, CollectionName, 1, receipt.ProviderToken);
             return Result<VectorWriteReceipt>.Success(receipt);
         }).ConfigureAwait(false);
 
@@ -137,7 +136,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
         var result = await RunAsync(IntelligenceOperations.UpsertMany, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<VectorBulkReceipt>(tenantError);
             }
@@ -145,7 +144,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             var points = new List<PointStruct>(records.Count);
             foreach (var record in records)
             {
-                if (ValidateRecord(record) is { } recordError)
+                if (ValidateRecord(record) is { Type: not ErrorType.None } recordError)
                 {
                     return Reject<VectorBulkReceipt>(recordError);
                 }
@@ -207,10 +206,10 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
                 Failures = failures,
             };
 
-            _logger.QdrantRecordsUpserted(CollectionName, succeeded, receipt.Receipt.ProviderToken);
+            QdrantLog.QdrantRecordsUpserted(_logger, CollectionName, succeeded, receipt.Receipt.ProviderToken);
             if (receipt.HasFailures)
             {
-                _logger.QdrantBulkPartialFailure(CollectionName, failures.Count, points.Count);
+                QdrantLog.QdrantBulkPartialFailure(_logger, CollectionName, failures.Count, points.Count);
             }
 
             return Result<VectorBulkReceipt>.Success(receipt);
@@ -229,7 +228,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
         var result = await RunAsync(IntelligenceOperations.Delete, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<VectorWriteReceipt>(tenantError);
             }
@@ -258,7 +257,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             // Qdrant's delete-by-id/filter response carries no confirmed-removed count — AffectedCount
             // reflects the requested operation, not a verified removal (documented limitation).
             var receipt = BuildReceipt(updateResult.OperationId, affectedCount: 1);
-            _logger.QdrantRecordsDeleted(CollectionName, 1, receipt.ProviderToken);
+            QdrantLog.QdrantRecordsDeleted(_logger, CollectionName, 1, receipt.ProviderToken);
             return Result<VectorWriteReceipt>.Success(receipt);
         }).ConfigureAwait(false);
 
@@ -275,7 +274,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
         var result = await RunAsync(IntelligenceOperations.DeleteMany, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<VectorBulkReceipt>(tenantError);
             }
@@ -355,7 +354,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
                 Failures = failures,
             };
 
-            _logger.QdrantRecordsDeleted(CollectionName, succeeded, receipt.Receipt.ProviderToken);
+            QdrantLog.QdrantRecordsDeleted(_logger, CollectionName, succeeded, receipt.Receipt.ProviderToken);
             return Result<VectorBulkReceipt>.Success(receipt);
         }).ConfigureAwait(false);
 
@@ -372,7 +371,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
         return RunAsync(IntelligenceOperations.DeleteByFilter, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<VectorWriteReceipt>(tenantError);
             }
@@ -390,7 +389,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
                 .ConfigureAwait(false);
 
             var receipt = BuildReceipt(updateResult.OperationId, affectedCount: checked((int)Math.Min(matchedCount, (ulong)int.MaxValue)));
-            _logger.QdrantRecordsDeleted(CollectionName, receipt.AffectedCount, receipt.ProviderToken);
+            QdrantLog.QdrantRecordsDeleted(_logger, CollectionName, receipt.AffectedCount, receipt.ProviderToken);
             return Result<VectorWriteReceipt>.Success(receipt);
         });
     }
@@ -420,7 +419,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
         return RunAsync(IntelligenceOperations.Query, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<VectorQueryResults<TRecord>>(tenantError);
             }
@@ -466,7 +465,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             }
 
             var results = new VectorQueryResults<TRecord> { Hits = vectorHits, Duration = duration };
-            _logger.QdrantQueryExecuted(CollectionName, vectorHits.Count, (long)duration.TotalMilliseconds);
+            QdrantLog.QdrantQueryExecuted(_logger, CollectionName, vectorHits.Count, (long)duration.TotalMilliseconds);
             return Result<VectorQueryResults<TRecord>>.Success(results);
         });
     }
@@ -480,7 +479,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
         return RunAsync(IntelligenceOperations.Get, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<TRecord>(tenantError);
             }
@@ -537,7 +536,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     {
         return RunAsync(IntelligenceOperations.Count, cancellationToken, async () =>
         {
-            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
             {
                 return Reject<long>(tenantError);
             }
@@ -566,7 +565,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
         using var scope = _telemetry.Begin(IntelligenceOperations.Scroll, CollectionName);
         Activity.Current = consumerActivity;
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        if (ValidateTenantScope(tenantScope) is { Type: not ErrorType.None } tenantError)
         {
             scope.Fail(tenantError);
             throw new IntelligenceStreamException(tenantError);
@@ -582,7 +581,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             throw;
         }
 
-        _logger.QdrantRecordWalkStarted(CollectionName, batchSize);
+        QdrantLog.QdrantRecordWalkStarted(_logger, CollectionName, batchSize);
 
         PointId? offset = null;
         while (true)
@@ -691,18 +690,18 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
         }
     }
 
-    private Error? ValidateTenantScope(TenantScope tenantScope)
+    private Error ValidateTenantScope(TenantScope tenantScope)
     {
         if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
-            _logger.QdrantTenantScopeMissing(CollectionName);
+            QdrantLog.QdrantTenantScopeMissing(_logger, CollectionName);
             return IntelligenceErrors.TenantScopeMissing(CollectionName);
         }
 
-        return null;
+        return Error.None;
     }
 
-    private Error? ValidateRecord(IVectorRecord record)
+    private Error ValidateRecord(IVectorRecord record)
     {
         if (!string.Equals(record.ModelId, _definition.EmbeddingModelId, StringComparison.Ordinal))
         {
@@ -714,7 +713,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             return IntelligenceErrors.DimensionMismatch(CollectionName, _definition.Dimension, record.Vector.Length);
         }
 
-        return null;
+        return Error.None;
     }
 
     private Filter CompileFilter(VectorFilter? filter, TenantScope tenantScope) =>
@@ -759,7 +758,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     // record id, which is never logged.
     private Result<T> Reject<T>(Error error)
     {
-        _logger.QdrantRequestRejected(CollectionName, error.Type.ToString(), error.Code);
+        QdrantLog.QdrantRequestRejected(_logger, CollectionName, error.Type.ToString(), error.Code);
         return Result<T>.Failure(error);
     }
 }

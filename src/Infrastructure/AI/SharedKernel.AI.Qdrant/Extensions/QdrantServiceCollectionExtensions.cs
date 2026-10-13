@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Qdrant.Client;
 using SharedKernel.AI.Qdrant.Diagnostics;
-using SharedKernel.AI.Qdrant.Logging;
 using SharedKernel.AI.Qdrant.Options;
 using SharedKernel.Configuration.Extensions;
 
@@ -61,8 +60,7 @@ public static class QdrantServiceCollectionExtensions
                 TimeSpan.FromSeconds(options.GrpcTimeoutSeconds),
                 loggerFactory!);
 
-            sp.GetRequiredService<ILogger<QdrantClient>>()
-                .QdrantClientConfigured(builder.RegisteredCollectionCount);
+            QdrantLog.QdrantClientConfigured(sp.GetRequiredService<ILogger<QdrantBuilder>>(), builder.RegisteredCollectionCount);
 
             return client;
         });

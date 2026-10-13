@@ -24,10 +24,10 @@ public sealed class QdrantFaultsTests
         { StatusCode.AlreadyExists, "intelligence.collection_already_exists", ErrorType.Conflict },
         { StatusCode.InvalidArgument, "intelligence.invalid_query", ErrorType.Validation },
         { StatusCode.FailedPrecondition, "intelligence.invalid_query", ErrorType.Validation },
-        { StatusCode.PermissionDenied, "intelligence.unauthorized", ErrorType.Unauthorized },
-        { StatusCode.Unauthenticated, "intelligence.unauthorized", ErrorType.Unauthorized },
+        { StatusCode.PermissionDenied, "intelligence.engine_unauthorized", ErrorType.Unexpected },
+        { StatusCode.Unauthenticated, "intelligence.engine_unauthorized", ErrorType.Unexpected },
         { StatusCode.ResourceExhausted, "intelligence.rate_limited", ErrorType.Unavailable },
-        { StatusCode.Unavailable, "intelligence.unreachable", ErrorType.Unavailable },
+        { StatusCode.Unavailable, "intelligence.unavailable", ErrorType.Unavailable },
         { StatusCode.DeadlineExceeded, "intelligence.timeout", ErrorType.Timeout },
         { StatusCode.Internal, "intelligence.engine_fault", ErrorType.Unexpected },
         { StatusCode.Unknown, "intelligence.engine_fault", ErrorType.Unexpected },
@@ -145,7 +145,7 @@ public sealed class QdrantFaultsTests
         var error = Classify(new RpcException(new Status(StatusCode.Unavailable, "down")), cts.Token, out var matched);
 
         matched.Should().BeTrue();
-        error!.Code.Should().Be("intelligence.unreachable");
+        error!.Code.Should().Be("intelligence.unavailable");
     }
 
     [Fact]

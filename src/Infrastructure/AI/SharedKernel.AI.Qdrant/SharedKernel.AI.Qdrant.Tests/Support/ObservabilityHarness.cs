@@ -61,11 +61,11 @@ internal sealed class ObservabilityHarness : IDisposable
 
     /// <summary>Gets the recorded spans of this harness's collection.</summary>
     public IReadOnlyList<Activity> Spans =>
-        [.. Activities.RecordedActivities.Where(a => a.GetTagItem(IntelligenceWellKnown.CollectionTagName) as string == Name)];
+        [.. Activities.RecordedActivities.Where(a => a.GetTagItem(IntelligenceTagKeys.Collection) as string == Name)];
 
     /// <summary>Gets this harness's measurements of <paramref name="instrument"/>.</summary>
     public IReadOnlyList<RecordedMeasurement> Measurements(string instrument) =>
-        [.. Metrics.MeasurementsOf(instrument).Where(m => m.TryGetTag(IntelligenceWellKnown.CollectionTagName, out var c) && (string?)c == Name)];
+        [.. Metrics.MeasurementsOf(instrument).Where(m => m.TryGetTag(IntelligenceTagKeys.Collection, out var c) && (string?)c == Name)];
 
     public TestVectorRecord Record(string id, string? tenant = null) => new()
     {

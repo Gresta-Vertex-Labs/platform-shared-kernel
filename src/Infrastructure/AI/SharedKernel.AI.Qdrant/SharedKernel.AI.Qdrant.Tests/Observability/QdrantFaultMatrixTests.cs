@@ -60,7 +60,7 @@ public sealed class QdrantFaultMatrixTests
         var error = await ObservabilityHarness.Operations[operation](harness, TenantScope.Global, CancellationToken.None);
 
         error.Should().NotBeNull();
-        error!.Code.Should().Be("intelligence.unreachable");
+        error!.Code.Should().Be("intelligence.unavailable");
         error.Type.Should().Be(ErrorType.Unavailable);
         error.Message.Should().NotContainAny(AllSentinels);
         error.Details.Should().BeNullOrEmpty();
@@ -71,9 +71,9 @@ public sealed class QdrantFaultMatrixTests
         span.ShouldHaveKind(ActivityKind.Client)
             .ShouldHaveSource(IntelligenceWellKnown.ActivitySourceName)
             .ShouldBeRecordedFailure(error)
-            .ShouldHaveTag(IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.QdrantProviderName)
-            .ShouldHaveTag(IntelligenceWellKnown.OperationTagName, operation)
-            .ShouldHaveTag(IntelligenceWellKnown.CollectionTagName, harness.Name)
+            .ShouldHaveTag(IntelligenceTagKeys.Provider, IntelligenceWellKnown.QdrantProviderName)
+            .ShouldHaveTag(IntelligenceTagKeys.Operation, operation)
+            .ShouldHaveTag(IntelligenceTagKeys.Collection, harness.Name)
             .ShouldFollowSpanConvention()
             .ShouldNotLeak(AllSentinels);
 
@@ -82,7 +82,7 @@ public sealed class QdrantFaultMatrixTests
         outcome.Should().Be(WellKnownOutcomes.Failure);
         duration.TryGetTag(WellKnownTagKeys.ErrorType, out var errorType).Should().BeTrue();
         errorType.Should().Be("Unavailable");
-        duration.TryGetTag(IntelligenceWellKnown.OperationTagName, out var op).Should().BeTrue();
+        duration.TryGetTag(IntelligenceTagKeys.Operation, out var op).Should().BeTrue();
         op.Should().Be(operation);
 
         var fault = harness.Logger.Records.Where(r => r.EventId.Id == 10113).Should().ContainSingle().Which;
@@ -90,7 +90,7 @@ public sealed class QdrantFaultMatrixTests
         fault.Exception.Should().BeOfType<RpcException>();
         harness.Logger.Records.ShouldNotLeakIntoMessageOrState(RecordSentinel, KeySentinel, FilterSentinel, "6334");
         fault.TryGetProperty("ErrorCode", out var code).Should().BeTrue();
-        code.Should().Be("intelligence.unreachable");
+        code.Should().Be("intelligence.unavailable");
     }
 
     [Theory]
@@ -231,7 +231,7 @@ public sealed class QdrantFaultMatrixTests
 
         var error = await ObservabilityHarness.Operations[IntelligenceOperations.Count](harness, TenantScope.Global, cts.Token);
 
-        error!.Code.Should().Be("intelligence.unreachable");
+        error!.Code.Should().Be("intelligence.unavailable");
     }
 
     // ---- pre-I/O rejection -------------------------------------------------------------------------------
@@ -252,7 +252,7 @@ public sealed class QdrantFaultMatrixTests
 
         var span = harness.Spans.Should().ContainSingle().Which;
         span.ShouldBeRecordedFailure(error);
-        span.GetTagItem(IntelligenceWellKnown.OperationTagName).Should().Be(operation);
+        span.GetTagItem(IntelligenceTagKeys.Operation).Should().Be(operation);
         harness.Measurements(IntelligenceWellKnown.OperationDurationInstrumentName).Should().ContainSingle();
         harness.Logger.Records.Where(r => r.EventId.Id == 10113).Should().BeEmpty();
     }
@@ -297,7 +297,7 @@ public sealed class QdrantFaultMatrixTests
     [Fact]
     public void LogTemplates_CarryNoReasonHostOrPort_AndEveryIdIsUniqueAndInsideTheQdrantSubBlock()
     {
-        var methods = typeof(Logging.QdrantLog).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var methods = typeof(SharedKernel.AI.Qdrant.Diagnostics.QdrantLog).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var attributes = methods
             .Select(m => m.GetCustomAttributes(typeof(LoggerMessageAttribute), inherit: false).Cast<LoggerMessageAttribute>().Single())
             .ToList();

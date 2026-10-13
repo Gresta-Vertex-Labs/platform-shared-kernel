@@ -4,7 +4,6 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Errors;
 using SharedKernel.AI.SemanticKernel.Diagnostics;
-using SharedKernel.AI.SemanticKernel.Logging;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.AI.SemanticKernel.Embeddings;
@@ -107,13 +106,13 @@ internal sealed class SemanticKernelEmbeddingGenerator : IEmbeddingGenerator
                 if (texts.Count == 0)
                 {
                     var empty = IntelligenceErrors.InvalidQuery("At least one text must be supplied.");
-                    _logger.SemanticKernelRequestRejected(ModelId, empty.Type.ToString(), empty.Code);
+                    SemanticKernelLog.SemanticKernelRequestRejected(_logger, ModelId, empty.Type.ToString(), empty.Code);
                     return Result<EmbeddingBatchResult>.Failure(empty);
                 }
 
                 if (texts.Count > _maxBatchSize)
                 {
-                    _logger.SemanticKernelBatchSizeExceeded(texts.Count, _maxBatchSize);
+                    SemanticKernelLog.SemanticKernelBatchSizeExceeded(_logger, texts.Count, _maxBatchSize);
                     return Result<EmbeddingBatchResult>.Failure(IntelligenceErrors.BatchSizeExceeded(texts.Count, _maxBatchSize, ProviderName));
                 }
 
@@ -133,7 +132,7 @@ internal sealed class SemanticKernelEmbeddingGenerator : IEmbeddingGenerator
                     TotalTokens = collection.Usage.TotalTokenCount,
                 };
 
-                _logger.SemanticKernelEmbeddingCompleted(texts.Count, ModelId, tokenUsage.TotalTokens);
+                SemanticKernelLog.SemanticKernelEmbeddingCompleted(_logger, texts.Count, ModelId, tokenUsage.TotalTokens);
 
                 return Result<EmbeddingBatchResult>.Success(new EmbeddingBatchResult
                 {

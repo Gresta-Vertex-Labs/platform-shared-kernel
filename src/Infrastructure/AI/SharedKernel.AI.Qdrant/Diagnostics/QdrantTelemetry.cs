@@ -27,6 +27,12 @@ namespace SharedKernel.AI.Qdrant.Diagnostics;
 /// </remarks>
 internal sealed class QdrantTelemetry
 {
+    /// <summary>The name of this package's <see cref="ActivitySource"/>, the same value for every provider (<see cref="IntelligenceWellKnown.ActivitySourceName"/>).</summary>
+    public const string SourceName = IntelligenceWellKnown.ActivitySourceName;
+
+    /// <summary>The name of this package's <see cref="Meter"/>, the same value for every provider (<see cref="IntelligenceWellKnown.MeterName"/>).</summary>
+    public const string MeterName = IntelligenceWellKnown.MeterName;
+
     private static readonly string Version = TelemetryVersion.Of(typeof(QdrantTelemetry).Assembly);
 
     private readonly Histogram<double> _duration;
@@ -37,7 +43,7 @@ internal sealed class QdrantTelemetry
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
 
-        var meter = meterFactory.Create(new MeterOptions(IntelligenceWellKnown.MeterName) { Version = Version });
+        var meter = meterFactory.Create(new MeterOptions(MeterName) { Version = Version });
         _duration = meter.CreateHistogram<double>(
             IntelligenceWellKnown.OperationDurationInstrumentName,
             unit: "s",
@@ -49,7 +55,7 @@ internal sealed class QdrantTelemetry
     }
 
     /// <summary>Gets the shared activity source of this package.</summary>
-    internal static ActivitySource Source { get; } = new(IntelligenceWellKnown.ActivitySourceName, Version);
+    internal static ActivitySource Source { get; } = new(SourceName, Version);
 
     /// <summary>Starts the span and the stopwatch of one operation.</summary>
     /// <param name="operation">An <see cref="IntelligenceOperations"/> value.</param>
@@ -75,9 +81,9 @@ internal sealed class QdrantTelemetry
     {
         var tags = new TagList
         {
-            { IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.QdrantProviderName },
-            { IntelligenceWellKnown.OperationTagName, operation },
-            { IntelligenceWellKnown.CollectionTagName, collectionName },
+            { IntelligenceTagKeys.Provider, IntelligenceWellKnown.QdrantProviderName },
+            { IntelligenceTagKeys.Operation, operation },
+            { IntelligenceTagKeys.Collection, collectionName },
             { WellKnownTagKeys.Outcome, outcome },
         };
 
@@ -91,9 +97,9 @@ internal sealed class QdrantTelemetry
 
     private static TagList RecordTags(string operation, string collectionName, string outcome) => new()
     {
-        { IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.QdrantProviderName },
-        { IntelligenceWellKnown.OperationTagName, operation },
-        { IntelligenceWellKnown.CollectionTagName, collectionName },
+        { IntelligenceTagKeys.Provider, IntelligenceWellKnown.QdrantProviderName },
+        { IntelligenceTagKeys.Operation, operation },
+        { IntelligenceTagKeys.Collection, collectionName },
         { WellKnownTagKeys.Outcome, outcome },
     };
 }
@@ -122,9 +128,9 @@ internal sealed class QdrantOperationScope : IDisposable
         Activity = QdrantTelemetry.Source.StartActivity("ai " + operation, ActivityKind.Client);
         if (Activity is { IsAllDataRequested: true } activity)
         {
-            activity.SetTag(IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.QdrantProviderName);
-            activity.SetTag(IntelligenceWellKnown.OperationTagName, operation);
-            activity.SetTag(IntelligenceWellKnown.CollectionTagName, collectionName);
+            activity.SetTag(IntelligenceTagKeys.Provider, IntelligenceWellKnown.QdrantProviderName);
+            activity.SetTag(IntelligenceTagKeys.Operation, operation);
+            activity.SetTag(IntelligenceTagKeys.Collection, collectionName);
         }
     }
 
@@ -133,6 +139,14 @@ internal sealed class QdrantOperationScope : IDisposable
 
     /// <summary>Records the outcome of a <see cref="Result{T}"/> on the span and returns it.</summary>
     public Result<T> Complete<T>(Result<T> result)
+    {
+        _outcome = Activity.RecordResult(result);
+        _errorType = result.IsFailure ? result.Error.Type.ToString() : null;
+        return result;
+    }
+
+    /// <summary>Records the outcome of a <see cref="Result"/> on the span and returns it.</summary>
+    public Result Complete(Result result)
     {
         _outcome = Activity.RecordResult(result);
         _errorType = result.IsFailure ? result.Error.Type.ToString() : null;

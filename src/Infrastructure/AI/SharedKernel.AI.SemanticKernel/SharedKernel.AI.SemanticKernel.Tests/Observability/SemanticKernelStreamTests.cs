@@ -60,14 +60,14 @@ public sealed class SemanticKernelStreamTests
 
         harness.Spans.Should().ContainSingle().Which
             .ShouldHaveKind(ActivityKind.Client)
-            .ShouldHaveTag(IntelligenceWellKnown.OperationTagName, IntelligenceOperations.CompleteStream)
+            .ShouldHaveTag(IntelligenceTagKeys.Operation, IntelligenceOperations.CompleteStream)
             .ShouldBeRecordedSuccess()
             .ShouldFollowSpanConvention()
             .ShouldNotLeak("prompt-text-sentinel", "Hel", SemanticKernelHarness.KeySentinel);
 
         harness.Measurements(IntelligenceWellKnown.OperationDurationInstrumentName).Should().ContainSingle();
         long Sum(string type) => harness.Measurements(IntelligenceWellKnown.TokensInstrumentName)
-            .Where(m => Tag(m, IntelligenceWellKnown.TokenTypeTagName) == type).Sum(m => (long)m.Value);
+            .Where(m => Tag(m, IntelligenceTagKeys.TokenType) == type).Sum(m => (long)m.Value);
         Sum(IntelligenceWellKnown.TokenTypeInput).Should().Be(5, "the final chunk's usage, counted once");
         Sum(IntelligenceWellKnown.TokenTypeOutput).Should().Be(3);
     }
@@ -92,7 +92,7 @@ public sealed class SemanticKernelStreamTests
 
         var thrown = (await act.Should().ThrowAsync<IntelligenceStreamException>()).Which;
         thrown.Should().BeAssignableTo<SharedKernelException>().And.BeAssignableTo<IHasError>();
-        thrown.Error.Code.Should().Be("intelligence.unreachable");
+        thrown.Error.Code.Should().Be("intelligence.unavailable");
         thrown.Error.Type.Should().Be(ErrorType.Unavailable);
         thrown.Error.Message.Should().NotContain("sentinel").And.NotContain(SemanticKernelHarness.HostSentinel);
         thrown.Message.Should().Be(thrown.Error.Message);

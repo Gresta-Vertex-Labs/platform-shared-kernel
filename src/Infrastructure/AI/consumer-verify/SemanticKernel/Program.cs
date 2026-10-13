@@ -209,7 +209,7 @@ static IHost BuildHost(Action<SemanticKernelBuilder>? configureBuilder)
 // packages: the stream exception maps at the HTTP/gRPC/SignalR edges by its Error, not as a bare 500.
 static async Task Surface7_StreamExceptionIsASharedKernelException()
 {
-    var error = IntelligenceErrors.Unreachable(IntelligenceWellKnown.SemanticKernelProviderName);
+    var error = IntelligenceErrors.Unavailable(IntelligenceWellKnown.SemanticKernelProviderName);
     SharedKernelException? caught = null;
     try
     {
@@ -223,6 +223,9 @@ static async Task Surface7_StreamExceptionIsASharedKernelException()
     Verify(caught is IntelligenceStreamException, "catch (SharedKernelException) when (e is IntelligenceStreamException) compiles and catches it");
     Verify(caught is IHasError { Error.Type: ErrorType.Unavailable }, "the stream exception carries its Error (Unavailable) for the edge mappers");
     Verify(caught!.Message == error.Message, "the exception message is the error's kernel-authored message");
+    Verify(error.Code == IntelligenceErrorCodes.Unavailable, "IntelligenceErrorCodes.Unavailable is the public code of the outage error");
+    Verify(IntelligenceErrors.EngineUnauthorized(IntelligenceWellKnown.QdrantProviderName, IntelligenceOperations.Query).Type == ErrorType.Unexpected, "the provider rejecting the kernel key is Unexpected");
+    Verify(IntelligenceTagKeys.Provider == "ai.provider" && IntelligenceTagKeys.Operation == "ai.operation", "IntelligenceTagKeys carries the public span and metric tag keys");
 
     using var host = BuildHost(configureBuilder: null);
     await host.StartAsync();

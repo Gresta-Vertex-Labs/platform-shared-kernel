@@ -19,7 +19,7 @@ public sealed class SemanticKernelTelemetryTests
 
     private static long Tokens(SemanticKernelHarness harness, string operation, string tokenType) =>
         harness.Measurements(IntelligenceWellKnown.TokensInstrumentName)
-            .Where(m => Tag(m, IntelligenceWellKnown.OperationTagName) == operation && Tag(m, IntelligenceWellKnown.TokenTypeTagName) == tokenType)
+            .Where(m => Tag(m, IntelligenceTagKeys.Operation) == operation && Tag(m, IntelligenceTagKeys.TokenType) == tokenType)
             .Sum(m => (long)m.Value);
 
     [Fact]
@@ -36,10 +36,10 @@ public sealed class SemanticKernelTelemetryTests
         harness.Spans.Should().ContainSingle().Which
             .ShouldHaveKind(ActivityKind.Client)
             .ShouldHaveSource(IntelligenceWellKnown.ActivitySourceName)
-            .ShouldHaveTagKeys(IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.OperationTagName, IntelligenceWellKnown.ModelTagName)
-            .ShouldHaveTag(IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.SemanticKernelProviderName)
-            .ShouldHaveTag(IntelligenceWellKnown.OperationTagName, IntelligenceOperations.Complete)
-            .ShouldHaveTag(IntelligenceWellKnown.ModelTagName, harness.ChatModel)
+            .ShouldHaveTagKeys(IntelligenceTagKeys.Provider, IntelligenceTagKeys.Operation, IntelligenceTagKeys.Model)
+            .ShouldHaveTag(IntelligenceTagKeys.Provider, IntelligenceWellKnown.SemanticKernelProviderName)
+            .ShouldHaveTag(IntelligenceTagKeys.Operation, IntelligenceOperations.Complete)
+            .ShouldHaveTag(IntelligenceTagKeys.Model, harness.ChatModel)
             .ShouldBeRecordedSuccess()
             .ShouldFollowSpanConvention()
             .ShouldNotLeak("prompt-text-sentinel", "completion-text-sentinel", SemanticKernelHarness.KeySentinel, SemanticKernelHarness.HostSentinel);
@@ -47,7 +47,7 @@ public sealed class SemanticKernelTelemetryTests
         var duration = harness.Measurements(IntelligenceWellKnown.OperationDurationInstrumentName).Should().ContainSingle().Which;
         Tag(duration, WellKnownTagKeys.Outcome).Should().Be(WellKnownOutcomes.Success);
         Tag(duration, WellKnownTagKeys.ErrorType).Should().BeNull();
-        Tag(duration, IntelligenceWellKnown.ModelTagName).Should().Be(harness.ChatModel);
+        Tag(duration, IntelligenceTagKeys.Model).Should().Be(harness.ChatModel);
 
         Tokens(harness, IntelligenceOperations.Complete, IntelligenceWellKnown.TokenTypeInput).Should().Be(11);
         Tokens(harness, IntelligenceOperations.Complete, IntelligenceWellKnown.TokenTypeOutput).Should().Be(7);
@@ -64,12 +64,12 @@ public sealed class SemanticKernelTelemetryTests
         result.IsSuccess.Should().BeTrue();
         harness.Spans.Should().ContainSingle().Which.OperationName.Should().Be("ai embed");
         harness.Spans[0]
-            .ShouldHaveTag(IntelligenceWellKnown.ModelTagName, harness.EmbeddingModel)
+            .ShouldHaveTag(IntelligenceTagKeys.Model, harness.EmbeddingModel)
             .ShouldBeRecordedSuccess()
             .ShouldNotLeak("embed-text-sentinel");
         Tokens(harness, IntelligenceOperations.Embed, IntelligenceWellKnown.TokenTypeInput).Should().Be(9);
         harness.Measurements(IntelligenceWellKnown.TokensInstrumentName)
-            .Should().NotContain(m => Tag(m, IntelligenceWellKnown.TokenTypeTagName) == IntelligenceWellKnown.TokenTypeOutput,
+            .Should().NotContain(m => Tag(m, IntelligenceTagKeys.TokenType) == IntelligenceWellKnown.TokenTypeOutput,
                 "an embedding call has no completion half and zero is never recorded");
     }
 
@@ -93,7 +93,7 @@ public sealed class SemanticKernelTelemetryTests
         await harness.Kernel.CompleteAsync(harness.Request(modelId: "caller-minted-model-sentinel"));
 
         harness.OtherModelSpans.Should().ContainSingle().Which
-            .ShouldHaveTag(IntelligenceWellKnown.ModelTagName, IntelligenceWellKnown.OtherModel)
+            .ShouldHaveTag(IntelligenceTagKeys.Model, IntelligenceWellKnown.OtherModel)
             .ShouldNotLeak("caller-minted-model-sentinel");
         harness.OtherModelMeasurements(IntelligenceWellKnown.OperationDurationInstrumentName).Should().ContainSingle();
         harness.OtherModelMeasurements(IntelligenceWellKnown.TokensInstrumentName).Should().NotBeEmpty();
@@ -107,7 +107,7 @@ public sealed class SemanticKernelTelemetryTests
 
         await harness.Kernel.CompleteAsync(harness.Request(modelId: harness.ChatModel));
 
-        harness.Spans.Should().ContainSingle().Which.ShouldHaveTag(IntelligenceWellKnown.ModelTagName, harness.ChatModel);
+        harness.Spans.Should().ContainSingle().Which.ShouldHaveTag(IntelligenceTagKeys.Model, harness.ChatModel);
     }
 
     [Fact]
@@ -124,6 +124,7 @@ public sealed class SemanticKernelTelemetryTests
             .Should().OnlyContain(i => i.MeterName == "SharedKernel.AI" && i.Unit != null);
         harness.Metrics.Instruments.Should().NotContain(i => i.Name == IntelligenceWellKnown.VectorRecordsInstrumentName,
             "records are a vector concept");
+        harness.Metrics.ShouldFollowMetricConvention();
     }
 
     [Fact]

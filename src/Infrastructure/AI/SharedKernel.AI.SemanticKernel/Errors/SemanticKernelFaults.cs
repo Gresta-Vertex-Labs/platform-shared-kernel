@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using SharedKernel.AI.Abstractions.Errors;
-using SharedKernel.AI.SemanticKernel.Logging;
+using SharedKernel.AI.SemanticKernel.Diagnostics;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.AI.SemanticKernel.Errors;
@@ -156,7 +156,7 @@ internal static class SemanticKernelFaults
     /// <summary>Logs a classified failure once, at Warning, with the exception, and returns <paramref name="error"/>.</summary>
     public static Error Report(Exception exception, Error error, ILogger logger, string operation, string modelId)
     {
-        logger.SemanticKernelEngineFault(operation, modelId, error.Code, exception);
+        SemanticKernelLog.SemanticKernelEngineFault(logger, operation, modelId, error.Code, exception);
         return error;
     }
 
@@ -183,20 +183,20 @@ internal static class SemanticKernelFaults
             }
         }
 
-        return IntelligenceErrors.Unreachable(providerName);
+        return IntelligenceErrors.Unavailable(providerName);
     }
 
     private static Error FromStatus(int status, string providerName, string operation, string modelId) =>
         status switch
         {
-            401 or 403 => IntelligenceErrors.Unauthorized(providerName, operation),
+            401 or 403 => IntelligenceErrors.EngineUnauthorized(providerName, operation),
             404 => IntelligenceErrors.ModelNotFound(modelId),
             408 => IntelligenceErrors.Timeout(operation),
 
             // The connector version verified for this package exposes no strongly-typed Retry-After accessor, so
             // retryAfter is null, documented as a known gap rather than guessed at.
             429 => IntelligenceErrors.RateLimited(providerName, retryAfter: null),
-            502 or 503 or 504 => IntelligenceErrors.Unreachable(providerName),
+            502 or 503 or 504 => IntelligenceErrors.Unavailable(providerName),
             >= 500 => IntelligenceErrors.EngineFault(providerName, operation, status.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             _ => IntelligenceErrors.CompletionFailed(providerName, $"The provider rejected the request with HTTP status {status}."),
         };

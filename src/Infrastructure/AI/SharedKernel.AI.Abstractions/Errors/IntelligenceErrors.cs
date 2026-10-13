@@ -21,76 +21,49 @@ namespace SharedKernel.AI.Abstractions.Errors;
 /// only: provider, operation, collection and model names, the caller's own record id, numbers, an HTTP status or a
 /// gRPC status name. It never holds an exception message, a gRPC status detail, a response body, an endpoint or
 /// host, a filter value, a key or prompt text, because the message reaches ProblemDetails; the detail reaches the
-/// log through the exception parameter instead. The <c>reason</c> parameters below are kernel-authored text and
-/// must never be filled from provider or exception text.
+/// log through the exception parameter instead. The <c>reason</c> parameters below are kernel-authored text,
+/// written as a sentence that ends with a period, and must never be filled from provider or exception text.
+/// </para>
+/// <para>
+/// The codes are the constants of <see cref="IntelligenceErrorCodes"/>. This factory is public (unlike the internal
+/// factories of single-assembly capabilities) because both providers and the in-memory double live in separate
+/// assemblies and build the same vocabulary.
 /// </para>
 /// </remarks>
 public static class IntelligenceErrors
 {
-    private const string CollectionNotFoundCode = "intelligence.collection_not_found";
-    private const string RecordNotFoundCode = "intelligence.record_not_found";
-    private const string ModelNotFoundCode = "intelligence.model_not_found";
-    private const string InvalidQueryCode = "intelligence.invalid_query";
-    private const string InvalidFilterCode = "intelligence.invalid_filter";
-    private const string InvalidCollectionDefinitionCode = "intelligence.invalid_collection_definition";
-    private const string InvalidRecordIdCode = "intelligence.invalid_record_id";
-    private const string FieldNotFilterableCode = "intelligence.field_not_filterable";
-    private const string EmbeddingModelMismatchCode = "intelligence.embedding_model_mismatch";
-    private const string DimensionMismatchCode = "intelligence.dimension_mismatch";
-    private const string DistanceMetricMismatchCode = "intelligence.distance_metric_mismatch";
-    private const string BatchSizeExceededCode = "intelligence.batch_size_exceeded";
-    private const string FilterDepthExceededCode = "intelligence.filter_depth_exceeded";
-    private const string ContextWindowExceededCode = "intelligence.context_window_exceeded";
-    private const string UnsupportedCapabilityCode = "intelligence.unsupported_capability";
-    private const string CollectionAlreadyExistsCode = "intelligence.collection_already_exists";
-    private const string CollectionDefinitionConflictCode = "intelligence.collection_definition_conflict";
-    private const string CutoverFailedCode = "intelligence.cutover_failed";
-    private const string SchemaFingerprintMismatchCode = "intelligence.schema_fingerprint_mismatch";
-    private const string UnauthorizedCode = "intelligence.unauthorized";
-    private const string TenantScopeMissingCode = "intelligence.tenant_scope_missing";
-    private const string UnreachableCode = "intelligence.unreachable";
-    private const string TimeoutCode = "intelligence.timeout";
-    private const string WriteRejectedCode = "intelligence.write_rejected";
-    private const string WriteTimeoutCode = "intelligence.write_timeout";
-    private const string BulkPartiallyFailedCode = "intelligence.bulk_partially_failed";
-    private const string ProbeFailedCode = "intelligence.probe_failed";
-    private const string EngineVersionUnsupportedCode = "intelligence.engine_version_unsupported";
-    private const string EngineFaultCode = "intelligence.engine_fault";
-    private const string RateLimitedCode = "intelligence.rate_limited";
-    private const string CompletionFailedCode = "intelligence.completion_failed";
-
     /// <summary>The named vector collection does not exist.</summary>
     public static Error CollectionNotFound(string collectionName) =>
-        Error.NotFound(CollectionNotFoundCode, $"Vector collection '{collectionName}' was not found.");
+        Error.NotFound(IntelligenceErrorCodes.CollectionNotFound, $"Vector collection '{collectionName}' was not found.");
 
     /// <summary>The named record does not exist (or is not visible to the caller's tenant).</summary>
     public static Error RecordNotFound(string collectionName, string recordId) =>
-        Error.NotFound(RecordNotFoundCode, $"Record '{recordId}' was not found in collection '{collectionName}'.");
+        Error.NotFound(IntelligenceErrorCodes.RecordNotFound, $"Record '{recordId}' was not found in collection '{collectionName}'.");
 
     /// <summary>The named embedding/completion model does not exist or is not registered.</summary>
     public static Error ModelNotFound(string modelId) =>
-        Error.NotFound(ModelNotFoundCode, $"Model '{modelId}' was not found.");
+        Error.NotFound(IntelligenceErrorCodes.ModelNotFound, $"Model '{modelId}' was not found.");
 
     /// <summary>The vector query violates a provider-independent structural invariant. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error InvalidQuery(string reason) =>
-        Error.Validation(InvalidQueryCode, $"The vector query is invalid: {reason}");
+        Error.Validation(IntelligenceErrorCodes.InvalidQuery, $"The vector query is invalid: {reason}");
 
     /// <summary>The filter predicate is malformed. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error InvalidFilter(string reason) =>
-        Error.Validation(InvalidFilterCode, $"The vector filter is invalid: {reason}");
+        Error.Validation(IntelligenceErrorCodes.InvalidFilter, $"The vector filter is invalid: {reason}");
 
     /// <summary>The collection definition violates a structural invariant. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error InvalidCollectionDefinition(string reason) =>
-        Error.Validation(InvalidCollectionDefinitionCode, $"The vector collection definition is invalid: {reason}");
+        Error.Validation(IntelligenceErrorCodes.InvalidCollectionDefinition, $"The vector collection definition is invalid: {reason}");
 
     /// <summary>The record id violates a provider's charset or length constraint.</summary>
     public static Error InvalidRecordId(string recordId) =>
-        Error.Validation(InvalidRecordIdCode, $"Record id '{recordId}' is not a legal identifier for this provider.");
+        Error.Validation(IntelligenceErrorCodes.InvalidRecordId, $"Record id '{recordId}' is not a legal identifier for this provider.");
 
     /// <summary>The field is not declared filterable on the collection.</summary>
     public static Error FieldNotFilterable(string collectionName, string field) =>
         Error.Validation(
-            FieldNotFilterableCode,
+            IntelligenceErrorCodes.FieldNotFilterable,
             $"Field '{field}' on collection '{collectionName}' is not declared filterable.");
 
     /// <summary>
@@ -100,52 +73,52 @@ public static class IntelligenceErrors
     /// </summary>
     public static Error EmbeddingModelMismatch(string collectionName, string expected, string actual) =>
         Error.Validation(
-            EmbeddingModelMismatchCode,
+            IntelligenceErrorCodes.EmbeddingModelMismatch,
             $"Collection '{collectionName}' expects embedding model '{expected}' but received '{actual}'.");
 
     /// <summary>The record/query vector's dimension does not match the collection's declared dimension.</summary>
     public static Error DimensionMismatch(string collectionName, int expected, int actual) =>
         Error.Validation(
-            DimensionMismatchCode,
+            IntelligenceErrorCodes.DimensionMismatch,
             $"Collection '{collectionName}' expects dimension {expected} but received {actual}.");
 
     /// <summary>The declared distance metric does not match the collection's live declaration.</summary>
     public static Error DistanceMetricMismatch(string collectionName, string expected, string actual) =>
         Error.Validation(
-            DistanceMetricMismatchCode,
+            IntelligenceErrorCodes.DistanceMetricMismatch,
             $"Collection '{collectionName}' expects distance metric '{expected}' but received '{actual}'.");
 
     /// <summary>The requested batch size exceeds the provider's declared ceiling.</summary>
     public static Error BatchSizeExceeded(int requested, int ceiling, string providerName) =>
         Error.Validation(
-            BatchSizeExceededCode,
-            $"Requested batch size {requested} exceeds provider '{providerName}''s ceiling of {ceiling}.");
+            IntelligenceErrorCodes.BatchSizeExceeded,
+            $"Requested batch size {requested} exceeds the ceiling of {ceiling} for provider '{providerName}'.");
 
     /// <summary>The filter tree's depth exceeds the provider's declared ceiling.</summary>
     public static Error FilterDepthExceeded(int requested, int ceiling) =>
         Error.Validation(
-            FilterDepthExceededCode,
-            $"Filter depth {requested} exceeds the provider's MaxFilterDepth ceiling of {ceiling}.");
+            IntelligenceErrorCodes.FilterDepthExceeded,
+            $"Filter depth {requested} must not exceed the ceiling of {ceiling}.");
 
     /// <summary>The estimated prompt size exceeds the provider's context-window ceiling.</summary>
     public static Error ContextWindowExceeded(int limit, int actual) =>
         Error.Validation(
-            ContextWindowExceededCode,
-            $"Estimated token count {actual} exceeds the provider's context-window limit of {limit}.");
+            IntelligenceErrorCodes.ContextWindowExceeded,
+            $"Estimated token count {actual} must not exceed the context window of {limit}.");
 
     /// <summary>
     /// Reserved and currently unreachable by construction — the closed 8-node filter hierarchy has no
     /// untranslatable node today. Exists so a future filter node produces a loud failure on the
     /// lagging adapter rather than a dropped predicate.
     /// </summary>
-    public static Error UnsupportedCapability(string capability, string providerName) =>
+    public static Error NotSupported(string capability, string providerName) =>
         Error.Validation(
-            UnsupportedCapabilityCode,
+            IntelligenceErrorCodes.NotSupported,
             $"Capability '{capability}' is not supported by provider '{providerName}'.");
 
     /// <summary>The collection already exists (its creation was not idempotent for the caller's intent).</summary>
     public static Error CollectionAlreadyExists(string collectionName) =>
-        Error.Conflict(CollectionAlreadyExistsCode, $"Vector collection '{collectionName}' already exists.");
+        Error.Conflict(IntelligenceErrorCodes.CollectionAlreadyExists, $"Vector collection '{collectionName}' already exists.");
 
     /// <summary>
     /// The requested collection definition conflicts with the live collection.
@@ -154,29 +127,32 @@ public static class IntelligenceErrors
     /// </summary>
     public static Error CollectionDefinitionConflict(string collectionName, string field) =>
         Error.Conflict(
-            CollectionDefinitionConflictCode,
+            IntelligenceErrorCodes.CollectionDefinitionConflict,
             $"Field '{field}' on collection '{collectionName}' conflicts with the live definition. " +
-            "EnsureCollectionAsync is additive-only; use a staging collection, bulk-upsert, then CutoverAsync to " +
-            "change an incompatible field.");
+            "Use a staging collection, a bulk upsert and CutoverAsync to change an incompatible field.");
 
     /// <summary>The staging-to-live cutover failed. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error CutoverFailed(string stagingCollectionName, string liveCollectionName, string reason) =>
         Error.Conflict(
-            CutoverFailedCode,
+            IntelligenceErrorCodes.CutoverFailed,
             $"Cutover from staging collection '{stagingCollectionName}' to live collection " +
-            $"'{liveCollectionName}' failed: {reason}");
+            $"'{liveCollectionName}' failed. {reason}");
 
     /// <summary>The live collection's recorded schema fingerprint does not match the expected definition.</summary>
     public static Error SchemaFingerprintMismatch(string collectionName, string expected, string actual) =>
         Error.Conflict(
-            SchemaFingerprintMismatchCode,
+            IntelligenceErrorCodes.SchemaFingerprintMismatch,
             $"Collection '{collectionName}' schema fingerprint mismatch: expected '{expected}', found '{actual}'.");
 
-    /// <summary>The caller is not authorized to perform the given operation on the collection.</summary>
-    public static Error Unauthorized(string collectionName, string operation) =>
-        Error.Unauthorized(
-            UnauthorizedCode,
-            $"Not authorized to perform '{operation}' on collection '{collectionName}'.");
+    /// <summary>
+    /// The provider rejected the kernel's own credentials (gRPC <c>PermissionDenied</c> or <c>Unauthenticated</c>,
+    /// HTTP 401 or 403). This is a deployment defect, not the end user's authentication, so it is
+    /// <see cref="ErrorType.Unexpected"/>: answering the end user 401 would send clients into re-authentication loops.
+    /// </summary>
+    public static Error EngineUnauthorized(string providerName, string operation) =>
+        Error.Unexpected(
+            IntelligenceErrorCodes.EngineUnauthorized,
+            $"Provider '{providerName}' rejected the credentials for operation '{operation}'.");
 
     /// <summary>
     /// The collection declares a tenant field but the caller supplied <c>TenantScope.Global</c> — an
@@ -184,16 +160,16 @@ public static class IntelligenceErrors
     /// </summary>
     public static Error TenantScopeMissing(string collectionName) =>
         Error.Unauthorized(
-            TenantScopeMissingCode,
-            $"Collection '{collectionName}' declares a TenantField; TenantScope.Global is not permitted.");
+            IntelligenceErrorCodes.TenantScopeMissing,
+            $"Collection '{collectionName}' declares a tenant field, so TenantScope.Global must not be used.");
 
     /// <summary>
     /// The vector or completion provider could not be reached (connection refused, DNS or TLS failure, gRPC
     /// <c>Unavailable</c>, HTTP 502, 503 or 504). A dependency outage is <see cref="ErrorType.Unavailable"/>. The
     /// message never names an endpoint or host.
     /// </summary>
-    public static Error Unreachable(string providerName) =>
-        Error.Unavailable(UnreachableCode, $"Provider '{providerName}' is unreachable.");
+    public static Error Unavailable(string providerName) =>
+        Error.Unavailable(IntelligenceErrorCodes.Unavailable, $"Provider '{providerName}' is unavailable.");
 
     /// <summary>
     /// The operation ran out of time before the provider answered (gRPC <c>DeadlineExceeded</c>, HTTP 408, or a
@@ -201,11 +177,11 @@ public static class IntelligenceErrors
     /// <see cref="ErrorType.Timeout"/>.
     /// </summary>
     public static Error Timeout(string operation) =>
-        Error.Timeout(TimeoutCode, $"Operation '{operation}' timed out.");
+        Error.Timeout(IntelligenceErrorCodes.Timeout, $"Operation '{operation}' timed out.");
 
     /// <summary>The provider rejected the write outright. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error WriteRejected(string collectionName, string reason) =>
-        Error.Unexpected(WriteRejectedCode, $"Write to collection '{collectionName}' was rejected: {reason}");
+        Error.Unexpected(IntelligenceErrorCodes.WriteRejected, $"Write to collection '{collectionName}' was rejected. {reason}");
 
     /// <summary>
     /// Waiting for a write to become queryable timed out. The write may still land — this is distinct
@@ -213,9 +189,9 @@ public static class IntelligenceErrors
     /// </summary>
     public static Error WriteTimeout(string collectionName, TimeSpan elapsed) =>
         Error.Timeout(
-            WriteTimeoutCode,
+            IntelligenceErrorCodes.WriteTimeout,
             $"Waiting for a write on collection '{collectionName}' to become queryable timed out after " +
-            $"{elapsed}. The write may still land — do not retry blindly.");
+            $"{elapsed}. The write may still land, so do not retry blindly.");
 
     /// <summary>
     /// A canonical error for consumers/rebuild orchestrators that treat any bulk item failure as
@@ -225,18 +201,18 @@ public static class IntelligenceErrors
     /// </summary>
     public static Error BulkPartiallyFailed(int failedCount, int totalCount) =>
         Error.Unexpected(
-            BulkPartiallyFailedCode,
+            IntelligenceErrorCodes.BulkPartiallyFailed,
             $"{failedCount} of {totalCount} records failed in this bulk operation.");
 
     /// <summary>Probing the collection's readiness failed outright (as distinct from a degraded-but-answered probe). <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error ProbeFailed(string collectionName, string reason) =>
-        Error.Unexpected(ProbeFailedCode, $"Probing collection '{collectionName}' failed: {reason}");
+        Error.Unexpected(IntelligenceErrorCodes.ProbeFailed, $"Probing collection '{collectionName}' failed. {reason}");
 
     /// <summary>The connected engine's version is outside the supported range.</summary>
-    public static Error EngineVersionUnsupported(string actual, string supportedRange) =>
+    public static Error EngineVersionNotSupported(string actual, string supportedRange) =>
         Error.Unexpected(
-            EngineVersionUnsupportedCode,
-            $"Engine version '{actual}' is not supported; expected {supportedRange}.");
+            IntelligenceErrorCodes.EngineVersionNotSupported,
+            $"Engine version '{actual}' is not supported, and the supported range is {supportedRange}.");
 
     /// <summary>
     /// The mapping for a recognised provider fault that has no more specific code. A rise in this code is the
@@ -250,7 +226,7 @@ public static class IntelligenceErrors
     /// </param>
     public static Error EngineFault(string providerName, string operation, string? engineErrorCode = null) =>
         Error.Unexpected(
-            EngineFaultCode,
+            IntelligenceErrorCodes.EngineFault,
             engineErrorCode is null
                 ? $"Provider '{providerName}' operation '{operation}' faulted."
                 : $"Provider '{providerName}' operation '{operation}' faulted with engine error '{engineErrorCode}'.");
@@ -261,7 +237,7 @@ public static class IntelligenceErrors
     /// </summary>
     public static Error RateLimited(string providerName, TimeSpan? retryAfter) =>
         Error.Unavailable(
-            RateLimitedCode,
+            IntelligenceErrorCodes.RateLimited,
             retryAfter is { } delay
                 ? $"Provider '{providerName}' rate-limited the request; retry after {delay}."
                 : $"Provider '{providerName}' rate-limited the request.");
@@ -271,5 +247,5 @@ public static class IntelligenceErrors
     /// <paramref name="reason"/> is kernel-authored text (for example an HTTP status), never provider or exception text.
     /// </summary>
     public static Error CompletionFailed(string providerName, string reason) =>
-        Error.Unexpected(CompletionFailedCode, $"Provider '{providerName}' completion failed: {reason}");
+        Error.Unexpected(IntelligenceErrorCodes.CompletionFailed, $"Provider '{providerName}' completion failed. {reason}");
 }

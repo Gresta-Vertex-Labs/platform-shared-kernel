@@ -25,7 +25,7 @@ public sealed class InMemorySemanticKernelTests
         var result = await kernel.CompleteAsync(request, CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Equal(IntelligenceErrors.CompletionFailed("test-provider", "no canned response enqueued"), result.Error);
+        Assert.Equal(IntelligenceErrors.CompletionFailed("test-provider", "No canned response is enqueued."), result.Error);
         Assert.Same(request, Assert.Single(kernel.SentRequests));
     }
 

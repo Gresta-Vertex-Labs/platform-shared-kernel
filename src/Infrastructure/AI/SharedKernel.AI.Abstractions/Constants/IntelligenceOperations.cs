@@ -48,4 +48,19 @@ public static class IntelligenceOperations
 
     /// <summary><c>ISemanticKernel.CompleteStreamingAsync</c>.</summary>
     public const string CompleteStream = "complete_stream";
+
+    /// <summary><c>IVectorCollectionProvisioner.EnsureCollectionAsync</c>.</summary>
+    public const string EnsureCollection = "ensure_collection";
+
+    /// <summary><c>IVectorCollectionProvisioner.CollectionExistsAsync</c>.</summary>
+    public const string CollectionExists = "collection_exists";
+
+    /// <summary><c>IVectorCollectionProvisioner.DeleteCollectionAsync</c>.</summary>
+    public const string DeleteCollection = "delete_collection";
+
+    /// <summary><c>IVectorCollectionProvisioner.CutoverAsync</c>, the staging-to-live swap as one operation.</summary>
+    public const string Cutover = "cutover";
+
+    /// <summary>A provider-exclusive read of a collection's quantization profile.</summary>
+    public const string QuantizationProfile = "quantization_profile";
 }

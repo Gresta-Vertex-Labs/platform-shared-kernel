@@ -208,11 +208,11 @@ Section `Intelligence:SemanticKernel` (`SemanticKernelOptions.SectionName`), val
 
 | Failure | Code |
 | --- | --- |
-| HTTP 401, 403 | `intelligence.unauthorized` (Unauthorized) |
+| HTTP 401, 403 | `intelligence.engine_unauthorized` (Unexpected: the provider rejected the kernel's own key) |
 | HTTP 404 | `intelligence.model_not_found` (NotFound) |
 | HTTP 408, a client timeout while your token is live | `intelligence.timeout` (Timeout, HTTP 504) |
 | HTTP 429 | `intelligence.rate_limited` (Unavailable, HTTP 503; no retry-after value) |
-| HTTP 502, 503, 504, a transport fault (no response) | `intelligence.unreachable` (Unavailable, HTTP 503) |
+| HTTP 502, 503, 504, a transport fault (no response) | `intelligence.unavailable` (Unavailable, HTTP 503) |
 | Any other HTTP ≥ 500 | `intelligence.engine_fault` (names only the HTTP status) |
 | Any other HTTP status, for example 400 | `intelligence.completion_failed` (names only the HTTP status) |
 | An undecodable response | `intelligence.engine_fault` |

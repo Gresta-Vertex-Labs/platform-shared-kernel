@@ -65,13 +65,13 @@ public sealed class QdrantScrollStreamTests
         var thrown = (await act.Should().ThrowAsync<IntelligenceStreamException>()).Which;
         seen.Should().Equal("1");
         thrown.Should().BeAssignableTo<SharedKernelException>().And.BeAssignableTo<IHasError>();
-        thrown.Error.Code.Should().Be("intelligence.unreachable");
+        thrown.Error.Code.Should().Be("intelligence.unavailable");
         thrown.Error.Type.Should().Be(ErrorType.Unavailable);
         thrown.Error.Message.Should().NotContain("sentinel").And.NotContain("6334");
         thrown.Message.Should().Be(thrown.Error.Message);
         thrown.InnerException.Should().BeSameAs(rpc);
 
-        harness.Spans.Should().ContainSingle().Which.ShouldBeRecordedFailure(thrown.Error).ShouldHaveTag(IntelligenceWellKnown.OperationTagName, IntelligenceOperations.Scroll);
+        harness.Spans.Should().ContainSingle().Which.ShouldBeRecordedFailure(thrown.Error).ShouldHaveTag(IntelligenceTagKeys.Operation, IntelligenceOperations.Scroll);
         harness.Logger.Records.Should().ContainSingle(r => r.EventId.Id == 10113).Which.Exception.Should().BeSameAs(rpc);
         harness.Logger.Records.ShouldNotLeakIntoMessageOrState("sentinel", "6334");
     }
@@ -164,7 +164,7 @@ public sealed class QdrantScrollStreamTests
         span.IsStopped.Should().BeTrue();
         span.ShouldBeUnset();
         harness.Measurements(IntelligenceWellKnown.OperationDurationInstrumentName).Should().ContainSingle();
-        harness.Activities.StartedActivities.Where(a => a.GetTagItem(IntelligenceWellKnown.CollectionTagName) as string == harness.Name).Should().OnlyContain(a => a.IsStopped);
+        harness.Activities.StartedActivities.Where(a => a.GetTagItem(IntelligenceTagKeys.Collection) as string == harness.Name).Should().OnlyContain(a => a.IsStopped);
     }
 
     [Fact]

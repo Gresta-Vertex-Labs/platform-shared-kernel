@@ -1,5 +1,6 @@
 using SharedKernel.AI.Abstractions.Errors;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.AI.Abstractions.Models;
 
@@ -83,13 +84,13 @@ public sealed class VectorCollectionDefinitionBuilder
         }
 
         var structuralError = VectorCollectionDefinition.ValidateStructure(_name, _embeddingModelId, _dimension.Value);
-        if (structuralError is not null)
+        if (structuralError.Type != ErrorType.None)
         {
             return Result<VectorCollectionDefinition>.Failure(structuralError);
         }
 
         var fieldError = VectorCollectionDefinition.ValidateFields(_fields);
-        if (fieldError is not null)
+        if (fieldError.Type != ErrorType.None)
         {
             return Result<VectorCollectionDefinition>.Failure(fieldError);
         }

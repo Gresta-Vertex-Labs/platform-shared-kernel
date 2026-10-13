@@ -68,7 +68,7 @@ internal sealed class SemanticKernelHarness : IDisposable
         [.. Logs.Loggers.Where(l => l.Key.StartsWith("SharedKernel.AI.SemanticKernel", StringComparison.Ordinal)).SelectMany(l => l.Value.Records)];
 
     /// <summary>Gets the recorded spans of this harness (its models, or the bounded other-model value).</summary>
-    public IReadOnlyList<Activity> Spans => [.. Activities.RecordedActivities.Where(a => IsMine(a.GetTagItem(IntelligenceWellKnown.ModelTagName) as string))];
+    public IReadOnlyList<Activity> Spans => [.. Activities.RecordedActivities.Where(a => IsMine(a.GetTagItem(IntelligenceTagKeys.Model) as string))];
 
     private bool IsMine(string? model) => model == ChatModel || model == EmbeddingModel;
 
@@ -76,14 +76,14 @@ internal sealed class SemanticKernelHarness : IDisposable
     /// Gets the spans tagged with the bounded other-model value. They cannot be tied to a harness (the value is shared by
     /// design), so only the single test that sends an unlisted model reads them.
     /// </summary>
-    public IReadOnlyList<Activity> OtherModelSpans => [.. Activities.RecordedActivities.Where(a => a.GetTagItem(IntelligenceWellKnown.ModelTagName) as string == IntelligenceWellKnown.OtherModel)];
+    public IReadOnlyList<Activity> OtherModelSpans => [.. Activities.RecordedActivities.Where(a => a.GetTagItem(IntelligenceTagKeys.Model) as string == IntelligenceWellKnown.OtherModel)];
 
     /// <summary>Gets the measurements of <paramref name="instrument"/> tagged with the bounded other-model value (see <see cref="OtherModelSpans"/>).</summary>
     public IReadOnlyList<RecordedMeasurement> OtherModelMeasurements(string instrument) =>
-        [.. Metrics.MeasurementsOf(instrument).Where(m => m.TryGetTag(IntelligenceWellKnown.ModelTagName, out var model) && (string?)model == IntelligenceWellKnown.OtherModel)];
+        [.. Metrics.MeasurementsOf(instrument).Where(m => m.TryGetTag(IntelligenceTagKeys.Model, out var model) && (string?)model == IntelligenceWellKnown.OtherModel)];
 
     public IReadOnlyList<RecordedMeasurement> Measurements(string instrument) =>
-        [.. Metrics.MeasurementsOf(instrument).Where(m => m.TryGetTag(IntelligenceWellKnown.ModelTagName, out var model) && IsMine((string?)model))];
+        [.. Metrics.MeasurementsOf(instrument).Where(m => m.TryGetTag(IntelligenceTagKeys.Model, out var model) && IsMine((string?)model))];
 
     public static SemanticKernelHarness Create(
         Func<int, HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond,

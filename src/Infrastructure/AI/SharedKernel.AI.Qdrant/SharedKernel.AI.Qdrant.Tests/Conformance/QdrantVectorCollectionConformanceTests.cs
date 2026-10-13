@@ -73,7 +73,7 @@ public sealed class QdrantVectorCollectionConformanceTests : IAsyncLifetime
 
         var definition = definitionResult.Value;
 
-        _provisioner = new QdrantCollectionProvisioner(_client, NullLogger<QdrantCollectionProvisioner>.Instance);
+        _provisioner = new QdrantCollectionProvisioner(_client, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         var ensureResult = await _provisioner.EnsureCollectionAsync(definition);
         if (ensureResult.IsFailure)
         {

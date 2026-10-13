@@ -10,7 +10,6 @@ using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.SemanticKernel.Diagnostics;
 using SharedKernel.AI.SemanticKernel.Errors;
-using SharedKernel.AI.SemanticKernel.Logging;
 using SharedKernel.AI.SemanticKernel.Resilience;
 using SharedKernel.Primitives.Results;
 
@@ -91,7 +90,7 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
                             .ConfigureAwait(false);
 
                         var completion = MapResult(responses[0], modelId);
-                        _logger.SemanticKernelCompletionCompleted(completion.ModelId, completion.FinishReason.ToString(), completion.TokenUsage.TotalTokens);
+                        SemanticKernelLog.SemanticKernelCompletionCompleted(_logger, completion.ModelId, completion.FinishReason.ToString(), completion.TokenUsage.TotalTokens);
                         return Result<CompletionResult>.Success(completion);
                     }
                     catch (Exception ex) when (_retryOptions is not null
@@ -99,13 +98,13 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
                         && SemanticKernelFaults.IsTransientHttpFailure(ex, cancellationToken))
                     {
                         SemanticKernelFaults.TryClassify(ex, cancellationToken, ProviderName, IntelligenceOperations.Complete, modelId, out var error);
-                        _logger.SemanticKernelCompletionRetrying(modelId, attempt, maxAttempts, error?.Code ?? string.Empty, ex);
+                        SemanticKernelLog.SemanticKernelCompletionRetrying(_logger, modelId, attempt, maxAttempts, error?.Code ?? string.Empty, ex);
                         await Task.Delay(_retryOptions.ComputeDelay(attempt), cancellationToken).ConfigureAwait(false);
                     }
                 }
 
                 // Unreachable — the loop above always returns or throws before falling out.
-                throw new InvalidOperationException("CompleteAsync's retry loop terminated without a result.");
+                throw new UnreachableException("The retry loop ended without a result.");
             }).ConfigureAwait(false);
 
         if (result.IsSuccess)
@@ -144,7 +143,7 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
             throw;
         }
 
-        _logger.SemanticKernelStreamingStarted(modelId);
+        SemanticKernelLog.SemanticKernelStreamingStarted(_logger, modelId);
 
         var enumerator = _chatService
             .GetStreamingChatMessageContentsAsync(history, settings, cancellationToken: cancellationToken)
@@ -235,7 +234,7 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
         ChatRole.User => AuthorRole.User,
         ChatRole.Assistant => AuthorRole.Assistant,
         ChatRole.Tool => AuthorRole.Tool,
-        _ => throw new InvalidOperationException($"Unknown ChatRole '{role}'."),
+        _ => throw new UnreachableException($"Unknown ChatRole '{role}'."),
     };
 
     private static OpenAIPromptExecutionSettings BuildExecutionSettings(CompletionRequest request)

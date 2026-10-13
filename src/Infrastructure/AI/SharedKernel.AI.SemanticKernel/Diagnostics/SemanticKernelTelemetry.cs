@@ -31,6 +31,12 @@ namespace SharedKernel.AI.SemanticKernel.Diagnostics;
 /// </remarks>
 internal sealed class SemanticKernelTelemetry
 {
+    /// <summary>The name of this package's <see cref="ActivitySource"/>, the same value for every provider (<see cref="IntelligenceWellKnown.ActivitySourceName"/>).</summary>
+    public const string SourceName = IntelligenceWellKnown.ActivitySourceName;
+
+    /// <summary>The name of this package's <see cref="Meter"/>, the same value for every provider (<see cref="IntelligenceWellKnown.MeterName"/>).</summary>
+    public const string MeterName = IntelligenceWellKnown.MeterName;
+
     private static readonly string Version = TelemetryVersion.Of(typeof(SemanticKernelTelemetry).Assembly);
 
     private readonly Histogram<double> _duration;
@@ -41,7 +47,7 @@ internal sealed class SemanticKernelTelemetry
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
 
-        var meter = meterFactory.Create(new MeterOptions(IntelligenceWellKnown.MeterName) { Version = Version });
+        var meter = meterFactory.Create(new MeterOptions(MeterName) { Version = Version });
         _duration = meter.CreateHistogram<double>(
             IntelligenceWellKnown.OperationDurationInstrumentName,
             unit: "s",
@@ -53,7 +59,7 @@ internal sealed class SemanticKernelTelemetry
     }
 
     /// <summary>Gets the shared activity source of this package.</summary>
-    internal static ActivitySource Source { get; } = new(IntelligenceWellKnown.ActivitySourceName, Version);
+    internal static ActivitySource Source { get; } = new(SourceName, Version);
 
     /// <summary>Returns the bounded <c>ai.model</c> value: <paramref name="configuredModelId"/> unless the caller asked for another model.</summary>
     public static string BoundedModel(string? requestedModelId, string configuredModelId) =>
@@ -87,9 +93,9 @@ internal sealed class SemanticKernelTelemetry
     {
         var tags = new TagList
         {
-            { IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.SemanticKernelProviderName },
-            { IntelligenceWellKnown.OperationTagName, operation },
-            { IntelligenceWellKnown.ModelTagName, boundedModel },
+            { IntelligenceTagKeys.Provider, IntelligenceWellKnown.SemanticKernelProviderName },
+            { IntelligenceTagKeys.Operation, operation },
+            { IntelligenceTagKeys.Model, boundedModel },
             { WellKnownTagKeys.Outcome, outcome },
         };
 
@@ -103,10 +109,10 @@ internal sealed class SemanticKernelTelemetry
 
     private static TagList TokenTags(string operation, string boundedModel, string tokenType) => new()
     {
-        { IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.SemanticKernelProviderName },
-        { IntelligenceWellKnown.OperationTagName, operation },
-        { IntelligenceWellKnown.ModelTagName, boundedModel },
-        { IntelligenceWellKnown.TokenTypeTagName, tokenType },
+        { IntelligenceTagKeys.Provider, IntelligenceWellKnown.SemanticKernelProviderName },
+        { IntelligenceTagKeys.Operation, operation },
+        { IntelligenceTagKeys.Model, boundedModel },
+        { IntelligenceTagKeys.TokenType, tokenType },
     };
 }
 
@@ -134,9 +140,9 @@ internal sealed class SemanticKernelOperationScope : IDisposable
         Activity = SemanticKernelTelemetry.Source.StartActivity("ai " + operation, ActivityKind.Client);
         if (Activity is { IsAllDataRequested: true } activity)
         {
-            activity.SetTag(IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.SemanticKernelProviderName);
-            activity.SetTag(IntelligenceWellKnown.OperationTagName, operation);
-            activity.SetTag(IntelligenceWellKnown.ModelTagName, boundedModel);
+            activity.SetTag(IntelligenceTagKeys.Provider, IntelligenceWellKnown.SemanticKernelProviderName);
+            activity.SetTag(IntelligenceTagKeys.Operation, operation);
+            activity.SetTag(IntelligenceTagKeys.Model, boundedModel);
         }
     }
 

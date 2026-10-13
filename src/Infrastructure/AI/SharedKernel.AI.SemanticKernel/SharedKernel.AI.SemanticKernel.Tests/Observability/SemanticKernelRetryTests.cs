@@ -20,7 +20,7 @@ public sealed class SemanticKernelRetryTests
 
     [Theory]
     [InlineData(429, "intelligence.rate_limited")]
-    [InlineData(503, "intelligence.unreachable")]
+    [InlineData(503, "intelligence.unavailable")]
     [InlineData(500, "intelligence.engine_fault")]
     public async Task WithoutBoundedRetry_CompleteAsync_IsRequestedExactlyOnce_AndFailsWithTheMappedError(int status, string code)
     {
@@ -116,7 +116,7 @@ public sealed class SemanticKernelRetryTests
 
         var result = await harness.Kernel.CompleteAsync(harness.Request());
 
-        result.Error.Code.Should().Be("intelligence.unreachable");
+        result.Error.Code.Should().Be("intelligence.unavailable");
         harness.Handler.Count.Should().Be(1);
     }
 

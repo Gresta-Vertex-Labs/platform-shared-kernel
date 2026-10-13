@@ -9,7 +9,7 @@ namespace SharedKernel.AI.Abstractions.Constants;
 /// <remarks>
 /// This is the <c>SK0022</c> named-constant holder for the intelligence domain, mirroring
 /// <c>SearchWellKnown</c> (<c>09.Search.Abstractions</c>). It lives in <c>.Abstractions</c>
-/// specifically so all three sibling provider packages read byte-identical
+/// specifically so every sibling provider package reads byte-identical
 /// <see cref="ActivitySourceName"/> / <see cref="MeterName"/> values — that identity is the whole
 /// reason <c>13.ServiceDefaults</c> can wire one string name and cover all three providers with no
 /// <c>ProjectReference</c> to <c>10.Intelligence</c>. The <c>ActivitySource</c>/<c>Meter</c>
@@ -41,25 +41,10 @@ public static class IntelligenceWellKnown
     /// <summary>The provider-name value for the Semantic Kernel orchestration provider.</summary>
     public const string SemanticKernelProviderName = "semantickernel";
 
-    /// <summary>The OpenTelemetry tag key carrying the active provider name (<c>ai.provider</c>).</summary>
-    public const string ProviderTagName = "ai.provider";
-
-    /// <summary>The OpenTelemetry tag key carrying the active collection name (<c>ai.collection</c>).</summary>
-    public const string CollectionTagName = "ai.collection";
-
-    /// <summary>The OpenTelemetry tag key carrying the active model identifier (<c>ai.model</c>).</summary>
-    public const string ModelTagName = "ai.model";
-
-    /// <summary>The OpenTelemetry tag key carrying the operation name (<c>ai.operation</c>), a value of <see cref="IntelligenceOperations"/>.</summary>
-    public const string OperationTagName = "ai.operation";
-
-    /// <summary>The OpenTelemetry tag key carrying the token direction (<c>ai.token_type</c>), <see cref="TokenTypeInput"/> or <see cref="TokenTypeOutput"/>.</summary>
-    public const string TokenTypeTagName = "ai.token_type";
-
-    /// <summary>The <see cref="TokenTypeTagName"/> value for tokens the provider billed for the request (<c>input</c>).</summary>
+    /// <summary>The <see cref="IntelligenceTagKeys.TokenType"/> value for tokens the provider billed for the request (<c>input</c>).</summary>
     public const string TokenTypeInput = "input";
 
-    /// <summary>The <see cref="TokenTypeTagName"/> value for tokens the provider billed for the response (<c>output</c>).</summary>
+    /// <summary>The <see cref="IntelligenceTagKeys.TokenType"/> value for tokens the provider billed for the response (<c>output</c>).</summary>
     public const string TokenTypeOutput = "output";
 
     /// <summary>The instrument name of the operation duration histogram (<c>sharedkernel.ai.operation.duration</c>, unit <c>s</c>).</summary>

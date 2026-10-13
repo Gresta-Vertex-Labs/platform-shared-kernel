@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Qdrant.Client.Grpc;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.Execution.Tenancy;
@@ -177,7 +178,7 @@ internal static class QdrantFilterCompiler
     {
         VectorValueKind.Int64 => value.AsInt64,
         VectorValueKind.Double => value.AsDouble,
-        _ => throw new InvalidOperationException($"Range bounds must be Int64, Double, or DateTimeOffset; received {value.Kind}."),
+        _ => throw new UnreachableException($"Range bound kind '{value.Kind}' is not numeric."),
     };
 
     private static Condition BuildEqualityCondition(string field, VectorValue value) => value.Kind switch
@@ -201,7 +202,7 @@ internal static class QdrantFilterCompiler
                 },
             },
         },
-        _ => throw new InvalidOperationException($"Unknown VectorValueKind '{value.Kind}'."),
+        _ => throw new UnreachableException($"Unknown VectorValueKind '{value.Kind}'."),
     };
 
     private static Condition WrapAsNestedFilter(Action<Filter> configure)

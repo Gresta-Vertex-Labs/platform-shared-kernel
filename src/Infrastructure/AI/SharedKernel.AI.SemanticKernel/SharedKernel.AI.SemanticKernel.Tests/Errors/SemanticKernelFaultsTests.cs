@@ -31,17 +31,17 @@ public sealed class SemanticKernelFaultsTests
     public static TheoryData<int, string, ErrorType> Statuses => new()
     {
         { 400, "intelligence.completion_failed", ErrorType.Unexpected },
-        { 401, "intelligence.unauthorized", ErrorType.Unauthorized },
-        { 403, "intelligence.unauthorized", ErrorType.Unauthorized },
+        { 401, "intelligence.engine_unauthorized", ErrorType.Unexpected },
+        { 403, "intelligence.engine_unauthorized", ErrorType.Unexpected },
         { 404, "intelligence.model_not_found", ErrorType.NotFound },
         { 408, "intelligence.timeout", ErrorType.Timeout },
         { 422, "intelligence.completion_failed", ErrorType.Unexpected },
         { 429, "intelligence.rate_limited", ErrorType.Unavailable },
         { 500, "intelligence.engine_fault", ErrorType.Unexpected },
         { 501, "intelligence.engine_fault", ErrorType.Unexpected },
-        { 502, "intelligence.unreachable", ErrorType.Unavailable },
-        { 503, "intelligence.unreachable", ErrorType.Unavailable },
-        { 504, "intelligence.unreachable", ErrorType.Unavailable },
+        { 502, "intelligence.unavailable", ErrorType.Unavailable },
+        { 503, "intelligence.unavailable", ErrorType.Unavailable },
+        { 504, "intelligence.unavailable", ErrorType.Unavailable },
     };
 
     [Theory]
@@ -82,7 +82,7 @@ public sealed class SemanticKernelFaultsTests
             var error = Classify(exception, out var matched);
 
             matched.Should().BeTrue();
-            error!.Code.Should().Be("intelligence.unreachable");
+            error!.Code.Should().Be("intelligence.unavailable");
             error.Type.Should().Be(ErrorType.Unavailable);
             error.Message.Should().NotContain("sentinel");
         }

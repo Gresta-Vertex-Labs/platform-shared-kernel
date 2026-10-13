@@ -11,7 +11,7 @@ public sealed class IntelligenceTelemetryConstantsTests
     private static readonly Regex SnakeCase = new("^[a-z]+(_[a-z]+)*$", RegexOptions.CultureInvariant);
 
     [Fact]
-    public void Operations_AreTheFourteenPinnedLowercaseSnakeNames()
+    public void Operations_AreThePinnedLowercaseSnakeNames()
     {
         var values = typeof(IntelligenceOperations)
             .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
@@ -22,7 +22,8 @@ public sealed class IntelligenceTelemetryConstantsTests
         values.Should().BeEquivalentTo(
         [
             "upsert", "upsert_many", "delete", "delete_many", "delete_by_filter", "query", "query_hybrid", "get", "count",
-            "scroll", "embed", "embed_many", "complete", "complete_stream",
+            "scroll", "embed", "embed_many", "complete", "complete_stream", "ensure_collection", "collection_exists",
+            "delete_collection", "cutover", "quantization_profile",
         ]);
         values.Should().OnlyContain(v => SnakeCase.IsMatch(v));
         values.Should().OnlyHaveUniqueItems();
@@ -31,11 +32,11 @@ public sealed class IntelligenceTelemetryConstantsTests
     [Fact]
     public void TagKeysAndInstrumentNames_ArePinnedLiterals()
     {
-        IntelligenceWellKnown.ProviderTagName.Should().Be("ai.provider");
-        IntelligenceWellKnown.CollectionTagName.Should().Be("ai.collection");
-        IntelligenceWellKnown.ModelTagName.Should().Be("ai.model");
-        IntelligenceWellKnown.OperationTagName.Should().Be("ai.operation");
-        IntelligenceWellKnown.TokenTypeTagName.Should().Be("ai.token_type");
+        IntelligenceTagKeys.Provider.Should().Be("ai.provider");
+        IntelligenceTagKeys.Collection.Should().Be("ai.collection");
+        IntelligenceTagKeys.Model.Should().Be("ai.model");
+        IntelligenceTagKeys.Operation.Should().Be("ai.operation");
+        IntelligenceTagKeys.TokenType.Should().Be("ai.token_type");
         IntelligenceWellKnown.TokenTypeInput.Should().Be("input");
         IntelligenceWellKnown.TokenTypeOutput.Should().Be("output");
         IntelligenceWellKnown.OperationDurationInstrumentName.Should().Be("sharedkernel.ai.operation.duration");

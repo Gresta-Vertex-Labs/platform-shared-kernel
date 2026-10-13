@@ -232,29 +232,28 @@ before is deleted. Re-embedding the corpus is your job.
 
 ### Errors
 
-All from `IntelligenceErrors` (`SharedKernel.AI.Abstractions.Errors`).
+Every code is a constant of `IntelligenceErrorCodes` and every `Error` is built by `IntelligenceErrors` (both in `SharedKernel.AI.Abstractions.Errors`). The factory is public because the providers and the in-memory double build the same vocabulary from separate assemblies.
 
 | Code | Type |
 | --- | --- |
 | `intelligence.collection_not_found`, `.record_not_found`, `.model_not_found` | NotFound |
-| `intelligence.invalid_query`, `.invalid_filter`, `.invalid_collection_definition`, `.invalid_record_id`, `.field_not_filterable`, `.embedding_model_mismatch`, `.dimension_mismatch`, `.distance_metric_mismatch`, `.batch_size_exceeded`, `.filter_depth_exceeded`, `.context_window_exceeded`, `.unsupported_capability` | Validation |
+| `intelligence.invalid_query`, `.invalid_filter`, `.invalid_collection_definition`, `.invalid_record_id`, `.field_not_filterable`, `.embedding_model_mismatch`, `.dimension_mismatch`, `.distance_metric_mismatch`, `.batch_size_exceeded`, `.filter_depth_exceeded`, `.context_window_exceeded`, `.not_supported` | Validation |
 | `intelligence.collection_already_exists`, `.collection_definition_conflict`, `.cutover_failed`, `.schema_fingerprint_mismatch` | Conflict |
-| `intelligence.unauthorized`, `.tenant_scope_missing` | Unauthorized |
-| `intelligence.unreachable` (a provider that is down), `.rate_limited` (throttling; there is no rate-limit `ErrorType`) | Unavailable (HTTP 503, gRPC `Unavailable`) |
+| `intelligence.tenant_scope_missing` | Unauthorized |
+| `intelligence.unavailable` (a provider that is down), `.rate_limited` (throttling; there is no rate-limit `ErrorType`) | Unavailable (HTTP 503, gRPC `Unavailable`) |
 | `intelligence.timeout`, `.write_timeout` | Timeout (HTTP 504, gRPC `DeadlineExceeded`) |
-| `intelligence.write_rejected`, `.bulk_partially_failed`, `.probe_failed`, `.engine_version_unsupported`, `.engine_fault`, `.completion_failed` | Unexpected |
+| `intelligence.write_rejected`, `.bulk_partially_failed`, `.probe_failed`, `.engine_version_not_supported`, `.engine_fault`, `.completion_failed`, `.engine_unauthorized` | Unexpected |
 
 The same condition has the same code and type on every provider: gRPC `Unavailable` and HTTP 502/503/504 are
-`intelligence.unreachable`, `ResourceExhausted` and 429 are `intelligence.rate_limited`, `DeadlineExceeded`, HTTP 408
-and a client timeout are `intelligence.timeout`. `IntelligenceErrors.Unreachable(provider)` and `Timeout(operation)`
+`intelligence.unavailable`, `ResourceExhausted` and 429 are `intelligence.rate_limited`, `DeadlineExceeded`, HTTP 408
+and a client timeout are `intelligence.timeout`. `IntelligenceErrors.Unavailable(provider)` and `Timeout(operation)`
 name no endpoint and no elapsed time; `EngineFault(provider, operation, engineErrorCode)` takes only a bounded token
-(a gRPC status name or an HTTP status number) and never exception text.
+(a gRPC status name or an HTTP status number) and never exception text. `intelligence.engine_unauthorized` (gRPC `PermissionDenied`/`Unauthenticated`, HTTP 401/403) is the provider rejecting the kernel's own key: a deployment defect, so it is `Unexpected` and never answers the end user with 401. Messages are kernel-authored sentences ending in a period; the `reason` parameters are kernel-authored text too.
 
 ### Constants
 
 `IntelligenceWellKnown`: `DefaultQueryLimit` (10), `MaxQueryLimit` (1000), `ActivitySourceName` and `MeterName`
-(`SharedKernel.AI`), `QdrantProviderName` (`qdrant`), `SemanticKernelProviderName` (`semantickernel`), tag keys
-`ai.provider`, `ai.collection`, `ai.model`, `ai.operation`, `ai.token_type` (with `input`/`output` values), the instrument names and `OtherModel` (`_OTHER`). `IntelligenceOperations` holds the closed set of operation names (`upsert`, `upsert_many`, `delete`, `delete_many`, `delete_by_filter`, `query`, `query_hybrid`, `get`, `count`, `scroll`, `embed`, `embed_many`, `complete`, `complete_stream`).
+(`SharedKernel.AI`), `QdrantProviderName` (`qdrant`), `SemanticKernelProviderName` (`semantickernel`), the token-type values (`input`/`output`), the instrument names and `OtherModel` (`_OTHER`). `IntelligenceTagKeys` holds the tag keys `ai.provider`, `ai.collection`, `ai.model`, `ai.operation` and `ai.token_type`. `IntelligenceOperations` holds the closed set of operation names: the data plane (`upsert`, `upsert_many`, `delete`, `delete_many`, `delete_by_filter`, `query`, `query_hybrid`, `get`, `count`, `scroll`), embeddings and completion (`embed`, `embed_many`, `complete`, `complete_stream`) and the control plane (`ensure_collection`, `collection_exists`, `delete_collection`, `cutover`, `quantization_profile`).
 
 ### Telemetry
 

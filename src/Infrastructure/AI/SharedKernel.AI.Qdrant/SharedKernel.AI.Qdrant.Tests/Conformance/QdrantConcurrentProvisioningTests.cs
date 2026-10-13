@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Qdrant.Client;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Provisioning;
+using SharedKernel.AI.Qdrant.Tests.Support;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
 using SharedKernel.Testing.Containers;
 
@@ -34,6 +35,7 @@ public sealed class QdrantConcurrentProvisioningTests(QdrantContainerFixture fix
             .Range(0, Replicas)
             .Select(_ => new QdrantCollectionProvisioner(
                 new QdrantClient(grpc.Host, grpc.Port),
+                TestMeterFactory.NewTelemetry(),
                 NullLogger<QdrantCollectionProvisioner>.Instance))
             .ToArray();
         try

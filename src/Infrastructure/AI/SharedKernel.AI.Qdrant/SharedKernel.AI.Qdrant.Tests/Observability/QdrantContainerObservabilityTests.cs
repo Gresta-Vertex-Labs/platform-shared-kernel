@@ -45,8 +45,10 @@ public sealed class QdrantContainerObservabilityTests : IAsyncLifetime
         var uri = new Uri(_fixture.GrpcEndpoint);
         _client = new QdrantClient(uri.Host, uri.Port);
         _harness = new ObservabilityHarness(_client, name: _name);
-        _provisioner = new QdrantCollectionProvisioner(_client, NullLogger<QdrantCollectionProvisioner>.Instance);
+        _provisioner = new QdrantCollectionProvisioner(_client, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         (await _provisioner.EnsureCollectionAsync(_harness.Definition)).IsSuccess.Should().BeTrue();
+        _harness.Activities.Clear();
+        _harness.Metrics.Clear();
     }
 
     public async Task DisposeAsync()
@@ -94,9 +96,9 @@ public sealed class QdrantContainerObservabilityTests : IAsyncLifetime
         {
             span.ShouldHaveKind(ActivityKind.Client)
                 .ShouldHaveSource(IntelligenceWellKnown.ActivitySourceName)
-                .ShouldHaveTagKeys(IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.OperationTagName, IntelligenceWellKnown.CollectionTagName)
-                .ShouldHaveTag(IntelligenceWellKnown.ProviderTagName, IntelligenceWellKnown.QdrantProviderName)
-                .ShouldHaveTag(IntelligenceWellKnown.CollectionTagName, _name)
+                .ShouldHaveTagKeys(IntelligenceTagKeys.Provider, IntelligenceTagKeys.Operation, IntelligenceTagKeys.Collection)
+                .ShouldHaveTag(IntelligenceTagKeys.Provider, IntelligenceWellKnown.QdrantProviderName)
+                .ShouldHaveTag(IntelligenceTagKeys.Collection, _name)
                 .ShouldBeRecordedSuccess();
         }
 
@@ -105,7 +107,7 @@ public sealed class QdrantContainerObservabilityTests : IAsyncLifetime
 
         var durations = _harness.Measurements(IntelligenceWellKnown.OperationDurationInstrumentName);
         durations.Should().HaveCount(expected.Length);
-        durations.Select(m => Tag(m, IntelligenceWellKnown.OperationTagName))
+        durations.Select(m => Tag(m, IntelligenceTagKeys.Operation))
             .Should().BeEquivalentTo(expected);
         durations.Should().OnlyContain(m => Tag(m, WellKnownTagKeys.Outcome) == WellKnownOutcomes.Success);
         durations.Should().OnlyContain(m => Tag(m, WellKnownTagKeys.ErrorType) == null);
@@ -122,7 +124,7 @@ public sealed class QdrantContainerObservabilityTests : IAsyncLifetime
         await _harness.Collection.UpsertAsync(Rec("not-a-legal-id"), TenantScope.Global);
 
         long Sum(string operation, string outcome) => _harness.Measurements(IntelligenceWellKnown.VectorRecordsInstrumentName)
-            .Where(m => Tag(m, IntelligenceWellKnown.OperationTagName) == operation && Tag(m, WellKnownTagKeys.Outcome) == outcome)
+            .Where(m => Tag(m, IntelligenceTagKeys.Operation) == operation && Tag(m, WellKnownTagKeys.Outcome) == outcome)
             .Sum(m => (long)m.Value);
 
         Sum(IntelligenceOperations.Upsert, WellKnownOutcomes.Success).Should().Be(1);
@@ -159,9 +161,9 @@ public sealed class QdrantContainerObservabilityTests : IAsyncLifetime
         var span = _harness.Spans.Should().ContainSingle().Which;
         span.ShouldBeRecordedCancellation();
         var scrollDuration = _harness.Measurements(IntelligenceWellKnown.OperationDurationInstrumentName)
-            .Where(m => Tag(m, IntelligenceWellKnown.OperationTagName) == IntelligenceOperations.Scroll).Should().ContainSingle().Which;
+            .Where(m => Tag(m, IntelligenceTagKeys.Operation) == IntelligenceOperations.Scroll).Should().ContainSingle().Which;
         Tag(scrollDuration, WellKnownTagKeys.Outcome).Should().Be(WellKnownOutcomes.Canceled);
-        _harness.Activities.StartedActivities.Where(a => a.GetTagItem(IntelligenceWellKnown.CollectionTagName) as string == _name).Should().OnlyContain(a => a.IsStopped);
+        _harness.Activities.StartedActivities.Where(a => a.GetTagItem(IntelligenceTagKeys.Collection) as string == _name).Should().OnlyContain(a => a.IsStopped);
     }
 
     [Fact]

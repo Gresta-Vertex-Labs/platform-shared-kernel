@@ -38,7 +38,7 @@ public sealed class QdrantProvisioningConformanceTests : IAsyncLifetime
     {
         var grpcUri = new Uri(_fixture.GrpcEndpoint);
         _client = new QdrantClient(grpcUri.Host, grpcUri.Port);
-        _provisioner = new QdrantCollectionProvisioner(_client, NullLogger<QdrantCollectionProvisioner>.Instance);
+        _provisioner = new QdrantCollectionProvisioner(_client, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         return Task.CompletedTask;
     }
 
@@ -148,7 +148,7 @@ public sealed class QdrantProvisioningConformanceTests : IAsyncLifetime
         // A client pointed at a plainly unreachable address — distinguishes "cluster down" from the
         // "reachable but this collection is missing/mis-scoped" case exercised above.
         using var unreachableClient = new QdrantClient("127.0.0.1", 1, grpcTimeout: TimeSpan.FromSeconds(3));
-        var unreachableProvisioner = new QdrantCollectionProvisioner(unreachableClient, NullLogger<QdrantCollectionProvisioner>.Instance);
+        var unreachableProvisioner = new QdrantCollectionProvisioner(unreachableClient, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         var probe = await unreachableProvisioner.ProbeAsync("anything", cts.Token);

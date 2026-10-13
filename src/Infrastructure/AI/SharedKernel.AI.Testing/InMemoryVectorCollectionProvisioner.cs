@@ -66,7 +66,7 @@ public sealed class InMemoryVectorCollectionProvisioner : IVectorCollectionProvi
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result.Failure(
-                IntelligenceErrors.WriteRejected(definition.Name, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(definition.Name, "SimulateFailure is enabled.")));
         }
 
         if (!_collections.TryGetValue(definition.Name, out var existing))
@@ -117,7 +117,7 @@ public sealed class InMemoryVectorCollectionProvisioner : IVectorCollectionProvi
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result.Failure(
-                IntelligenceErrors.WriteRejected(collectionName, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(collectionName, "SimulateFailure is enabled.")));
         }
 
         // Idempotent -- an absent name still succeeds.
@@ -134,13 +134,13 @@ public sealed class InMemoryVectorCollectionProvisioner : IVectorCollectionProvi
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result.Failure(
-                IntelligenceErrors.WriteRejected(request.LiveCollectionName, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(request.LiveCollectionName, "SimulateFailure is enabled.")));
         }
 
         if (!_collections.TryGetValue(request.StagingCollectionName, out var stagingDefinition))
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result.Failure(
-                IntelligenceErrors.CutoverFailed(request.StagingCollectionName, request.LiveCollectionName, "staging collection not registered")));
+                IntelligenceErrors.CutoverFailed(request.StagingCollectionName, request.LiveCollectionName, "The staging collection is not registered.")));
         }
 
         _collections[request.LiveCollectionName] = stagingDefinition with { Name = request.LiveCollectionName };

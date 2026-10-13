@@ -23,7 +23,7 @@ public sealed class IntelligenceStreamExceptionTests
     [Fact]
     public void ErrorConstructor_CarriesTheError_AndMessageIsTheErrorMessage()
     {
-        var error = IntelligenceErrors.Unreachable("qdrant");
+        var error = IntelligenceErrors.Unavailable("qdrant");
 
         var exception = new IntelligenceStreamException(error);
 

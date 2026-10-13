@@ -7,7 +7,6 @@ using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Diagnostics;
-using SharedKernel.AI.Qdrant.Logging;
 using SharedKernel.AI.Qdrant.Options;
 using SharedKernel.AI.Qdrant.Provisioning;
 using SharedKernel.AI.Qdrant.Quantization;
@@ -52,7 +51,7 @@ public sealed class QdrantBuilder
         if (definitionResult.IsFailure)
         {
             throw new InvalidOperationException(
-                $"Failed to build the VectorCollectionDefinition for Qdrant collection '{collectionName}': {definitionResult.Error.Message}");
+                $"The definition of Qdrant collection '{collectionName}' is invalid with code '{definitionResult.Error.Code}'. Fix the configure delegate passed to AddCollection.");
         }
 
         var definition = definitionResult.Value;
@@ -96,6 +95,7 @@ public sealed class QdrantBuilder
         // which AddValidatedOptions only ever registers wrapped, never unwrapped.
         _services.AddSingleton(sp => new QdrantCollectionProvisioner(
             sp.GetRequiredService<QdrantClient>(),
+            sp.GetRequiredService<QdrantTelemetry>(),
             sp.GetRequiredService<ILogger<QdrantCollectionProvisioner>>()));
         _services.AddSingleton<IVectorCollectionProvisioner>(sp => sp.GetRequiredService<QdrantCollectionProvisioner>());
 
@@ -119,13 +119,14 @@ public sealed class QdrantBuilder
         _services.AddSingleton<IQdrantQuantizationProfileAccessor>(sp =>
             new QdrantQuantizationProfileAccessor(
                 sp.GetRequiredService<IQdrantClient>(),
+                sp.GetRequiredService<QdrantTelemetry>(),
                 sp.GetRequiredService<ILogger<QdrantQuantizationProfileAccessor>>()));
 
         if (_rawClientAccessAllowed)
         {
             _services.AddSingleton<IQdrantRawClientAccessor>(sp =>
             {
-                sp.GetRequiredService<ILogger<QdrantRawClientAccessor>>().QdrantRawClientAccessEnabled();
+                QdrantLog.QdrantRawClientAccessEnabled(sp.GetRequiredService<ILogger<QdrantBuilder>>());
                 return new QdrantRawClientAccessor(sp.GetRequiredService<IQdrantClient>());
             });
         }

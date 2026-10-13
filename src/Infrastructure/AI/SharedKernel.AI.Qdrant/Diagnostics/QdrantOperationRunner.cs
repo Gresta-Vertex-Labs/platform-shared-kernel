@@ -17,6 +17,37 @@ namespace SharedKernel.AI.Qdrant.Diagnostics;
 /// </remarks>
 internal static class QdrantOperationRunner
 {
+    public static async Task<Result> RunAsync(
+        QdrantTelemetry telemetry,
+        ILogger logger,
+        string operation,
+        string collectionName,
+        CancellationToken cancellationToken,
+        Func<Task<Result>> body)
+    {
+        using var scope = telemetry.Begin(operation, collectionName);
+        try
+        {
+            Result result;
+            try
+            {
+                result = await body().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (QdrantFaults.TryClassify(
+                ex, cancellationToken, IntelligenceWellKnown.QdrantProviderName, operation, collectionName, out var error))
+            {
+                result = Result.Failure(QdrantFaults.Surface(ex, error, cancellationToken, logger, operation, collectionName));
+            }
+
+            return scope.Complete(result);
+        }
+        catch (Exception ex)
+        {
+            scope.Fail(ex);
+            throw;
+        }
+    }
+
     public static async Task<Result<T>> RunAsync<T>(
         QdrantTelemetry telemetry,
         ILogger logger,

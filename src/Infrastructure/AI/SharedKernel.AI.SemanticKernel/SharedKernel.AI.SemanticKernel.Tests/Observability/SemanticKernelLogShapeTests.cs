@@ -1,7 +1,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using SharedKernel.AI.SemanticKernel.Logging;
+using SharedKernel.AI.SemanticKernel.Diagnostics;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.AI.SemanticKernel.Tests.Observability;
@@ -40,5 +40,28 @@ public sealed class SemanticKernelLogShapeTests
         attributes.Single(a => a.EventId == 10307).Level.Should().Be(LogLevel.Warning);
         attributes.Single(a => a.EventId == 10305).Message.Should().Contain("{ErrorType}").And.Contain("{ErrorCode}");
         attributes.Single(a => a.EventId == 10307).Message.Should().Contain("{ErrorCode}");
+    }
+    [Fact]
+    public void EveryTemplate_IsOneSentenceEndingInAPeriod_WithPascalCasePlaceholders_AndNoBannedShape()
+    {
+        foreach (var attribute in Attributes())
+        {
+            var message = attribute.Message!;
+            var outsideQuotes = System.Text.RegularExpressions.Regex.Replace(message, "'[^']*'", "''");
+            message.Should().EndWith(".");
+            System.Text.RegularExpressions.Regex.IsMatch(outsideQuotes, @"\.\s").Should().BeFalse($"'{message}' is one sentence");
+            message.Should().NotContain("—").And.NotContain("=");
+            var placeholders = System.Text.RegularExpressions.Regex.Matches(message, @"\{(?<n>[A-Za-z_]\w*)").Select(m => m.Groups["n"].Value).ToList();
+            placeholders.Should().OnlyContain(p => char.IsUpper(p[0]));
+            placeholders.Should().NotContain(["Error", "Reason", "ErrorMessage", "Detail", "DurationMs", "CorrelationId", "TraceId", "TenantId"]);
+        }
+    }
+
+    [Fact]
+    public void LogMethods_ArePlainStaticPartials_NotExtensionMethods()
+    {
+        typeof(SemanticKernelLog).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.GetCustomAttributes(typeof(LoggerMessageAttribute), inherit: false).Length == 1)
+            .Should().OnlyContain(m => !m.IsDefined(typeof(System.Runtime.CompilerServices.ExtensionAttribute), false));
     }
 }

@@ -64,15 +64,15 @@ public sealed class SemanticKernelFaultMatrixTests
             var rows = new (int Status, string Code, ErrorType Type)[]
             {
                 (400, "intelligence.completion_failed", ErrorType.Unexpected),
-                (401, "intelligence.unauthorized", ErrorType.Unauthorized),
-                (403, "intelligence.unauthorized", ErrorType.Unauthorized),
+                (401, "intelligence.engine_unauthorized", ErrorType.Unexpected),
+                (403, "intelligence.engine_unauthorized", ErrorType.Unexpected),
                 (404, "intelligence.model_not_found", ErrorType.NotFound),
                 (408, "intelligence.timeout", ErrorType.Timeout),
                 (429, "intelligence.rate_limited", ErrorType.Unavailable),
                 (500, "intelligence.engine_fault", ErrorType.Unexpected),
-                (502, "intelligence.unreachable", ErrorType.Unavailable),
-                (503, "intelligence.unreachable", ErrorType.Unavailable),
-                (504, "intelligence.unreachable", ErrorType.Unavailable),
+                (502, "intelligence.unavailable", ErrorType.Unavailable),
+                (503, "intelligence.unavailable", ErrorType.Unavailable),
+                (504, "intelligence.unavailable", ErrorType.Unavailable),
             };
 
             var data = new TheoryData<string, int, string, ErrorType>();
@@ -154,7 +154,7 @@ public sealed class SemanticKernelFaultMatrixTests
 
         var error = await RunAsync(harness, operation);
 
-        error!.Code.Should().Be("intelligence.unreachable");
+        error!.Code.Should().Be("intelligence.unavailable");
         error.Type.Should().Be(ErrorType.Unavailable);
         error.Message.Should().NotContainAny(AllSentinels);
         harness.Handler.Count.Should().Be(1);
@@ -247,9 +247,9 @@ public sealed class SemanticKernelFaultMatrixTests
 
         var act = () => harness.Kernel.CompleteAsync(request);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<UnreachableException>();
         harness.Handler.Count.Should().Be(0);
-        harness.Spans.Should().ContainSingle().Which.ShouldBeRecordedException(typeof(InvalidOperationException));
+        harness.Spans.Should().ContainSingle().Which.ShouldBeRecordedException(typeof(UnreachableException));
     }
 
     [Fact]

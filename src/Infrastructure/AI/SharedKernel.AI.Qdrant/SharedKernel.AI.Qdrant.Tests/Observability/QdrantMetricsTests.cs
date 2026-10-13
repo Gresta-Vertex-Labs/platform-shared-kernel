@@ -51,9 +51,9 @@ public sealed class QdrantMetricsTests
         var duration = harness.Measurements(IntelligenceWellKnown.OperationDurationInstrumentName).Should().ContainSingle().Which;
         duration.Tags.Select(t => t.Key).Should().BeEquivalentTo(
         [
-            IntelligenceWellKnown.ProviderTagName,
-            IntelligenceWellKnown.OperationTagName,
-            IntelligenceWellKnown.CollectionTagName,
+            IntelligenceTagKeys.Provider,
+            IntelligenceTagKeys.Operation,
+            IntelligenceTagKeys.Collection,
             WellKnownTagKeys.Outcome,
             WellKnownTagKeys.ErrorType,
         ]);
@@ -103,7 +103,7 @@ public sealed class QdrantMetricsTests
         }
 
         recorder.Measurements
-            .Where(m => Tag(m, IntelligenceWellKnown.CollectionTagName) == "shared-meter-check")
+            .Where(m => Tag(m, IntelligenceTagKeys.Collection) == "shared-meter-check")
             .Should().HaveCount(2);
     }
 
