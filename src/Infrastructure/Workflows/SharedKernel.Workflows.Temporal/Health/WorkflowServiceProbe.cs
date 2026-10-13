@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Workflows.Temporal.Configuration;
-using SharedKernel.Workflows.Temporal.Logging;
+using SharedKernel.Workflows.Temporal.Diagnostics;
 using Temporalio.Api.WorkflowService.V1;
 using Temporalio.Client;
 using Temporalio.Extensions.Hosting;

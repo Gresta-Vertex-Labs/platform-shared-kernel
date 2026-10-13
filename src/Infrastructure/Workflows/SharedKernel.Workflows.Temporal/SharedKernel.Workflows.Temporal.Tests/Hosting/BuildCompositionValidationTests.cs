@@ -230,6 +230,6 @@ public sealed class BuildCompositionValidationTests
         Action act = () => builder.Build();
 
         act.Should().Throw<InvalidOperationException>()
-            .Which.Message.Should().Be("No task queue is configured. Call WithWorker(taskQueue) or AsClientOnly().");
+            .Which.Message.Should().StartWith("No task queue is configured.").And.Contain("WithWorker(taskQueue)").And.Contain("AsClientOnly()");
     }
 }

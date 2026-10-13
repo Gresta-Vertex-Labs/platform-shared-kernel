@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using SharedKernel.Workflows.Temporal.Logging;
+using SharedKernel.Workflows.Temporal.Diagnostics;
 using Temporalio.Client;
 
 namespace SharedKernel.Workflows.Temporal.Hosting;

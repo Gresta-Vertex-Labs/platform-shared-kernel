@@ -97,7 +97,7 @@ public sealed class WorkflowFailureMapperRpcStatusTests
     {
         Error mapped = WorkflowFailureMapper.ToError(new InvalidOperationException(FabricatedRpcText));
 
-        mapped.Code.Should().Be("workflow.unmapped_failure");
+        mapped.Code.Should().Be(WorkflowErrorCodes.UnmappedFailure);
         mapped.Type.Should().Be(ErrorType.Unexpected);
         mapped.Message.Should().NotContain("temporal.internal.example").And.NotContain("key-9");
     }

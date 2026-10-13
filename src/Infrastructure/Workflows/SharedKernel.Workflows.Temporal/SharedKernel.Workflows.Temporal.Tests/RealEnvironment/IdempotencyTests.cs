@@ -100,7 +100,7 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
         string firstRunId = await DescribedRunIdAsync(dispatcher, first.Value.WorkflowId);
 
         await first.Value.CancelAsync();
-        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: firstRunId, TenantScope.For(TestTenants.Idem));
+        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: firstRunId, TenantScope.For(TestTenants.Idem)).Value;
         await firstHandle.GetResultAsync();
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(
@@ -126,7 +126,7 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
         first.IsSuccess.Should().BeTrue();
 
         await first.Value.CancelAsync();
-        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Idem));
+        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Idem)).Value;
         await firstHandle.GetResultAsync();
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(

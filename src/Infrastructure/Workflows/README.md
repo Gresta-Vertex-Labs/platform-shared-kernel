@@ -127,7 +127,7 @@ dotnet run --project src/Infrastructure/Workflows/consumer-verify
 
 | Guarantee | How it is held |
 | --- | --- |
-| A workflow is only addressable within its tenant | `DispatchFailClosedTests`: every dispatch member given `TenantScope.Global` returns `workflow.tenant_scope_missing` with no I/O; `WorkflowIdFactoryTests` pins the tenant segment |
+| A workflow is only addressable within its tenant | `DispatchFailClosedTests`: every dispatch member given `TenantScope.Global` returns `workflow.tenant_scope_missing` with no I/O; `TenantOwnershipTests`: tenant B cannot attach to, describe or signal tenant A's execution (`workflow.not_found`, the answer a missing id gets); `WorkflowIdFactoryTests` pins the tenant segment |
 | A duplicate start never creates a second execution | `IdempotencyTests` (`RejectDuplicate` + `Fail` returns `workflow.already_started`, no second execution) |
 | Expected errors fail fast, transient ones retry | `WorkflowFailureMapperTests` |
 | `CommandActivity<>` never swallows a failed `Result` | `CommandActivitySwallowFailureTests` |

@@ -177,4 +177,15 @@ public sealed class DiRegistrationTests
             .SelectMany(logger => logger.Records)
             .Should().Contain(record => record.EventId.Id == 17012 && record.LogLevel == LogLevel.Warning);
     }
+
+    [Fact]
+    public void AClientOnlyComposition_OnABareServiceCollection_RegistersTheMeterFactoryTheMeterIsCreatedFrom()
+    {
+        IServiceCollection services = ClientOnlyServices();
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        provider.GetService<System.Diagnostics.Metrics.IMeterFactory>().Should().NotBeNull(
+            because: "the builder calls AddMetrics(), so WithMetrics() never needs the host to have added it");
+    }
 }

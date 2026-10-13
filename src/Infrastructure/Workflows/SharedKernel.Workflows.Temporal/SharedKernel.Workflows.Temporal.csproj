@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
     <!--
@@ -40,6 +41,7 @@
       disk rather than floated to nuget.org's newest (S-01).
     -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
@@ -63,5 +65,8 @@
       never to demonstrate a capability a real consumer is meant to have.
     -->
     <InternalsVisibleTo Include="consumer-verify" />
+    <!-- The Workflows.Testing double builds the same Error values through the internal WorkflowErrors factory, so its failures match the real dispatcher by code and ErrorType. -->
+    <InternalsVisibleTo Include="SharedKernel.Workflows.Testing" />
+    <InternalsVisibleTo Include="SharedKernel.Workflows.Testing.Tests" />
   </ItemGroup>
 </Project>

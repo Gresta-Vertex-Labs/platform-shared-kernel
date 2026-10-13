@@ -249,7 +249,7 @@ public sealed class WorkflowFailureMapperTests
         Error mapped = WorkflowFailureMapper.ToError(exception);
 
         mapped.Type.Should().Be(ErrorType.Unexpected);
-        mapped.Code.Should().Be("workflow.unmapped_failure");
+        mapped.Code.Should().Be(WorkflowErrorCodes.UnmappedFailure);
         mapped.Message.Should().NotContain(exception.Message);
     }
 }

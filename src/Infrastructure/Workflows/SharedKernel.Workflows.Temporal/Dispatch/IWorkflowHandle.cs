@@ -28,7 +28,7 @@ public interface IWorkflowHandle
     /// <remarks>
     /// A query is dispatched to a worker holding (or replaying) the execution — it is not free. A
     /// query against an execution whose worker fleet is down returns
-    /// <see cref="Errors.WorkflowErrors.QueryFailed"/> rather than hanging.
+    /// <see cref="Errors.WorkflowErrorCodes.QueryFailed"/> rather than hanging.
     /// </remarks>
     /// <typeparam name="TQueryResult">The query result type.</typeparam>
     /// <param name="queryName">The registered query name.</param>

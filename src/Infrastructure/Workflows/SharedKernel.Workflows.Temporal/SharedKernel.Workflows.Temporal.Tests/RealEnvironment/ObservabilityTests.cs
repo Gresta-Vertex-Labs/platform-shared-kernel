@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -203,10 +204,30 @@ public sealed class ObservabilityTests(TemporalTestFixture fixture) : IAsyncLife
         _metrics.Instruments.Should().NotBeEmpty(because: "WithMetrics() hands the meter to the SDK's CustomMetricMeter");
         _metrics.Instruments.Should().OnlyContain(i => i.MeterName == WorkflowWellKnown.MeterName);
         WorkflowWellKnown.MeterName.Should().Be("SharedKernel.Workflows");
-        WorkflowDiagnostics.Meter.Name.Should().Be(WorkflowWellKnown.MeterName);
-        WorkflowDiagnostics.Meter.Version.Should()
-            .NotBeNullOrWhiteSpace()
-            .And.Be(TelemetryVersion.Of(typeof(WorkflowDiagnostics).Assembly));
+    }
+
+    [Fact]
+    public async Task Metrics_TheMeterIsCreatedByTheHostMeterFactory_AndCarriesTheAssemblyVersion()
+    {
+        await RunEchoAsync($"obs-meter-{Guid.NewGuid():N}");
+        IMeterFactory factory = _provider.GetRequiredService<IMeterFactory>();
+        List<Meter> published = [];
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, _) =>
+            {
+                if (instrument.Meter.Name == WorkflowWellKnown.MeterName)
+                {
+                    published.Add(instrument.Meter);
+                }
+            },
+        };
+
+        listener.Start();
+
+        published.Should().NotBeEmpty(because: "WithMetrics() hands the SDK a meter that publishes its instruments");
+        published.Should().OnlyContain(meter => ReferenceEquals(meter.Scope, factory), because: "T1: the meter comes from IMeterFactory");
+        published.Should().OnlyContain(meter => meter.Version == TelemetryVersion.Of(typeof(WorkflowDiagnostics).Assembly));
     }
 
     [Fact]

@@ -52,7 +52,7 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task SignalAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result result = await handle.SignalAsync("advance", "x");
 
@@ -128,7 +128,7 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task QueryAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result<string> result = await handle.QueryAsync<string>("status");
 
@@ -204,7 +204,7 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task CancelAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result result = await handle.CancelAsync();
 
@@ -311,7 +311,7 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task TerminateAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result result = await handle.TerminateAsync("reason");
 
@@ -338,7 +338,7 @@ public sealed class InMemoryWorkflowHandleTests
     public void Status_NoBackingExecution_IsNull()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = (InMemoryWorkflowHandle)dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = (InMemoryWorkflowHandle)dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Assert.Null(handle.Status);
     }

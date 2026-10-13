@@ -12,7 +12,7 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Workflows.Temporal` | Adapter | The whole domain: dispatch surface, authoring bases, worker hosting, propagation interceptor, failure mapper, payload codec, readiness probe, `TemporalOptions`, `WorkflowErrors`, `WorkflowWellKnown`. References `Primitives`, `Execution`, `Configuration`, `Cryptography` and `SharedKernel.Application` (for `ISender` only); `Temporalio`, `.Extensions.Hosting`, `.Extensions.OpenTelemetry`, `.Extensions.DiagnosticSource` (all 1.17.0) |
+| `SharedKernel.Workflows.Temporal` | Adapter | The whole domain: dispatch surface, authoring bases, worker hosting, propagation interceptor, failure mapper, payload codec, readiness probe, `TemporalOptions`, `WorkflowErrors`, `WorkflowWellKnown`. References `Primitives`, `Execution`, `Core` (for `SharedKernelException`), `Configuration`, `Cryptography` and `SharedKernel.Application` (for `ISender` only); `Temporalio`, `.Extensions.Hosting`, `.Extensions.OpenTelemetry`, `.Extensions.DiagnosticSource` (all 1.17.0) |
 
 `consumer-verify/` composes the package through a real host. There is deliberately **no**
 `SharedKernel.Workflows.Abstractions` (see Decisions).
@@ -43,7 +43,7 @@ Lifetimes: `IWorkflowDispatcher` scoped; `IWorkflowIdFactory`, the Temporal clie
 activities scoped (one DI scope per activity task).
 
 **Dispatch** (`SharedKernel.Workflows.Temporal.Dispatch`) — `IWorkflowDispatcher` (`StartAsync` → `Result<IWorkflowHandle>`,
-`GetHandle`, `DescribeAsync`), `WorkflowStartOptions`, `IWorkflowHandle` / `IWorkflowHandle<TResult>`,
+`GetHandle` (a `Result<IWorkflowHandle>` / `Result<IWorkflowHandle<TResult>>`), `DescribeAsync`), `WorkflowStartOptions`, `IWorkflowHandle` / `IWorkflowHandle<TResult>`,
 `IWorkflowIdFactory` (`"{tenant}:{workflowType}:{businessKey}"`).
 
 **Authoring** (`SharedKernel.Workflows.Temporal.Authoring`) — `WorkflowBase` (replay-safe `Logger`, `UtcNow`, `NewId()`,
@@ -51,7 +51,7 @@ header-derived `TenantScope`/`CorrelationId`, `ExecuteAsync<TActivity, TArgs, TR
 (`Heartbeat`, `Fail(Error)`, `FailFrom(Result)`), `CommandActivity<TCommand>` / `<TCommand, TResult>` (sends through
 `ISender`, maps a failed `Result`), `ActivityDispatchOptions`.
 
-**Other** — `WorkflowErrors`, `WorkflowWellKnown` (`MeterName` = `"SharedKernel.Workflows"`, header keys, default
+**Other** — `WorkflowErrorCodes` (the public codes; `WorkflowErrors` is the internal factory), `WorkflowPayloadCodecException`, `WorkflowWellKnown` (`MeterName` = `"SharedKernel.Workflows"`, header keys, default
 timeouts/attempts; there is no `ActivitySourceName`), `WorkflowReadiness` (`ProbeName = "workflows"`), `ITemporalRawClientAccessor`
 (gated escape hatch).
 
@@ -72,7 +72,7 @@ timeouts/attempts; there is no `ActivitySourceName`), `WorkflowReadiness` (`Prob
 8. `WorkflowFailureMapper` maps by `ErrorType`: Validation, NotFound, Conflict, Unauthorized, Forbidden, BusinessRule → `ApplicationFailureException` **non-retryable** with `errorType = Error.Code`; Unexpected, Unavailable, Timeout → retryable. Flipping a row is a retry storm or a stall.
 9. An activity must never swallow a `Result.Failure` and return normally — every activity path ends in an explicit map (`Fail`/`FailFrom`, or `CommandActivity<>`'s built-in map).
 10. Never blanket-catch exceptions in a workflow or activity; an unmapped exception escaping an activity is retryable, as in Temporal.
-11. Dispatch-surface failures are `Result` values from `WorkflowErrors` — never inline `Error`s, never `Error.None`.
+11. Dispatch-surface failures are `Result` values from the internal `WorkflowErrors` factory, whose codes are the public `WorkflowErrorCodes` — never inline `Error`s, never `Error.None`, never a raw `"workflow.…"` literal.
 
 ### Tenancy and ids
 
@@ -82,7 +82,7 @@ timeouts/attempts; there is no `ActivitySourceName`), `WorkflowReadiness` (`Prob
 
 ### Composition
 
-15. `.AsClientOnly()` registers no `IHostedService`; combining it with `AddWorkflow`/`AddActivities`/`WithWorker` throws. `Build()` also throws for no task queue and no client-only, zero workflows and activities on a worker, a second `WithWorker`, a second `Build()`, or a missing `TargetHost`/`Namespace` key.
+15. `.AsClientOnly()` registers no `IHostedService`; combining it with `AddWorkflow`/`AddActivities`/`WithWorker` throws. `Build()` also throws for no task queue and no client-only, zero workflows and activities on a worker, a second `WithWorker`, a second `Build()`, a non-`[Workflow]` type (the SDK `ArgumentException` stays the inner exception) or a missing `TargetHost`/`Namespace` key. These are composition errors: `InvalidOperationException` with one sentence that names the remedy, never an `Error` code or a wrapped `Error.Message`.
 16. Registration is explicit (`AddWorkflow<T>`/`AddActivities<T>`) — no assembly scanning, no reflection (`Activator`, `MakeGenericType`, `dynamic`) in this package. One closed `CommandActivity<TCommand>` per command; never a reflective "dispatch any command" activity.
 17. This package does not register `IClock` or `ILogger<T>`; the host does. Types take `IOptions<TemporalOptions>`, never raw `TemporalOptions`.
 18. The obsolete `AddHostedTemporalWorker(taskQueue, buildId)` overload is used deliberately with a scoped `#pragma warning disable CS0618`; worker deployment versioning is not modelled.
@@ -99,9 +99,9 @@ timeouts/attempts; there is no `ActivitySourceName`), `WorkflowReadiness` (`Prob
 ### Observability
 
 25. The composed workflow id is `{tenant}:{type}:{businessKey}`, so no log, span tag or `Error.Message` of this package carries a workflow id, a hash of one, a tenant id, a business key, a terminate reason or exception text. Logs carry `WorkflowType`, `TaskQueue`, signal/query names, counts and `ErrorType`/`ErrorCode`; the exception goes only in the `Exception` parameter.
-26. The package owns no `ActivitySource`: client, workflow and activity spans are the Temporal `TracingInterceptor`'s (rule 5), configured with `TagNameWorkflowId = null` so no span carries the workflow id. It owns meter `SharedKernel.Workflows` (versioned through `TelemetryVersion.Of`), the sink `.WithMetrics()` gives the SDK; its instruments are named by the SDK and are exempt from the `sharedkernel.{capability}.*` naming convention.
+26. The package owns no `ActivitySource`: client, workflow and activity spans are the Temporal `TracingInterceptor`'s (rule 5), configured with `TagNameWorkflowId = null` so no span carries the workflow id. It owns meter `SharedKernel.Workflows`, created from the host's `IMeterFactory` (the builder calls `AddMetrics()`; versioned through `TelemetryVersion.Of`), the sink `.WithMetrics()` gives the SDK; its instruments are named by the SDK and are exempt from the `sharedkernel.{capability}.*` naming convention.
 27. `WorkflowFailureMapper.ToError` maps an `RpcException` by status, never wholesale: `NotFound` → `workflow.not_found` (`NotFound`), or `workflow.namespace_not_found` (`Unexpected`) when the status carries the `NamespaceNotFoundFailure` detail; `DeadlineExceeded` → `workflow.request_timed_out` (`Timeout`); `Unavailable`/`ResourceExhausted`/`Aborted` → `workflow.service_unavailable` (`Unavailable`); every other status → `workflow.rpc_failed` (`Unexpected`). A deployment defect (missing namespace, credential or contract fault) is never a caller-facing `NotFound`/`Unauthorized`/`Forbidden`. `workflow.timed_out` is `Timeout`. Every dispatch `Error.Message` is a fixed sentence: no id, host or RPC/exception text. The worker registers no interceptor of its own: the SDK chains the client interceptors that implement `IWorkerInterceptor` into it.
-28. *(planned, SK.17.WorkflowConformance)* Dispatch members share one failure style: every member, `GetHandle` included, returns a `Result` through one guard (`Global` → `TenantScopeMissing`, blank id → `InvalidWorkflowId`, an id whose tenant segment is not the caller's → `NotFound`). Only `TemporalException` is turned into a `Result`; anything else propagates. Codes are public `WorkflowErrorCodes`; `WorkflowErrors` is internal. A codec failure is the classified `WorkflowPayloadCodecException`; builder composition errors are `InvalidOperationException` with sentences that name the remedy and never wrap an `Error.Message`.
+28. Dispatch members share one failure style: every member, `GetHandle` included, returns a `Result` through one guard (`Global` → `TenantScopeMissing`, blank id → `InvalidWorkflowId`, an id whose tenant segment is not the caller's → `NotFound`, answered exactly like a missing execution so it is no existence oracle). Only a `TemporalException` and the SDK's failed-connect exception (`workflow.service_unavailable`) are turned into a `Result`; anything else, a cancellation included, propagates. A `TemporalException` the mapper has no row for is `workflow.unmapped_failure` with a fixed message, logged as 17015 with the exception; a mapped failure logs 17014. Codes are public `WorkflowErrorCodes`; `WorkflowErrors` is internal. A codec failure is the classified `WorkflowPayloadCodecException` (a `SharedKernelException`, code `workflow.payload_codec_failure`, fixed message, logged 17006 before the throw); an unreachable key provider or a wrong-length key is a configuration fault and propagates unclassified. Rule 10 is unchanged; the readiness probe's fault catches (17013) are deliberate.
 
 ## Decisions
 
@@ -119,37 +119,38 @@ timeouts/attempts; there is no `ActivitySourceName`), `WorkflowReadiness` (`Prob
 | The `TracingInterceptor` is built with `TagNameWorkflowId = null` | The SDK default tags every span with the workflow id, i.e. `{tenant}:{type}:{businessKey}` (proved by a test against the SDK default); the option's documented null disables the tag and the span sources are unchanged |
 | A namespace-not-found RPC failure stays `Unexpected` (`workflow.namespace_not_found`), unlike the audit's "missing → NotFound" | It is a deployment fault; a 404 to the end user would hide it. Other RPC statuses outside not-found, deadline and unavailability map to `Unexpected` `workflow.rpc_failed` for the same reason |
 | No hash or thumbprint of the workflow id in logs | Business keys are low-entropy, so a hash is brute-forceable; correlate through the ambient trace and correlation id |
-| *(planned, SK.17.WorkflowConformance)* Builder composition errors stay `InvalidOperationException`, only the payload codec failure is a classified exception | Composition errors fail at `Build()` and never reach an edge (E2); the codec failure surfaces at runtime and carries `workflow.payload_codec_failure` (E1) |
-| *(planned, SK.17.WorkflowConformance)* `ActivityBase`/`CommandActivity` keep the consumer's `ILogger` category | Activity logs belong to the consumer's own type; the kernel's heartbeat event is the only kernel message on it |
+| Builder composition errors stay `InvalidOperationException`, only the payload codec failure is a classified exception | Composition errors fail at `Build()` and never reach an edge (E2); the codec failure surfaces at runtime and carries `workflow.payload_codec_failure` (E1) |
+| `ActivityBase`/`CommandActivity` keep the consumer's `ILogger` category | Activity logs belong to the consumer's own type; the kernel's heartbeat event is the only kernel message on it |
+| `GetHandle` and `DescribeAsync` refuse another tenant's composed id as `workflow.not_found`, and `GetHandle` returns a `Result` | Rule 13 governed starts only, so a tenant could attach to a guessed id; the refusal is the answer a missing id gets (no existence oracle), and one guard serves every member |
+| The SDK's failed-connect exception is classified as `workflow.service_unavailable` by its fixed message prefix | It is a transport fault the status table cannot see, and the SDK offers no typed exception; E4 allows catching a classifiable transport fault and any other `InvalidOperationException` still propagates |
+| An encrypt-side `CryptographicException` is classified as a codec failure; a wrong-length key or an unreachable key provider propagates | The first is a runtime fault of the cipher, the others are configuration or outage faults of `01.Core`'s key provider that must not be hidden behind a codec code |
 
 ## Logging
 
-`LoggingEventIdRanges.Workflows` = **17000–17999**; single package, sub-block **17000–17099** (`Logging/WorkflowLog.cs`);
-17100+ unallocated.
+`LoggingEventIdRanges.Workflows` = **17000–17999**; single package, sub-block **17000–17099** (`Diagnostics/WorkflowLog.cs`,
+ids in `Diagnostics/WorkflowLoggingEventIds.cs` as const arithmetic over `LoggingEventIdRanges.Workflows`, no bare
+literal); 17016+ unallocated. Templates are one sentence ending in a period with quoted identifiers; the `Operation`
+placeholder takes a `WorkflowOperations` constant.
 
-| EventId | Event |
-| --- | --- |
-| 17000 | Workflow started |
-| 17001 | Tenant scope missing on dispatch |
-| 17002 / 17003 | Signal / query dispatched |
-| 17004 | Workflow terminated |
-| 17005 | Tenant header missing on a workflow |
-| 17006 | Payload codec failed |
-| 17007 / 17008 | Worker built / client-only composition built |
-| 17009 | Readiness probe degraded |
-| 17010 | Payload encryption configured |
-| 17011 | Activity heartbeat recorded |
-| 17012 | Raw client access enabled (Warning) |
-| 17013 | Readiness probe check faulted (Warning, `{Check}` = `reachability`/`namespace`, with the exception) |
+| EventId | Level | Event |
+| --- | --- | --- |
+| 17000 | Debug | Workflow started (`WorkflowType`) |
+| 17001 | Warning | Dispatch refused, no tenant scope (`Operation`) |
+| 17002 / 17003 | Debug | Signal / query dispatched (`SignalName` / `QueryName`) |
+| 17004 | Information | Workflow terminated, no compensation (no reason is logged) |
+| 17005 | Warning | Tenant header missing on a workflow (`WorkflowType`) |
+| 17006 | Error | Payload codec failed (`Operation` = `encode`/`decode`, with the `WorkflowPayloadCodecException`) |
+| 17007 / 17008 | Information | Worker built (hosted start) / client-only composition built (logged when the client is first built, since a client-only composition has no hosted service) |
+| 17009 | Warning | Readiness probe degraded |
+| 17010 | Information | Payload encryption configured |
+| 17011 | Debug | Activity heartbeat recorded |
+| 17012 | Warning | Raw client access enabled |
+| 17013 | Warning | Readiness probe check faulted (`{Check}` = `reachability`/`namespace`, with the exception) |
+| 17014 | Warning | A dispatch returned a failed result (`Operation`, `ErrorCode`, `ErrorType`) |
+| 17015 | Error | A dispatch hit a `TemporalException` with no mapping row (`Operation`, with the exception) |
 
-No template carries a workflow id (rule 25): 17000 and 17005 log the workflow type, 17002/17003 the signal/query name,
-17004 nothing. `WorkflowLoggingEventIds` (internal) seeds `Base` and 17013 as const arithmetic over
-`LoggingEventIdRanges.Workflows`.
-
-Planned: 17014 dispatch failed (Warning, `ErrorType`/`ErrorCode`) and 17015 dispatch faulted (Error, with the exception)
-in `SK.17.WorkflowConformance`, which also moves the remaining ids into `WorkflowLoggingEventIds` (values unchanged),
-wires 17002, 17003, 17004 and 17006 (declared but never called today) and rewrites the templates to the root
-convention.
+No template carries a workflow id (rule 25). Every id is emitted by `RealEnvironment/LogCatalogueTests`, which also pins
+each template, the sub-block and the L3 to L5 conventions.
 
 ## Cross-Domain Couplings
 
@@ -170,7 +171,11 @@ convention.
 - Fail-loud tests assert both the error and that **no I/O happened** (Global tenant scope, `AsClientOnly` + `AddWorkflow`, empty worker, bad registration).
 - Propagation tests assert tenant and correlation reach `WorkflowBase` and `ActivityBase`, including across a child-workflow hop, against `WellKnownHeaders` constants.
 - Codec tests assert no plaintext in captured history and decode after key rotation.
-- DI tests register `NullLogger<>` and a clock explicitly. Mocking (NSubstitute) is limited to `ISender` and the dispatch surface; workflow behaviour always runs against a real `WorkflowEnvironment`.
+- DI tests register `NullLogger<>` and a clock explicitly (the builder registers `AddMetrics()` itself). Mocking (NSubstitute) is limited to `ISender` and the dispatch surface; workflow behaviour always runs against a real `WorkflowEnvironment`.
+- Dispatch refusals run with a `null` client and id factory (`DispatchFailClosedTests`), so any call that reached I/O would throw; each refusal is paired with a companion proving a valid call does reach the client. Cross-tenant attach, describe and signal run against the shared environment (`TenantOwnershipTests`).
+- Catch narrowing (`DispatchCatchNarrowingTests`) uses a real client with an outbound `IClientInterceptor` that throws the exception under test: a non-Temporal exception and a cancellation propagate, an unmapped `TemporalException` becomes `workflow.unmapped_failure` and logs 17015, a mapped one logs 17014.
+- `LogCatalogueTests` is the log catalogue: every declared id emitted, templates pinned, `ShouldOnlyLogEventIdsInSubBlock(17000, 0)` and `ShouldFollowLogConvention`. `WorkflowErrorCodesTests` guards the public constants (format, a producer each, the `ToFailure`/`ToError` round trip). The meter is asserted to come from the host `IMeterFactory` through a `MeterListener` (`Meter.Scope`).
+- Replay coverage for the workflows: `ReplayDeterminismTests` (each sample workflow and base behaviour, with a non-deterministic variant proving the teeth) and the `Replay_…` case in `ObservabilityTests`; this phase changed no workflow code path.
 - Observability tests (`RealEnvironment/ObservabilityTests`) compose `.WithOpenTelemetry().WithMetrics()` on its own task queue and assert through `ActivityRecorder`/`MetricRecorder`/`InMemoryLoggerFactory`; span source names come from the SDK's `TracingInterceptor.ClientSource`/`WorkflowsSource`/`ActivitiesSource`, so an SDK rename fails the test. A control test proves the SDK default tags the workflow id. Parent linking across the three spans needs the OpenTelemetry SDK's propagator, which the test installs (`Sdk.SetDefaultTextMapPropagator`).
 - Namespace semantics need a real server: the time-skipping test server accepts any namespace (describe succeeds), so namespace-not-found and the probe's namespace check run against `LocalDevServerFixture` (`StartLocalAsync`). `RpcException` is constructible in a unit test with a serialized `Temporalio.Api.Common.V1.GrpcStatus` (`NamespaceNotFoundFailure` detail) as `rawStatus`.
 - Fakes: `SharedKernel.Workflows.Testing` — catalogue in `src/Testing/CLAUDE.md`.
@@ -180,7 +185,10 @@ convention.
 - `RpcException.StatusCode` members: `OK, Cancelled, Unknown, InvalidArgument, DeadlineExceeded, NotFound, AlreadyExists, PermissionDenied, ResourceExhausted, FailedPrecondition, Aborted, OutOfRange, Unimplemented, Internal, Unavailable, DataLoss, Unauthenticated`. `RpcException : TemporalException`, public ctor `(StatusCode, string message, byte[]? rawStatus)`, `GrpcStatus` is `Lazy<Temporalio.Api.Common.V1.GrpcStatus?>` (read `.Value`; `Details` are protobuf `Any`). A missing namespace and a missing workflow are both `NotFound`; only the `NamespaceNotFoundFailure` detail tells them apart.
 - `TracingInterceptor(TracingInterceptorOptions)`; `TracingInterceptorOptions.TagNameWorkflowId`/`TagNameRunId`/`TagNameActivityId`/`TagNameUpdateId` are settable and "if null, no tag is created". `TracingInterceptor.ClientSource`/`WorkflowsSource`/`ActivitiesSource`/`NexusSource` are public static sources, all prefixed `Temporalio.Extensions.OpenTelemetry.`. `TemporalWorkerOptions.Interceptors` documents that the worker automatically includes the client interceptors that implement `IWorkerInterceptor`.
 - The default OpenTelemetry API propagator injects nothing when the OpenTelemetry SDK is not initialised in the process, so the SDK spans are then unparented; a host with `AddServiceDefaults()` has the SDK.
-- A failed lazy connect throws `InvalidOperationException` (message carries the host), not `RpcException`.
+- A failed lazy connect throws a plain `InvalidOperationException` whose message starts `Connection failed:` and carries the host (inner exception none), not `RpcException` and not a `TemporalException`; `WorkflowConnectFailure` matches that fixed prefix and the dispatch sites map it to `workflow.service_unavailable`. The real-environment test against an unreachable port pins the prefix; an SDK rewording makes the exception propagate rather than misclassify.
+- `TemporalException` is abstract (protected constructors); a test subclasses it. `WorkflowDefinition.Create(Type)` throws `ArgumentException` for a type without `[Workflow]`. `ApplicationFailureException.Details.ElementAt<T>(0)` is a cast for a failure built in process and a conversion for one decoded from history; a detail of another shape raises `InvalidCastException`, `JsonException` or `InvalidOperationException`, the only three the mapper catches. `ClientOutboundInterceptor` overrides `StartWorkflowAsync<TWorkflow,TResult>`, `SignalWorkflowAsync`, `QueryWorkflowAsync<T>`, `CancelWorkflowAsync`, `TerminateWorkflowAsync`, `DescribeWorkflowAsync`.
+- `ISymmetricEncryptionService.EncryptAsync` throws for a wrong-length key (`InvalidOperationException`, a configuration fault) or an unreachable key provider; a `CryptographicException` is the one fault the codec classifies on encode. `DecryptAsync` returns a failed `Result` for bad input.
+- `Meter.Scope` is the `IMeterFactory` that created the meter (.NET 8+), which lets a test prove the meter came from the host factory.
 - `TerminatedFailureException`, `TimeoutFailureException` and `CanceledFailureException` have no public constructors, so a unit test cannot build them; the real-environment tests produce them.
 
 ## Known Limitations
@@ -189,7 +197,7 @@ convention.
 - No workflow Update, list/search, schedules or worker deployment versioning; reach them only through the gated raw accessor.
 - `Temporalio` is not AOT-safe: a native Rust core per RID (publish with an explicit RID) and reflection-based STJ in the default data converter (a trimmed consumer must supply a source-generated context).
 - One worker composition (one task queue) per builder.
-- Today `GetHandle` and `DescribeAsync` accept a composed workflow id without checking that its tenant segment is the caller's, so a tenant can attach to another tenant's id (rule 13 governs starts only). Closed by `SK.17.WorkflowConformance` (rule 28). Also open until then: the dispatcher catches every exception into a `Result`, `GetHandle` throws where the other members return `Result`, and the codec throws `InvalidOperationException(Error.Message)`.
-- A connect failure (unreachable host) reaches the dispatcher as an `InvalidOperationException`, which the mapper turns into `workflow.unmapped_failure` (`Unexpected`, fixed message); only a connected client answering `UNAVAILABLE` yields `workflow.service_unavailable`. Classifying the connect failure is open for `SK.17.WorkflowConformance`.
+- The tenant-ownership check reads the composed id's first segment, so a consumer-supplied `IWorkflowIdFactory` must keep the tenant as the first `:`-separated segment (its documented contract); an id composed otherwise is refused by `GetHandle` and `DescribeAsync` as `workflow.not_found`.
+- The failed-connect classification matches the SDK's fixed `Connection failed:` message prefix (the SDK throws no typed exception); a reworded SDK message makes that exception propagate unclassified until `WorkflowConnectFailure` is updated.
 - `ITemporalWorkflowsBuilder.WithWorker`'s tuning is applied with an unnamed `Configure<TemporalWorkerServiceOptions>`; whether the hosted worker's named options pick it up is unverified (an unnamed `IOptionsMonitor` read shows the tuning, the task-queue-named reads in the 1.17.0 hosting package could not be matched). Verify before relying on `WorkerTuningOptions`.
 - The first test run downloads the Temporal dev-server binary (network access needed once per SDK version).

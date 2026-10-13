@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -12,7 +13,6 @@ using SharedKernel.Workflows.Temporal.Codec;
 using SharedKernel.Workflows.Temporal.Configuration;
 using SharedKernel.Workflows.Temporal.Dispatch;
 using SharedKernel.Workflows.Temporal.Diagnostics;
-using SharedKernel.Workflows.Temporal.Errors;
 using SharedKernel.Workflows.Temporal.Health;
 using SharedKernel.Workflows.Temporal.Interception;
 using Temporalio.Client;
@@ -47,6 +47,8 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         _section = configuration.GetSection(TemporalOptions.SectionName);
 
         services.AddValidatedOptions<TemporalOptions>(_section);
+        // The SDK metrics sink is a Meter created from the host IMeterFactory; AddMetrics is a no-op when the host already added it.
+        services.AddMetrics();
         services.TryAddSingleton<IWorkflowIdFactory, WorkflowIdFactory>();
         services.TryAddScoped<IWorkflowDispatcher, WorkflowDispatcher>();
         services.AddReadinessProbe<WorkflowServiceProbe>();
@@ -79,8 +81,7 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         if (_taskQueue is not null)
         {
             throw new InvalidOperationException(
-                WorkflowErrors.InvalidWorkflowRegistration(
-                    $"WithWorker was already called for task queue '{_taskQueue}' — only one worker composition is supported per builder").Message);
+                $"WithWorker was already called for task queue '{_taskQueue}'. Only one worker composition is supported per builder, so remove the second WithWorker call.");
         }
 
         _taskQueue = taskQueue;
@@ -94,7 +95,7 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         if (_workflowTypes.Count > 0 || _activityTypes.Count > 0 || _taskQueue is not null)
         {
             throw new InvalidOperationException(
-                "AsClientOnly() cannot be combined with AddWorkflow<T>(), AddActivities<T>(), or WithWorker(...).");
+                "AsClientOnly() cannot be combined with AddWorkflow<T>(), AddActivities<T>() or WithWorker(...). Remove AsClientOnly() to host a worker, or remove the worker registrations for a dispatch-only service.");
         }
 
         _clientOnly = true;
@@ -134,7 +135,7 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
     {
         if (_built)
         {
-            throw new InvalidOperationException("Build() was already called on this builder.");
+            throw new InvalidOperationException("Build() was already called on this builder. Call Build() once per composition.");
         }
 
         _built = true;
@@ -147,7 +148,7 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         if (_clientOnly)
         {
             throw new InvalidOperationException(
-                "AddWorkflow<T>()/AddActivities<T>()/WithWorker(...) cannot be called after AsClientOnly().");
+                "AddWorkflow<T>(), AddActivities<T>() and WithWorker(...) cannot be called after AsClientOnly(). Remove AsClientOnly() to host a worker.");
         }
     }
 
@@ -162,14 +163,13 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         if (_taskQueue is null)
         {
             throw new InvalidOperationException(
-                "No task queue is configured. Call WithWorker(taskQueue) or AsClientOnly().");
+                "No task queue is configured. Call WithWorker(taskQueue) to host a worker, or AsClientOnly() for a dispatch-only service.");
         }
 
         if (_workflowTypes.Count == 0 && _activityTypes.Count == 0)
         {
             throw new InvalidOperationException(
-                WorkflowErrors.InvalidWorkflowRegistration(
-                    $"a worker was configured for task queue '{_taskQueue}' with zero workflows and zero activities").Message);
+                $"The worker for task queue '{_taskQueue}' has no workflows and no activities. Register them with AddWorkflow<T>() or AddActivities<T>(), or call AsClientOnly().");
         }
 
         ConfigureClient();
@@ -198,11 +198,11 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
                 WorkflowDefinition.Create(workflowType);
                 workerBuilder.AddWorkflow(workflowType);
             }
-            catch (Exception exception)
+            catch (ArgumentException exception)
             {
+                // The SDK's definition factory rejects a type without [Workflow] or with an invalid run method.
                 throw new InvalidOperationException(
-                    WorkflowErrors.InvalidWorkflowRegistration(
-                        $"'{workflowType.Name}' could not be registered as a workflow: {exception.Message}").Message,
+                    $"'{workflowType.Name}' could not be registered as a workflow. Mark the type with [Workflow] and give it a valid [WorkflowRun] method.",
                     exception);
             }
         }
@@ -228,7 +228,6 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         // AsClientOnly() registers no IHostedService (hard rule) — this composition-summary logger is
         // therefore only ever added on the worker-hosting path, never in BuildClientOnly().
         _services.AddSingleton(new TemporalWorkflowsCompositionSummary(
-            ClientOnly: false,
             TaskQueue: _taskQueue,
             WorkflowCount: _workflowTypes.Count,
             ActivityCount: _activityTypes.Count));
@@ -241,16 +240,17 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
     {
         string targetHost = _section[nameof(TemporalOptions.TargetHost)]
             ?? throw new InvalidOperationException(
-                WorkflowErrors.InvalidWorkflowRegistration($"{TemporalOptions.SectionName}:{nameof(TemporalOptions.TargetHost)} is not configured").Message);
+                $"The configuration key '{TemporalOptions.SectionName}:{nameof(TemporalOptions.TargetHost)}' is not set. Set it to the Temporal service address.");
         string @namespace = _section[nameof(TemporalOptions.Namespace)]
             ?? throw new InvalidOperationException(
-                WorkflowErrors.InvalidWorkflowRegistration($"{TemporalOptions.SectionName}:{nameof(TemporalOptions.Namespace)} is not configured").Message);
+                $"The configuration key '{TemporalOptions.SectionName}:{nameof(TemporalOptions.Namespace)}' is not set. Set it to the Temporal namespace.");
 
         OptionsBuilder<TemporalClientConnectOptions> connectBuilder = _services.AddTemporalClient(targetHost, @namespace);
 
         bool enableOpenTelemetry = _openTelemetry;
         bool enableMetrics = _metrics;
-        connectBuilder.Configure<IOptions<TemporalOptions>>((connectOptions, temporalOptions) =>
+        bool clientOnly = _clientOnly;
+        connectBuilder.Configure<IOptions<TemporalOptions>, IMeterFactory, ILogger<TemporalWorkflowsBuilder>>((connectOptions, temporalOptions, meterFactory, logger) =>
         {
             TemporalOptions opts = temporalOptions.Value;
             if (opts.Tls)
@@ -287,11 +287,17 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
                         Metrics = new MetricsOptions
                         {
                             CustomMetricMeter = new Temporalio.Extensions.DiagnosticSource.CustomMetricMeter(
-                                WorkflowDiagnostics.Meter,
+                                WorkflowDiagnostics.CreateMeter(meterFactory),
                                 disableWorkflowTracingEventListener: false),
                         },
                     },
                 });
+            }
+
+            if (clientOnly)
+            {
+                // A client-only composition hosts nothing to log at startup, so its summary is logged once, when the client is first built.
+                WorkflowLog.ClientOnlyBuilt(logger);
             }
         });
 

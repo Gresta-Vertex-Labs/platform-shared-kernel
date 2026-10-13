@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using Google.Protobuf.WellKnownTypes;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -70,7 +71,7 @@ internal static class WorkflowFailureMapper
         if (result.IsSuccess)
         {
             throw new InvalidOperationException(
-                "Cannot map a successful Result to a Temporal failure — check IsFailure before calling ToFailure.");
+                "A successful Result cannot be mapped to a Temporal failure; check IsFailure before calling ToFailure.");
         }
 
         return ToFailure(result.Error);
@@ -78,23 +79,58 @@ internal static class WorkflowFailureMapper
 
     /// <summary>
     /// Maps a Temporal exception (thrown from <c>GetResultAsync</c>, <c>SignalAsync</c>,
-    /// <c>QueryAsync</c>, or a client-level RPC call) back onto an <see cref="Error"/>.
+    /// <c>QueryAsync</c>, or a client-level RPC call) back onto an <see cref="Error"/>. A failure with no mapping
+    /// row becomes <see cref="WorkflowErrorCodes.UnmappedFailure"/> with a fixed message and no exception text.
     /// </summary>
-    public static Error ToError(Exception exception) => exception switch
+    public static Error ToError(Exception exception)
     {
-        WorkflowFailedException { InnerException: { } inner } => ToError(inner),
-        ActivityFailureException { InnerException: { } inner } => ToError(inner),
-        ChildWorkflowFailureException { InnerException: { } inner } => ToError(inner),
-        ApplicationFailureException applicationFailure => FromApplicationFailure(applicationFailure),
-        WorkflowAlreadyStartedException => WorkflowErrors.AlreadyStarted(),
-        CanceledFailureException => WorkflowErrors.Cancelled(),
-        TerminatedFailureException => WorkflowErrors.Terminated(),
-        TimeoutFailureException => WorkflowErrors.TimedOut(),
-        WorkflowQueryRejectedException rejected => WorkflowErrors.QueryFailed(
-            $"query rejected — workflow status is {rejected.WorkflowStatus}"),
-        RpcException rpcException => FromRpcException(rpcException),
-        _ => Error.Unexpected("workflow.unmapped_failure", "The workflow operation failed with an unmapped error."),
-    };
+        TryToError(exception, out Error error);
+        return error;
+    }
+
+    /// <summary>
+    /// Maps a Temporal exception onto an <see cref="Error"/> and reports whether a mapping row matched, so a caller
+    /// can log an unmapped failure with its exception.
+    /// </summary>
+    /// <param name="exception">The Temporal exception.</param>
+    /// <param name="error">The mapped error; <see cref="WorkflowErrorCodes.UnmappedFailure"/> when no row matched.</param>
+    /// <returns><see langword="true"/> when a mapping row matched.</returns>
+    public static bool TryToError(Exception exception, out Error error)
+    {
+        switch (exception)
+        {
+            case WorkflowFailedException or ActivityFailureException or ChildWorkflowFailureException
+                when exception.InnerException is { } inner:
+                return TryToError(inner, out error);
+            case ApplicationFailureException applicationFailure:
+                error = FromApplicationFailure(applicationFailure);
+                return true;
+            case WorkflowAlreadyStartedException:
+                error = WorkflowErrors.AlreadyStarted();
+                return true;
+            case CanceledFailureException:
+                error = WorkflowErrors.Cancelled();
+                return true;
+            case TerminatedFailureException:
+                error = WorkflowErrors.Terminated();
+                return true;
+            case TimeoutFailureException:
+                error = WorkflowErrors.TimedOut();
+                return true;
+            case WorkflowQueryRejectedException rejected:
+                error = WorkflowErrors.QueryFailed($"the query was rejected for a workflow with status {rejected.WorkflowStatus}.");
+                return true;
+            case InvalidOperationException when WorkflowConnectFailure.Is(exception):
+                error = WorkflowErrors.ServiceUnavailable();
+                return true;
+            case RpcException rpcException:
+                error = FromRpcException(rpcException);
+                return true;
+            default:
+                error = WorkflowErrors.UnmappedFailure();
+                return false;
+        }
+    }
 
     /// <summary>
     /// Maps an <see cref="RpcException"/> by its gRPC status — never wholesale. A deployment or contract fault
@@ -141,7 +177,7 @@ internal static class WorkflowFailureMapper
     private static Error FromApplicationFailure(ApplicationFailureException applicationFailure)
     {
         ErrorType originalType = ReadOriginalErrorType(applicationFailure);
-        string code = applicationFailure.ErrorType ?? "workflow.application_failure";
+        string code = applicationFailure.ErrorType ?? WorkflowErrorCodes.ApplicationFailure;
         string message = applicationFailure.Message;
         // The failure message is the activity's own Error.Message, set deliberately by the author (ToFailure);
         // it is carried as-is. Exception text from anywhere else never reaches this arm.
@@ -169,26 +205,27 @@ internal static class WorkflowFailureMapper
         type is ErrorType.Unexpected or ErrorType.Unavailable or ErrorType.Timeout;
 
     /// <summary>
-    /// Best-effort decode of the original <see cref="ErrorType"/> stashed by
-    /// <see cref="ToFailure(Error)"/> as the failure's first structured detail. Never throws — a
-    /// failure Temporal itself produced from an unmapped exception carries no such detail, and falls
-    /// back to a type inferred from <see cref="ApplicationFailureException.NonRetryable"/>.
+    /// Reads the original <see cref="ErrorType"/> stashed by <see cref="ToFailure(Error)"/> as the failure's first
+    /// structured detail. A failure Temporal itself produced from an unmapped exception carries no such detail, or one
+    /// of another shape, and falls back to a type inferred from <see cref="ApplicationFailureException.NonRetryable"/>.
     /// </summary>
+    /// <remarks>
+    /// The detail read is a cast for a failure built in this process and a conversion for one decoded from history, so
+    /// only the three exceptions those two paths raise for a detail of another shape are caught; any other exception
+    /// propagates.
+    /// </remarks>
     private static ErrorType ReadOriginalErrorType(ApplicationFailureException applicationFailure)
     {
-        try
+        if (applicationFailure.Details.Count > 0)
         {
-            if (applicationFailure.Details.Count > 0)
+            try
             {
                 return (ErrorType)applicationFailure.Details.ElementAt<int>(0);
             }
-        }
-        catch (Exception)
-        {
-            // The detail was not produced by ToFailure(Error) (e.g. a raw exception Temporal itself
-            // converted) or could not be decoded as the expected int — fall through to the
-            // NonRetryable-derived default below. This is a defensive decode of optional round-trip
-            // metadata, not a swallow of a business Result.Failure.
+            catch (Exception exception) when (exception is InvalidCastException or JsonException or InvalidOperationException)
+            {
+                // The first detail is not the int ToFailure(Error) stashes: fall through to the NonRetryable default.
+            }
         }
 
         return applicationFailure.NonRetryable ? ErrorType.Validation : ErrorType.Unexpected;

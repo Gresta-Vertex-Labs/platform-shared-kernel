@@ -5,7 +5,7 @@ using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Failures;
 using SharedKernel.Workflows.Temporal.Interception;
-using SharedKernel.Workflows.Temporal.Logging;
+using SharedKernel.Workflows.Temporal.Diagnostics;
 using Temporalio.Activities;
 using Temporalio.Exceptions;
 

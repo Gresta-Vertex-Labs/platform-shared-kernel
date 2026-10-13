@@ -171,14 +171,24 @@ public sealed class InMemoryWorkflowDispatcherTests
     public async Task DescribeAsync_SimulateFailure_ReturnsServiceUnavailable()
     {
         var dispatcher = new InMemoryWorkflowDispatcher { SimulateFailure = true };
-        Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
-        dispatcher.SimulateFailure = true;
         Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(
-            started.IsSuccess ? started.Value.WorkflowId : "irrelevant", TenantScope.For(WorkflowsTestFixtures.TenantA));
+            WorkflowsTestFixtures.OwnId(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsFailure);
+        Assert.Equal(WorkflowErrorCodes.ServiceUnavailable, result.Error.Code);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task DescribeAsync_BlankWorkflowId_ReturnsInvalidWorkflowId(string workflowId)
+    {
+        var dispatcher = new InMemoryWorkflowDispatcher();
+
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(workflowId, TenantScope.For(WorkflowsTestFixtures.TenantA));
+
+        Assert.Equal(WorkflowErrorCodes.InvalidWorkflowId, result.Error.Code);
     }
 
     // --- GetHandle (non-generic) ---
@@ -188,10 +198,11 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        IWorkflowHandle handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        Result<IWorkflowHandle> result = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
-        Assert.Equal("no-such-id", handle.WorkflowId);
-        Assert.Null(handle.RunId);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(WorkflowsTestFixtures.OwnId(), result.Value.WorkflowId);
+        Assert.Null(result.Value.RunId);
     }
 
     [Fact]
@@ -201,7 +212,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
             WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
-        IWorkflowHandle attached = dispatcher.GetHandle(started.Value.WorkflowId, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        IWorkflowHandle attached = dispatcher.GetHandle(started.Value.WorkflowId, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
         await attached.SignalAsync("go", "payload");
 
         // The originally-returned handle is a thin view over the SAME backing execution.
@@ -209,32 +220,49 @@ public sealed class InMemoryWorkflowDispatcherTests
         Assert.Contains(typedOriginal.SignalsReceived, s => s.SignalName == "go");
     }
 
-    [Fact]
-    public void GetHandle_NullWorkflowId_Throws()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetHandle_BlankWorkflowId_ReturnsInvalidWorkflowId(string? workflowId)
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        // ArgumentException.ThrowIfNullOrWhiteSpace throws the ArgumentNullException subclass for a
-        // null argument specifically (ArgumentException itself for empty/whitespace) -- both satisfy
-        // the real IWorkflowDispatcher.GetHandle's documented "throws ArgumentException" contract,
-        // since ArgumentNullException IS an ArgumentException.
-        Assert.Throws<ArgumentNullException>(() => dispatcher.GetHandle(null!, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)));
+        Result<IWorkflowHandle> result = dispatcher.GetHandle(workflowId!, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(WorkflowErrorCodes.InvalidWorkflowId, result.Error.Code);
+        Assert.Equal(ErrorType.Validation, result.Error.Type);
     }
 
     [Fact]
-    public void GetHandle_WhitespaceWorkflowId_Throws()
+    public void GetHandle_TenantScopeNone_ReturnsTenantScopeMissing()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle("   ", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)));
+        Result<IWorkflowHandle> result = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.Global);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(WorkflowErrorCodes.TenantScopeMissing, result.Error.Code);
+        Assert.Equal(ErrorType.Unauthorized, result.Error.Type);
     }
 
     [Fact]
-    public void GetHandle_TenantScopeNone_Throws()
+    public async Task GetHandle_ForAForeignTenantsId_ReturnsNotFound_LikeAMissingExecution()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
+        Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
-        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle("some-id", runId: null, TenantScope.Global));
+        Result<IWorkflowHandle> foreign = dispatcher.GetHandle(started.Value.WorkflowId, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantB));
+        Result<WorkflowExecutionDescription> describedForeign = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.For(WorkflowsTestFixtures.TenantB));
+        Result<WorkflowExecutionDescription> describedMissing = await dispatcher.DescribeAsync(WorkflowsTestFixtures.ForeignId("missing"), TenantScope.For(WorkflowsTestFixtures.TenantB));
+
+        Assert.True(foreign.IsFailure);
+        Assert.Equal(WorkflowErrorCodes.NotFound, foreign.Error.Code);
+        Assert.Equal(ErrorType.NotFound, foreign.Error.Type);
+        Assert.Equal(describedMissing.Error, describedForeign.Error);
+        Assert.Equal(foreign.Error, describedForeign.Error);
     }
 
     // --- GetHandle<TResult> ---
@@ -244,25 +272,42 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        IWorkflowHandle<string> handle = dispatcher.GetHandle<string>("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        Result<IWorkflowHandle<string>> result = dispatcher.GetHandle<string>(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
-        Assert.Equal("no-such-id", handle.WorkflowId);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(WorkflowsTestFixtures.OwnId(), result.Value.WorkflowId);
     }
 
     [Fact]
-    public void GetHandleOfT_TenantScopeNone_Throws()
+    public void GetHandleOfT_TenantScopeNone_ReturnsTenantScopeMissing()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle<string>("some-id", runId: null, TenantScope.Global));
+        Result<IWorkflowHandle<string>> result = dispatcher.GetHandle<string>(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.Global);
+
+        Assert.Equal(WorkflowErrorCodes.TenantScopeMissing, result.Error.Code);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public void GetHandleOfT_BlankWorkflowId_ReturnsInvalidWorkflowId(string? workflowId)
+    {
+        var dispatcher = new InMemoryWorkflowDispatcher();
+
+        Result<IWorkflowHandle<string>> result = dispatcher.GetHandle<string>(workflowId!, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+
+        Assert.Equal(WorkflowErrorCodes.InvalidWorkflowId, result.Error.Code);
     }
 
     [Fact]
-    public void GetHandleOfT_NullWorkflowId_Throws()
+    public void GetHandleOfT_ForAForeignTenantsId_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Assert.Throws<ArgumentNullException>(() => dispatcher.GetHandle<string>(null!, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)));
+        Result<IWorkflowHandle<string>> result = dispatcher.GetHandle<string>(WorkflowsTestFixtures.ForeignId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+
+        Assert.Equal(WorkflowErrorCodes.NotFound, result.Error.Code);
     }
 
     // --- DescribeAsync ---
@@ -303,7 +348,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync("no-such-id", TenantScope.For(WorkflowsTestFixtures.TenantA));
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(WorkflowsTestFixtures.OwnId(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.NotFound(), result.Error);
@@ -314,7 +359,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync("some-id", TenantScope.Global);
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(WorkflowsTestFixtures.OwnId(), TenantScope.Global);
 
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.TenantScopeMissing(), result.Error);

@@ -4,63 +4,50 @@ using SharedKernel.Primitives.Errors;
 namespace SharedKernel.Workflows.Temporal.Errors;
 
 /// <summary>
-/// The static <see cref="Error"/> factory catalog for <c>17.Workflows</c>. Every error surfaced by
-/// this domain's dispatch surface routes through one of these factories — never an ad hoc
-/// <see cref="Error"/> constructed inline.
+/// The internal <see cref="Error"/> factory for <c>17.Workflows</c>. Every error surfaced by this domain's dispatch
+/// surface routes through one of these factories, never an ad hoc <see cref="Error"/> constructed inline; callers
+/// compare <see cref="WorkflowErrorCodes"/>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <see cref="SharedKernel.Primitives.Errors.Error"/> exposes exactly six factories —
-/// <c>Unexpected</c>, <c>Validation</c>, <c>NotFound</c>, <c>Conflict</c>, <c>Unauthorized</c>,
-/// <c>BusinessRule</c> — plus the <c>None</c> sentinel. There is no <c>Error.Failure</c>.
-/// <see cref="Error.None"/> is never returned by any member below, and
-/// <see cref="Error.BusinessRule(string, string)"/> is used zero times in this catalog — nothing in
-/// a capability package is a domain rule.
-/// </para>
+/// Every message is a fixed sentence: it names no workflow id (a workflow id is <c>{tenant}:{type}:{businessKey}</c>),
+/// tenant, host or exception text.
 /// </remarks>
-public static class WorkflowErrors
+internal static class WorkflowErrors
 {
-    private const string Prefix = "workflow";
-
-    /// <summary>
-    /// The addressed workflow execution could not be located. The message names no id: a workflow id is
-    /// <c>{tenant}:{type}:{businessKey}</c>.
-    /// </summary>
+    /// <summary>The addressed workflow execution could not be located, or belongs to another tenant.</summary>
     public static Error NotFound() => Error.NotFound(
-        $"{Prefix}.not_found",
+        WorkflowErrorCodes.NotFound,
         "No workflow execution was found for the requested id.");
 
     /// <summary>
-    /// A workflow with the composed id is already running. Temporal enforces at most one running
-    /// execution per workflow id per namespace — this is a <see cref="ErrorType.Conflict"/>, not a
-    /// validation failure, because the caller's request is well-formed; it conflicts with existing
-    /// running state.
+    /// A workflow with the composed id is already running. Temporal enforces at most one running execution per
+    /// workflow id per namespace; this is a conflict with existing running state, not a validation failure.
     /// </summary>
     public static Error AlreadyStarted() => Error.Conflict(
-        $"{Prefix}.already_started",
+        WorkflowErrorCodes.AlreadyStarted,
         "A workflow execution with the composed id is already running.");
 
     /// <summary>The workflow execution completed in a cancelled state.</summary>
     public static Error Cancelled() => Error.Unexpected(
-        $"{Prefix}.cancelled",
+        WorkflowErrorCodes.Cancelled,
         "The workflow execution was cancelled.");
 
     /// <summary>The workflow execution was terminated by an operator, without compensation.</summary>
     public static Error Terminated() => Error.Unexpected(
-        $"{Prefix}.terminated",
+        WorkflowErrorCodes.Terminated,
         "The workflow execution was terminated.");
 
     /// <summary>The workflow execution timed out (execution, run, or task timeout).</summary>
     public static Error TimedOut() => Error.Timeout(
-        $"{Prefix}.timed_out",
+        WorkflowErrorCodes.TimedOut,
         "The workflow execution timed out.");
 
     /// <summary>
-    /// A dispatch RPC to the Temporal service ran out of time before the service answered. Distinct from
+    /// A dispatch request to the Temporal service ran out of time before the service answered. Distinct from
     /// <see cref="TimedOut"/>, which is a workflow execution that ran out of time.
     /// </summary>
     public static Error RequestTimedOut() => Error.Timeout(
-        $"{Prefix}.request_timed_out",
+        WorkflowErrorCodes.RequestTimedOut,
         "The request to the Temporal service timed out.");
 
     /// <summary>
@@ -68,70 +55,53 @@ public static class WorkflowErrors
     /// internal error, unsupported call), not a condition the caller can fix.
     /// </summary>
     public static Error RpcFailed() => Error.Unexpected(
-        $"{Prefix}.rpc_failed",
+        WorkflowErrorCodes.RpcFailed,
         "The request to the Temporal service failed.");
 
     /// <summary>
-    /// A query could not be dispatched or was rejected — e.g. the worker fleet holding the
-    /// execution is unavailable. Never surfaced by hanging; always an explicit failure.
+    /// A query could not be dispatched or was rejected, for example because the worker fleet holding the execution is
+    /// unavailable. Never surfaced by hanging; always an explicit failure.
     /// </summary>
+    /// <param name="reason">A short, fixed-vocabulary reason that names no id or exception text.</param>
     public static Error QueryFailed(string reason) => Error.Unexpected(
-        $"{Prefix}.query_failed",
+        WorkflowErrorCodes.QueryFailed,
         $"The workflow query failed: {reason}");
 
-    /// <summary>A signal could not be delivered to the addressed workflow execution.</summary>
-    public static Error SignalFailed(string reason) => Error.Unexpected(
-        $"{Prefix}.signal_failed",
-        $"The workflow signal failed: {reason}");
-
-    /// <summary>The Temporal service could not be reached (connectivity/RPC-level failure).</summary>
+    /// <summary>The Temporal service could not be reached or is overloaded.</summary>
     public static Error ServiceUnavailable() => Error.Unavailable(
-        $"{Prefix}.service_unavailable",
+        WorkflowErrorCodes.ServiceUnavailable,
         "The Temporal service is unavailable.");
 
     /// <summary>The configured Temporal namespace does not exist on the target cluster.</summary>
+    /// <param name="namespace">The namespace the server reported missing; configuration, not user data.</param>
     public static Error NamespaceNotFound(string @namespace) => Error.Unexpected(
-        $"{Prefix}.namespace_not_found",
+        WorkflowErrorCodes.NamespaceNotFound,
         $"Temporal namespace '{@namespace}' could not be addressed.");
 
     /// <summary>
-    /// A dispatch call was made with <see cref="TenantScope.Global"/> against a
-    /// tenant-scoped operation. A missing tenant scope on a cross-tenant-addressable keyspace is an
-    /// authorization failure, not a validation failure — presenting it as a 422 would frame a
-    /// would-be cross-tenant signal as a merely-unprocessable business request.
+    /// A dispatch call was made with <see cref="TenantScope.Global"/> against a tenant-scoped operation. A missing
+    /// tenant scope on a cross-tenant-addressable keyspace is an authorization failure, not a validation failure.
     /// </summary>
     public static Error TenantScopeMissing() => Error.Unauthorized(
-        $"{Prefix}.tenant_scope_missing",
+        WorkflowErrorCodes.TenantScopeMissing,
         "A tenant scope is required for this operation but none was supplied.");
 
-    /// <summary>The supplied business key or composed workflow id was invalid (null/empty/whitespace).</summary>
+    /// <summary>The supplied business key or composed workflow id was blank.</summary>
+    /// <param name="reason">A fixed sentence fragment naming which input was blank.</param>
     public static Error InvalidWorkflowId(string reason) => Error.Validation(
-        $"{Prefix}.invalid_workflow_id",
+        WorkflowErrorCodes.InvalidWorkflowId,
         $"The workflow id is invalid: {reason}");
 
-    /// <summary>No worker is configured to service the requested task queue.</summary>
-    public static Error WorkerNotConfigured(string taskQueue) => Error.Unexpected(
-        $"{Prefix}.worker_not_configured",
-        $"No worker is configured for task queue '{taskQueue}'.");
-
     /// <summary>
-    /// A non-deterministic operation was detected inside workflow code, or a replay failed because
-    /// history no longer matches the deployed workflow code.
+    /// The payload codec could not encode or decode a payload. The message carries no key id, ciphertext or
+    /// cryptographic detail.
     /// </summary>
-    public static Error DeterminismViolation(string reason) => Error.Unexpected(
-        $"{Prefix}.determinism_violation",
-        $"A determinism violation was detected: {reason}");
+    public static Error PayloadCodecFailure() => Error.Unexpected(
+        WorkflowErrorCodes.PayloadCodecFailure,
+        "The payload codec could not process a workflow payload.");
 
-    /// <summary>The payload codec could not encode or decode a workflow/activity payload.</summary>
-    public static Error PayloadCodecFailure(string reason) => Error.Unexpected(
-        $"{Prefix}.payload_codec_failure",
-        $"The payload codec failed: {reason}");
-
-    /// <summary>
-    /// A type passed to <c>ITemporalWorkflowsBuilder.AddWorkflow&lt;T&gt;()</c> is not
-    /// <c>[Workflow]</c>-attributed, or another worker registration is otherwise invalid.
-    /// </summary>
-    public static Error InvalidWorkflowRegistration(string reason) => Error.Validation(
-        $"{Prefix}.invalid_workflow_registration",
-        $"The workflow registration is invalid: {reason}");
+    /// <summary>A Temporal failure the mapper has no row for. The message is fixed and carries no exception text.</summary>
+    public static Error UnmappedFailure() => Error.Unexpected(
+        WorkflowErrorCodes.UnmappedFailure,
+        "The workflow operation failed with an unmapped error.");
 }

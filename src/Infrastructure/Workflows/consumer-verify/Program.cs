@@ -35,6 +35,8 @@ using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Codec;
 using SharedKernel.Workflows.Temporal.Dispatch;
+using SharedKernel.Workflows.Temporal.Errors;
+using SharedKernel.Workflows.Temporal.Exceptions;
 using SharedKernel.Workflows.Temporal.Health;
 using SharedKernel.Workflows.Temporal.Hosting;
 using Temporalio.Activities;
@@ -161,6 +163,29 @@ static async Task Surface2_WorkerHostingRoundTripAgainstWorkflowEnvironment()
         Verify(
             outcome.Value == "HELLO FROM CONSUMER-VERIFY",
             "the workflow result round-trips through the activity correctly");
+
+        // GetHandle and DescribeAsync return a Result through one guard: the caller's own id attaches, a foreign
+        // tenant's id is refused exactly like a missing execution, and a global scope is refused.
+        TenantScope owner = TenantScope.For(new TenantId(Guid.NewGuid()));
+        TenantScope stranger = TenantScope.For(new TenantId(Guid.NewGuid()));
+        Result<IWorkflowHandle<string>> owned = await dispatcher.StartAsync<ConsumerVerifyEchoWorkflow, string, string>(
+            "owned",
+            startOptions with { BusinessKey = Guid.NewGuid().ToString("n") },
+            owner);
+        Verify(owned.IsSuccess, "the owner starts a second workflow");
+        Result<IWorkflowHandle> attached = dispatcher.GetHandle(owned.Value.WorkflowId, runId: null, owner);
+        Verify(attached.IsSuccess, "GetHandle returns a Result and attaches to the owner's own id");
+        Result<IWorkflowHandle> foreign = dispatcher.GetHandle(owned.Value.WorkflowId, runId: null, stranger);
+        Verify(
+            foreign.IsFailure && foreign.Error.Code == WorkflowErrorCodes.NotFound,
+            "GetHandle refuses another tenant's id with workflow.not_found, compared through WorkflowErrorCodes");
+        Result<SharedKernel.Workflows.Temporal.Dispatch.WorkflowExecutionDescription> describedForeign = await dispatcher.DescribeAsync(owned.Value.WorkflowId, stranger);
+        Verify(
+            describedForeign.IsFailure && describedForeign.Error == foreign.Error,
+            "DescribeAsync answers a foreign id exactly as GetHandle does (no existence oracle)");
+        Verify(
+            dispatcher.GetHandle(owned.Value.WorkflowId, runId: null, TenantScope.Global).Error.Code == WorkflowErrorCodes.TenantScopeMissing,
+            "GetHandle refuses the global tenant scope with workflow.tenant_scope_missing");
     }
 
     await host.StopAsync();
@@ -269,6 +294,7 @@ static void Surface4_BuildTimeCompositionErrorsFailEagerly()
     }
 
     Verify(caught is not null, "a worker composed with zero workflows and zero activities fails at .Build()");
+Verify(        caught!.Message.Contains("AddWorkflow<T>()", StringComparison.Ordinal),        "the .Build()-time exception is a sentence that names the remedy");
     Verify(
         !builder.Services.Any(descriptor => descriptor.ServiceType == typeof(IHostedService)),
         "the failed composition never registered a hosted worker service — no IHost was ever reached that could poll an empty queue");
@@ -373,12 +399,12 @@ static async Task Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection()
     IPayloadCodec codecForADifferentWorkflowId = baseCodec.WithSerializationContext(
         new ISerializationContext.Workflow(environment.Client.Options.Namespace, "a-completely-different-workflow-id"));
 
-    InvalidOperationException? crossWorkflowIdFailure = null;
+    WorkflowPayloadCodecException? crossWorkflowIdFailure = null;
     try
     {
         await codecForADifferentWorkflowId.DecodeAsync([capturedInputPayload]);
     }
-    catch (InvalidOperationException ex)
+    catch (WorkflowPayloadCodecException ex)
     {
         crossWorkflowIdFailure = ex;
     }
@@ -387,6 +413,9 @@ static async Task Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection()
         crossWorkflowIdFailure is not null,
         "the SAME captured ciphertext genuinely fails to decode under a codec bound to a DIFFERENT WorkflowId — a captured payload can never be replayed against another execution");
 
+    Verify(
+        crossWorkflowIdFailure!.Error.Code == WorkflowErrorCodes.PayloadCodecFailure,
+        "the failure is the classified WorkflowPayloadCodecException carrying workflow.payload_codec_failure");
     foreach (IHostedService hostedService in hostedServices)
     {
         await hostedService.StopAsync(CancellationToken.None);

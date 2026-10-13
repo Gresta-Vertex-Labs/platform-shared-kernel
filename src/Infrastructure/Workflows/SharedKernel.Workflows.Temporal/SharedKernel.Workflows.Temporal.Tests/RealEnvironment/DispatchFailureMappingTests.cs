@@ -34,7 +34,7 @@ public sealed class DispatchFailureMappingTests(TemporalTestFixture fixture, Loc
             workflowId, TenantScope.For(TestTenants.Observability));
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("workflow.not_found");
+        result.Error.Code.Should().Be(WorkflowErrorCodes.NotFound);
         result.Error.Type.Should().Be(ErrorType.NotFound);
         result.Error.Message.Should().NotContain(workflowId).And.NotContain("missing-");
     }
@@ -45,16 +45,16 @@ public sealed class DispatchFailureMappingTests(TemporalTestFixture fixture, Loc
         using IServiceScope scope = fixture.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<IWorkflowDispatcher>();
         string workflowId = ComposedMissingId();
-        IWorkflowHandle handle = dispatcher.GetHandle(workflowId, runId: null, TenantScope.For(TestTenants.Observability));
+        IWorkflowHandle handle = dispatcher.GetHandle(workflowId, runId: null, TenantScope.For(TestTenants.Observability)).Value;
 
         Result signalled = await handle.SignalAsync("Signal", "go");
         Result<string> queried = await handle.QueryAsync<string>("state");
 
         signalled.IsFailure.Should().BeTrue();
-        signalled.Error.Code.Should().Be("workflow.not_found");
+        signalled.Error.Code.Should().Be(WorkflowErrorCodes.NotFound);
         signalled.Error.Type.Should().Be(ErrorType.NotFound);
         queried.IsFailure.Should().BeTrue();
-        queried.Error.Code.Should().Be("workflow.not_found");
+        queried.Error.Code.Should().Be(WorkflowErrorCodes.NotFound);
         queried.Error.Message.Should().NotContain(workflowId);
     }
 
@@ -72,16 +72,17 @@ public sealed class DispatchFailureMappingTests(TemporalTestFixture fixture, Loc
             ComposedMissingId(), TenantScope.For(TestTenants.Observability));
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("workflow.namespace_not_found");
+        result.Error.Code.Should().Be(WorkflowErrorCodes.NamespaceNotFound);
         result.Error.Type.Should().Be(ErrorType.Unexpected, because: "a deployment fault must not surface as the end user's 404");
     }
 
     [Fact]
-    public async Task DescribeAsync_ALazyClientThatCannotConnect_IsAnUnmappedFailure_WithAFixedMessageThatNamesNoHost()
+    public async Task DescribeAsync_ALazyClientThatCannotConnect_IsServiceUnavailable_WithAFixedMessageThatNamesNoHost()
     {
-        // The SDK reports a failed connect as InvalidOperationException, not as an RpcException with status Unavailable,
-        // so the status table cannot see it; it surfaces as the unmapped failure. Unavailable-by-status is covered in
-        // WorkflowFailureMapperRpcStatusTests.
+        // The SDK reports a failed connect as an InvalidOperationException whose message starts with "Connection failed:",
+        // not as an RpcException with status Unavailable, so the status table cannot see it; the dispatcher classifies it
+        // as a transport fault. If an SDK upgrade rewords the message this test fails, because the exception would then
+        // propagate unclassified.
         ITemporalClient client = TemporalClient.CreateLazy(
             new TemporalClientConnectOptions("127.0.0.1:1") { Namespace = "default" });
         WorkflowDispatcher dispatcher = DispatcherFor(client);
@@ -90,8 +91,28 @@ public sealed class DispatchFailureMappingTests(TemporalTestFixture fixture, Loc
             ComposedMissingId(), TenantScope.For(TestTenants.Observability));
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("workflow.unmapped_failure");
-        result.Error.Type.Should().Be(ErrorType.Unexpected);
-        result.Error.Message.Should().NotContain("127.0.0.1").And.NotContain("tcp");
+        result.Error.Code.Should().Be(WorkflowErrorCodes.ServiceUnavailable);
+        result.Error.Type.Should().Be(ErrorType.Unavailable);
+        result.Error.Message.Should().NotContain("127.0.0.1").And.NotContain("tcp").And.NotContain("tonic");
+    }
+
+    [Fact]
+    public async Task StartAsync_ALazyClientThatCannotConnect_IsServiceUnavailable()
+    {
+        ITemporalClient client = TemporalClient.CreateLazy(
+            new TemporalClientConnectOptions("127.0.0.1:1") { Namespace = "default" });
+        WorkflowDispatcher dispatcher = DispatcherFor(client);
+
+        Result<IWorkflowHandle> result = await dispatcher.StartAsync<EchoWorkflow>(
+            new WorkflowStartOptions
+            {
+                TaskQueue = "unreachable-queue",
+                BusinessKey = "unreachable-key",
+                IdReusePolicy = Temporalio.Api.Enums.V1.WorkflowIdReusePolicy.AllowDuplicate,
+                IdConflictPolicy = Temporalio.Api.Enums.V1.WorkflowIdConflictPolicy.Fail,
+            },
+            TenantScope.For(TestTenants.Observability));
+
+        result.Error.Code.Should().Be(WorkflowErrorCodes.ServiceUnavailable);
     }
 }

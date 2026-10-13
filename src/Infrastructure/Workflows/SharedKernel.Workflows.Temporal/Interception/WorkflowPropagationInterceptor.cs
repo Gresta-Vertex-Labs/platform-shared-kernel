@@ -2,7 +2,7 @@ using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Workflows.Temporal.Constants;
-using SharedKernel.Workflows.Temporal.Logging;
+using SharedKernel.Workflows.Temporal.Diagnostics;
 using Temporalio.Api.Common.V1;
 using Temporalio.Client.Interceptors;
 using Temporalio.Converters;

@@ -3,6 +3,8 @@ using Google.Protobuf;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Testing.Cryptography;
 using SharedKernel.Workflows.Temporal.Codec;
+using SharedKernel.Workflows.Temporal.Errors;
+using SharedKernel.Workflows.Temporal.Exceptions;
 using Temporalio.Api.Common.V1;
 using Temporalio.Converters;
 
@@ -41,7 +43,7 @@ public sealed class EncryptionPayloadCodecAadBindingTests
 
         Func<Task> act = () => codecForWfB.DecodeAsync(encoded);
 
-        await act.Should().ThrowAsync<InvalidOperationException>(
+        await act.Should().ThrowAsync<WorkflowPayloadCodecException>(
             because: "a ciphertext captured for one WorkflowId must never decode under a different WorkflowId's context");
     }
 
@@ -115,7 +117,7 @@ public sealed class EncryptionPayloadCodecAadBindingTests
         aad.Should().Equal(System.Text.Encoding.UTF8.GetBytes("order-42:workflow:business-key"));
     }
 
-    // T-20 — regression: the WorkflowFailureMapper/WorkflowErrors.PayloadCodecFailure mapping for a
+    // T-20 — regression: the WorkflowFailureMapper/WorkflowErrorCodes.PayloadCodecFailure code for a
     // decrypt failure is byte-for-byte unchanged by this migration, including under an AAD mismatch.
     [Fact]
     public async Task Decode_UnderAMismatchedWorkflowIdContext_SurfacesThePayloadCodecFailureMessageShape()
@@ -131,7 +133,7 @@ public sealed class EncryptionPayloadCodecAadBindingTests
 
         Func<Task> act = () => codecForWfB.DecodeAsync(encoded);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>())
-            .Which.Message.Should().StartWith("The payload codec failed:");
+        (await act.Should().ThrowAsync<WorkflowPayloadCodecException>())
+            .Which.Error.Code.Should().Be(WorkflowErrorCodes.PayloadCodecFailure);
     }
 }
