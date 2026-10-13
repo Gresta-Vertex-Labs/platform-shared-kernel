@@ -71,7 +71,7 @@ Pins SDK `10.0.300` with `rollForward: latestFeature` and `allowPrerelease: fals
   | `SKPKG003` | a packable project must have an adjacent `README.md` |
   | `SKPKG004` | a project named `*.Tests` must never be packable |
 
-- Imports `eng/SharedKernelTiers.targets`, then `tools/Governance/SelfAnalysis/SharedKernel.SelfAnalysis.props`, which runs `SharedKernel.Analyzers` and CA2200 over tiered production projects under `src/` (mode `report` or `enforce` from `ObservabilityMode.props`; report mode keeps the findings as warnings and writes a per-project SARIF file).
+- Imports `eng/SharedKernelTiers.targets`, then `tools/Governance/SelfAnalysis/SharedKernel.SelfAnalysis.props`, which runs `SharedKernel.Analyzers` and CA2200 over tiered production projects under `src/` (every rule is a build error, fixed in `kernel.globalconfig`).
 - `GetSharedKernelPackageIdentity`: returns a project's `PackageId` and tier when it packs; queried
   by `eng/PackageInventory.proj`.
 

@@ -1,18 +1,6 @@
 namespace SharedKernel.ArchitectureTests.Observability;
 
 /// <summary>
-/// How the observability assertions treat a finding: <see cref="Report"/> counts and prints it, <see cref="Enforce"/> fails on it.
-/// </summary>
-public enum ObservabilityMode
-{
-    /// <summary>Findings are listed per domain and rule; nothing fails. The committed default.</summary>
-    Report,
-
-    /// <summary>Any finding throws one aggregated exception.</summary>
-    Enforce,
-}
-
-/// <summary>
 /// One observability finding: which rule, in which domain, assembly and site, and why.
 /// </summary>
 /// <param name="Rule">The rule id, for example <c>eventid.shared-block</c> or <c>template.no-terminal-period</c>; <c>unscanned</c> for an assembly that could not be read.</param>

@@ -41,8 +41,8 @@
 
   <!--
     Kernel self-analysis (WO-087 / P-583): SharedKernel.Analyzers + CA2200 over the tiered production projects under src/.
-    Imported after the project body because it reads $(SharedKernelTier); it guards itself, and the mode (report/enforce)
-    is decided in tools/Governance/SelfAnalysis/ObservabilityMode.props.
+    Imported after the project body because it reads $(SharedKernelTier); it guards itself, and every rule is a build error
+    (tools/Governance/SelfAnalysis/kernel.globalconfig).
   -->
   <Import Project="$(MSBuildThisFileDirectory)tools/Governance/SelfAnalysis/SharedKernel.SelfAnalysis.props" />
 

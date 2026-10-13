@@ -6,7 +6,7 @@
     <IsPublishable>false</IsPublishable>
     <!-- The probe sits outside src/ and declares no tier, so it forces the self-analysis on. -->
     <SharedKernelSelfAnalysisForce>true</SharedKernelSelfAnalysisForce>
-    <!-- TreatWarningsAsErrors must not break report mode: that is what WarningsNotAsErrors is for. -->
+    <!-- The findings are errors regardless of TreatWarningsAsErrors (kernel.globalconfig); it stays on to prove the two compose. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>

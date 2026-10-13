@@ -146,17 +146,16 @@ public sealed class PackageEventIdBlockAssertionTests
     }
 
     [Fact]
-    public void Assert_EnforceThrowsOneAggregate_ReportDoesNot()
+    public void Assert_ThrowsOneAggregateOnAFinding()
     {
         var registry = ObservabilityFixture.Registry();
         var target = ObservabilityFixture.Target("Fixture.EventIds.Enforce", ObservabilityFixture.StorageFolder, LogSource("Fixture.EventIds.Enforce", 8100, 8300));
-        var writer = new StringWriter();
 
-        var report = PackageEventIdBlockAssertion.Assert([target], registry, NoDeclarations(registry), ObservabilityMode.Report, writer);
+        var report = PackageEventIdBlockAssertion.Find([target], registry, NoDeclarations(registry));
         report.Findings.Should().NotBeEmpty();
-        writer.ToString().Should().Contain("08.Storage").And.Contain("eventid.block-span");
+        report.Render().Should().Contain("08.Storage").And.Contain("eventid.block-span");
 
-        var enforce = () => PackageEventIdBlockAssertion.Assert([target], registry, NoDeclarations(registry), ObservabilityMode.Enforce, new StringWriter());
+        var enforce = () => PackageEventIdBlockAssertion.Assert([target], registry, NoDeclarations(registry), new StringWriter());
         enforce.Should().Throw<InvalidOperationException>().WithMessage("*eventid.block-span*");
     }
 

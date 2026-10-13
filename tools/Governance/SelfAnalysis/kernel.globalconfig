@@ -1,5 +1,5 @@
-# Kernel self-analysis severities, enforce mode (see SharedKernel.SelfAnalysis.props).
-# Every SharedKernel.Analyzers id plus CA2200. SK0034 is advisory by decision: suggestion in both modes.
+# Kernel self-analysis severities (see SharedKernel.SelfAnalysis.props).
+# Every SharedKernel.Analyzers id plus CA2200, fixed as error. SK0034 is advisory by decision: suggestion.
 # SK0044 ships disabled by default; it is enabled here for the kernel only.
 is_global = true
 

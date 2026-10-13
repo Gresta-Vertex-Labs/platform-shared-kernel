@@ -123,6 +123,7 @@ Each package's ids are const arithmetic from `LoggingEventIdRanges.Communication
 
 ## Known Limitations
 
+- `GrpcCalls.cs` (`SharedKernel.Communication.Testing`, `GrpcCalls.Failure`) carries an in-source `SK0036` suppression: the double plays a service outside the platform, whose bare status no platform interceptor enriched, so it constructs a raw `RpcException` on purpose.
 - `HttpStatusErrorTypeMap` and the gRPC status map are hand-kept mirrors of `14.Presentation`'s maps; a change there must be mirrored here.
 - A gRPC channel refuses the composite `https+http` scheme, so gRPC clients cannot use Aspire's scheme-fallback addresses.
 - The reflection-based `Result` verb overloads carry `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`; AOT callers pass a `JsonTypeInfo`.

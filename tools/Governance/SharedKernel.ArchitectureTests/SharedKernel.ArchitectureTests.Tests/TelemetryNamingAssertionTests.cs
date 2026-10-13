@@ -212,11 +212,11 @@ public sealed class TelemetryNamingAssertionTests
             }
             """);
 
-        TelemetryNamingAssertion.Assert([violating], registry, Options, ObservabilityMode.Report, new StringWriter()).Findings.Should().NotBeEmpty();
-        var enforce = () => TelemetryNamingAssertion.Assert([violating], registry, Options, ObservabilityMode.Enforce, new StringWriter());
+        TelemetryNamingAssertion.Find([violating], registry, Options).Findings.Should().NotBeEmpty();
+        var enforce = () => TelemetryNamingAssertion.Assert([violating], registry, Options, new StringWriter());
         enforce.Should().Throw<InvalidOperationException>().WithMessage("*telemetry.unit-missing*");
 
-        var report = TelemetryNamingAssertion.Assert([unverifiableOnly], registry, Options, ObservabilityMode.Enforce, new StringWriter());
+        var report = TelemetryNamingAssertion.Assert([unverifiableOnly], registry, Options, new StringWriter());
         report.Unverifiable.Should().NotBeEmpty();
     }
 

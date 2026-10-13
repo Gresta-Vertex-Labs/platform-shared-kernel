@@ -1,7 +1,8 @@
 <Project>
 
   <!--
-    Kernel self-analysis: runs the SharedKernel.Analyzers rules (and CA2200) over the kernel's own production code under src/.
+    Kernel self-analysis: runs the SharedKernel.Analyzers rules (and CA2200) over the kernel's own production code under src/,
+    with every rule fixed as a build error (kernel.globalconfig; SK0034 stays a suggestion).
 
     Import it ONCE from the root Directory.Build.targets (after the project body, because the tier is read here):
 
@@ -18,14 +19,9 @@
       - references SharedKernel.Analyzers as an analyzer-only project reference (ReferenceOutputAssembly="false", the
         same edge shape as Presentation.WebApi -> WebApi.Generators; the tier check exempts it and it targets a Tooling
         project). PrivateAssets="all" keeps it out of every packed .nuspec,
-      - adds kernel-<mode>.globalconfig, which fixes the severity of every SK id and CA2200,
-      - in report mode lists those ids in WarningsNotAsErrors, so a project with TreatWarningsAsErrors stays green, and writes
-        a per-project SARIF file (sharedkernel-observability.sarif, next to the assembly) that the platform report sums per domain.
-
-    The mode comes from ObservabilityMode.props; flipping to failing is the one edit there.
+      - adds kernel.globalconfig, which fixes the severity of every SK id and CA2200.
+    A project without TreatWarningsAsErrors fails on these errors regardless; nothing is listed in WarningsNotAsErrors.
   -->
-  <Import Project="$(MSBuildThisFileDirectory)ObservabilityMode.props" />
-
   <PropertyGroup>
     <_SkSelfAnalysisSrcRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', 'src'))</_SkSelfAnalysisSrcRoot>
     <_SkSelfAnalysisProjectDirectory>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)'))</_SkSelfAnalysisProjectDirectory>
@@ -38,18 +34,6 @@
                  and '$(SharedKernelTier)' != '' and '$(SharedKernelTier)' != 'Tooling'
                  and '$(IsTestProject)' != 'true' and '$(OutputType)' != 'Exe'">true</SharedKernelSelfAnalysis>
     <SharedKernelSelfAnalysis Condition="'$(SharedKernelSelfAnalysisForce)' == 'true'">true</SharedKernelSelfAnalysis>
-  </PropertyGroup>
-
-  <!--
-    Every id SharedKernel.Analyzers reports, plus CA2200. The list equals the analyzer assembly's descriptors: a test
-    (ObservabilitySwitchTests) compares the two, so a new rule cannot be forgotten here or in the two globalconfigs.
-  -->
-  <PropertyGroup Condition="'$(SharedKernelSelfAnalysis)' == 'true'">
-    <SharedKernelObservabilityRuleIds>SK0001;SK0002;SK0003;SK0004;SK0005;SK0006;SK0007;SK0008;SK0009;SK0010;SK0011;SK0013;SK0014;SK0016;SK0017;SK0018;SK0020;SK0021;SK0022;SK0023;SK0024;SK0025;SK0026;SK0027;SK0028;SK0029;SK0030;SK0031;SK0032;SK0033;SK0034;SK0035;SK0036;SK0037;SK0038;SK0039;SK0040;SK0041;SK0042;SK0043;SK0044;SK0201;SK0202;SK0703;SK0704;SK0705;SK0708;CA2200</SharedKernelObservabilityRuleIds>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(SharedKernelSelfAnalysis)' == 'true' and '$(SharedKernelObservabilityMode)' == 'report'">
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);$(SharedKernelObservabilityRuleIds)</WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(SharedKernelSelfAnalysis)' == 'true'">
@@ -66,26 +50,10 @@
   -->
   <Target Name="SharedKernelSelfAnalysisSeverities"
           BeforeTargets="CoreCompile"
-          Condition="'$(SharedKernelSelfAnalysis)' == 'true' and ('$(SharedKernelObservabilityMode)' == 'report' or '$(SharedKernelObservabilityMode)' == 'enforce')">
+          Condition="'$(SharedKernelSelfAnalysis)' == 'true'">
     <ItemGroup>
-      <EditorConfigFiles Include="$(MSBuildThisFileDirectory)kernel-$(SharedKernelObservabilityMode).globalconfig" />
+      <EditorConfigFiles Include="$(MSBuildThisFileDirectory)kernel.globalconfig" />
     </ItemGroup>
-  </Target>
-
-  <Target Name="SharedKernelSelfAnalysisValidateMode"
-          BeforeTargets="CoreCompile"
-          Condition="'$(SharedKernelSelfAnalysis)' == 'true' and '$(SharedKernelObservabilityMode)' != 'report' and '$(SharedKernelObservabilityMode)' != 'enforce'">
-    <Error Code="SKOBS001"
-           Text="SharedKernelObservabilityMode is '$(SharedKernelObservabilityMode)'; it must be 'report' or 'enforce' (tools/Governance/SelfAnalysis/ObservabilityMode.props)." />
-  </Target>
-
-  <!-- ErrorLog is read when the compiler task runs, so it is set here, where OutDir is resolved. -->
-  <Target Name="SharedKernelSelfAnalysisErrorLog"
-          BeforeTargets="CoreCompile"
-          Condition="'$(SharedKernelSelfAnalysis)' == 'true' and '$(SharedKernelObservabilityMode)' == 'report'">
-    <PropertyGroup>
-      <ErrorLog Condition="'$(ErrorLog)' == ''">$(OutDir)sharedkernel-observability.sarif,version=2.1</ErrorLog>
-    </PropertyGroup>
   </Target>
 
 </Project>

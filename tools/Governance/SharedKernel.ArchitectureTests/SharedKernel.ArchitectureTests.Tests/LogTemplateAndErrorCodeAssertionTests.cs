@@ -85,14 +85,14 @@ public sealed class LogTemplateAndErrorCodeAssertionTests
     }
 
     [Fact]
-    public void Template_Assert_EnforceThrows_ReportDoesNot()
+    public void Template_Assert_ThrowsOnAFinding()
     {
         var target = ObservabilityFixture.Target("Fixture.Templates.Enforce", ObservabilityFixture.StorageFolder,
             "using Microsoft.Extensions.Logging;\nnamespace Fixture.Templates.Enforce { public static class Log { [LoggerMessage(8000, LogLevel.Warning, \"No period\")] public static void A(ILogger l) { } } }");
         var registry = ObservabilityFixture.Registry();
 
-        LogTemplateAssertion.Assert([target], registry, TemplateOptions, ObservabilityMode.Report, new StringWriter()).Findings.Should().NotBeEmpty();
-        var enforce = () => LogTemplateAssertion.Assert([target], registry, TemplateOptions, ObservabilityMode.Enforce, new StringWriter());
+        LogTemplateAssertion.Find([target], registry, TemplateOptions).Findings.Should().NotBeEmpty();
+        var enforce = () => LogTemplateAssertion.Assert([target], registry, TemplateOptions, new StringWriter());
         enforce.Should().Throw<InvalidOperationException>().WithMessage("*template.no-terminal-period*");
     }
 
@@ -212,8 +212,8 @@ public sealed class LogTemplateAndErrorCodeAssertionTests
             "namespace Fixture.Codes.Enforce { public static class XErrorCodes { public const string Bad = \"Bad\"; } }");
         var registry = ObservabilityFixture.Registry();
 
-        ErrorCodeFormatAssertion.Assert([target], registry, CodeOptions(), ObservabilityMode.Report, new StringWriter()).Findings.Should().ContainSingle();
-        var enforce = () => ErrorCodeFormatAssertion.Assert([target], registry, CodeOptions(), ObservabilityMode.Enforce, new StringWriter());
+        ErrorCodeFormatAssertion.Find([target], registry, CodeOptions()).Findings.Should().ContainSingle();
+        var enforce = () => ErrorCodeFormatAssertion.Assert([target], registry, CodeOptions(), new StringWriter());
         enforce.Should().Throw<InvalidOperationException>().WithMessage("*errorcode.format*");
     }
 

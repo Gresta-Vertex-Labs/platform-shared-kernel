@@ -68,23 +68,21 @@ public static partial class LogTemplateAssertion
         return new ObservabilityReport(findings, []);
     }
 
-    /// <summary>Finds the violations and applies the mode: a table in report mode, an aggregated exception in enforce mode.</summary>
+    /// <summary>Finds the violations and throws one aggregated exception when there is any.</summary>
     /// <param name="targets">The assemblies to inspect.</param>
     /// <param name="registry">The domain registry.</param>
     /// <param name="options">The forbidden placeholder names.</param>
-    /// <param name="mode">Whether findings fail.</param>
     /// <param name="output">Where the table goes; the console when <see langword="null"/>.</param>
     /// <returns>The report.</returns>
-    /// <exception cref="InvalidOperationException">Enforce mode and at least one finding.</exception>
+    /// <exception cref="InvalidOperationException">At least one finding.</exception>
     public static ObservabilityReport Assert(
         IReadOnlyCollection<ScanTarget> targets,
         DomainRegistry registry,
         LogTemplateOptions options,
-        ObservabilityMode mode,
         TextWriter? output = null)
     {
         var report = Find(targets, registry, options);
-        ObservabilityEnforcement.Apply(report, mode, output);
+        ObservabilityEnforcement.Apply(report, output);
         return report;
     }
 

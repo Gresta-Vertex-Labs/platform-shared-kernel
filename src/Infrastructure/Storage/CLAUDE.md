@@ -109,7 +109,7 @@ API detail, option keys and defaults: the `SharedKernel.Storage.Abstractions`, `
 | Caller-driven outcomes (`not_found`, `already_exists`, `precondition_failed`, `invalid_range`, `checksum_mismatch`) log at Debug | Warning would log every missing-object read; root L6 says Warning (recorded deviation, open for arch-lead: one attribute and one test to switch) |
 | `NotSupported` stays `ErrorType.Unexpected` | A caller choosing a feature the configured store lacks is a usage defect, not a retryable condition |
 | The telemetry singleton is registered by the S3 package (`AddS3Compatible`), not by `AddSharedKernelStorage()` | `AddMetrics()` lives in `Microsoft.Extensions.Diagnostics`, which an Abstractions package may not reference (SKTIER003); only the provider creates instruments, and a second provider registers its own |
-| `StorageValidation` and the in-memory double return `Error?` (null = valid) and carry an in-source `SK0004` suppression | The helpers are public API chained with `??` and `is Error`; an `Error.None` sentinel would break every consumer (recorded deviation) |
+| `StorageValidation` and the in-memory double (`InMemoryFileStorage.cs`, `CheckCondition`) return `Error?` (null = valid) and carry an in-source `SK0004` suppression | The helpers are public API chained with `??` and `is Error`; an `Error.None` sentinel would break every consumer (recorded deviation) |
 | `WrongRegion` (8105) carries the exception | An Error-level record without one breaks root L4; both call sites have the redirect exception |
 
 ## Logging

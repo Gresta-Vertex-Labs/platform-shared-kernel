@@ -16,7 +16,7 @@
 | `ArchitectureRuleBase.AssertRule`/`AssertRules` | A violation fails with every offending type named |
 | Caller-supplied anchor types, validated | Rules work against your own markers and never pass vacuously on a wrong anchor |
 | IL assertion helpers (`SecureDefaultsAssertion`, `PipelineOrderAssertion`, …) | A secure default or a registration order cannot drift silently |
-| Observability assertions that report before they fail (EventId ownership, telemetry names, log templates, error codes) | You adopt a platform-wide standard with a per-domain count first, then switch to enforcing |
+| Observability assertions (EventId ownership, telemetry names, log templates, error codes, suppression audit) | You adopt a platform-wide standard that fails with a per-domain breakdown |
 | Public `ICustomRule` predicates | You compose your own rules from the same building blocks |
 | No test runner, no assertion library | Use xUnit, NUnit or MSTest, and any assertion style |
 
@@ -208,12 +208,11 @@ fails with `SKTIER*` on a forbidden edge. The rules below cover only what the ti
 | `SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton` | A registration is actually present |
 | `SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType` | A guard really throws rather than logging and continuing |
 
-### Observability assertions (report mode)
+### Observability assertions
 
-Four assertions read built assemblies with Mono.Cecil (never loaded, nested types included) and **return findings instead of
-throwing**; `ObservabilityEnforcement.Apply` decides whether a finding fails. Each assertion has `Find(...)` (returns an
-`ObservabilityReport`) and `Assert(..., ObservabilityMode, TextWriter?)` (finds, prints, and throws one aggregated
-`InvalidOperationException` only in `Enforce` mode). Everything an assertion must know comes from the caller: the assemblies
+Four assertions read built assemblies with Mono.Cecil (never loaded, nested types included). Each has `Find(...)` (returns an
+`ObservabilityReport`) and `Assert(..., TextWriter?)` (finds, prints the per-domain table, and throws one aggregated
+`InvalidOperationException` when there is a finding). Everything an assertion must know comes from the caller: the assemblies
 (`ScanTarget`), the domain registry parsed from your root `CLAUDE.md` domain table (`DomainRegistry.Parse`), and its options.
 
 | Assertion | Rules (finding ids) | Caller supplies |
@@ -223,15 +222,14 @@ throwing**; `ObservabilityEnforcement.Apply` decides whether a finding fails. Ea
 | `LogTemplateAssertion` | `template.no-terminal-period`, `template.multiple-sentences`, `template.em-dash`, `template.key-value-parenthetical`, `template.free-text-placeholder` | `LogTemplateOptions` (the free-text placeholder names to forbid) |
 | `ErrorCodeFormatAssertion` | `errorcode.format`: lowercase `{domain}.{snake_reason}` for every `public const` of a `*ErrorCodes` type and every literal code given to `Error` | `ErrorCodeFormatOptions` (protocol-mirror prefixes such as `grpc`/`http`, exempt values with reasons) |
 
-A missing assembly file is an `unscanned` finding, never a silent skip. `ObservabilitySarifReader.Read` adds the analyzer findings of
-per-project SARIF files when you have them.
+A missing assembly file is an `unscanned` finding, never a silent skip.
 
-**Reading the table.** `ObservabilityReport.Render()` prints one row per domain and rule with its count; `RenderSites()` lists every
-site. Run the assertions in `Report` mode first: a conformance phase drives its domain's rows to zero, then you switch to `Enforce`.
+**Reading a failure.** `ObservabilityReport.Render()` prints one row per domain and rule with its count; `RenderSites()` lists every
+site as `[rule] assembly site: detail`. Fix the code at the site; a finding is never silenced by weakening the rule.
 
-**The mode.** `ObservabilityEnforcement.Configured(assembly)` reads `AssemblyMetadata("SharedKernelObservabilityMode", …)` from the
-assembly your build stamps (default `report`); the environment variable `SHAREDKERNEL_OBSERVABILITY_MODE` (`report` or `enforce`)
-overrides it for a local experiment.
+**Suppressions.** `SuppressionAudit.Assert(sources, registry, domainBrains, ruleIds)` fails (rule `suppression.unjustified`) on a
+`NoWarn`/`WarningsNotAsErrors` element, a severity below `error`, a `#pragma warning disable` or a `SuppressMessage` that names one of
+your rule ids, unless the `CLAUDE.md` of the owning domain (longest folder prefix in the registry) names both the rule id and the file.
 
 ### Base class
 

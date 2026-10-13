@@ -70,30 +70,22 @@ flowchart LR
   metadata name, so they run in any project, and tests compiled against the real kernel catch a rename.
 - **Rule ids are never reused.** A retired rule keeps a row below, telling you to delete any suppression that names it.
 
-### Observability report mode
+### Observability rules are enforced
 
 The kernel's own observability rules (the SK analyzers and `CA2200` over `src/`, and the platform-wide EventId ownership,
-telemetry-naming, log-template and error-code checks) ship in **report mode**: they are counted and printed per domain, and
-nothing fails the build or a test. One property decides the mode:
-
-```xml
-<!-- tools/Governance/SelfAnalysis/ObservabilityMode.props -->
-<SharedKernelObservabilityMode>report</SharedKernelObservabilityMode>   <!-- report | enforce -->
-```
+telemetry-naming, log-template and error-code checks) fail the build or a test. There is no report mode and no switch.
 
 - **Analyzers.** `SelfAnalysis/SharedKernel.SelfAnalysis.props` (imported once from the root `Directory.Build.targets`) adds
-  `SharedKernel.Analyzers` and `kernel-report.globalconfig` to every kernel project under `src/`: each SK id and `CA2200` is a
-  warning, listed in `WarningsNotAsErrors` so a project with `TreatWarningsAsErrors` stays green, and a per-project
-  `sharedkernel-observability.sarif` is written next to the assembly. `SK0044` (bare numeric `[LoggerMessage]` id) is off by default
-  for consumers and enabled here; `SK0034` stays `suggestion` in both modes.
-- **Assertions.** `SharedKernel.ArchitectureTests.Tests` is stamped with the same property; `PlatformObservabilityReportTests` runs
-  the four assertions over every built production assembly and prints one row per domain and rule (also written to
-  `artifacts/observability/platform-report.md`). A domain's conformance phase reads its count there and drives it to zero.
-  `SHAREDKERNEL_OBSERVABILITY_MODE=enforce` overrides the stamp for a local experiment.
-- **The flip.** Going to failing is one edit: change `report` to `enforce` in `ObservabilityMode.props`. The same analyzers then run at
-  `error`, and the assertions throw one aggregated exception. A later phase deletes the report plumbing.
+  `SharedKernel.Analyzers` and `SelfAnalysis/kernel.globalconfig` to every kernel project under `src/`: each SK id and `CA2200` is an
+  `error`, whatever the project's `TreatWarningsAsErrors`. `SK0044` (bare numeric `[LoggerMessage]` id) is off by default
+  for consumers and enabled here; `SK0034` stays `suggestion`. Consumers' default severity (Warning) is unchanged.
+- **Assertions.** `PlatformObservabilityReportTests` runs the four assertions over every built production assembly; a finding or a
+  missing (`unscanned`) assembly fails the test with one aggregated message that groups the sites by domain (the table is also written to
+  `artifacts/observability/platform-report.md`). Read the message as `[rule] assembly site: detail`: fix the site, never the rule.
+- **Suppressions.** `SuppressionAuditTests` fails on a `NoWarn`, `WarningsNotAsErrors`, severity below `error`, `#pragma warning disable`
+  or `SuppressMessage` of these rules in `src/` unless the owning domain's `CLAUDE.md` names the rule and the file.
 - **Proof.** `tools/Governance/SelfAnalysis/verify-self-analysis.sh` builds `_verification/SelfAnalysisProbe` (one deliberate violation per
-  rule, `TreatWarningsAsErrors=true`) in both modes: warnings in report mode, errors in enforce mode.
+  rule, `TreatWarningsAsErrors` on and off): every finding is an error.
 
 <a id="analyzer-rule-index"></a>
 <a id="rule-reference"></a>
