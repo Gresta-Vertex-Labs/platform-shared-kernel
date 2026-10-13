@@ -72,8 +72,8 @@ public sealed class ScheduledJobOptions
     /// </para>
     /// <para>
     /// When <see langword="null"/> (the default), <c>SchedulingOptions.DefaultLockExpiry</c> is used
-    /// instead. Only meaningful when an <c>IDistributedLockService</c> is registered — see Domain
-    /// Invariant 3 (single-replica-without-lock is a supported, loudly-warned mode).
+    /// instead. Only meaningful when an <c>IDistributedLockService</c> is registered; a
+    /// service without a lock service is a supported, loudly warned single-replica mode.
     /// </para>
     /// </remarks>
     public TimeSpan? LockExpiry { get; set; }

@@ -247,33 +247,67 @@ Registers the `scheduler` readiness probe (`SchedulerReadiness.ProbeName`); `Add
 
 ### Telemetry
 
-`ActivitySource` and `Meter` named `SharedKernel.Scheduling` (activity `Scheduling.Job.Fire`); subscribe with
-ServiceDefaults' `builder.WithSchedulingTelemetry()`. Counters: `scheduling.job.fired`, `.succeeded`, `.failed`,
-`.overlap_skipped`, `.overlap_queued`, `.misfired`, `scheduling.lock.acquisition_failed`,
-`scheduling.lock.store_unavailable`. A failed span carries `error.code` (or the exception full name as `error.type`)
+The `ActivitySource` and `Meter` are both named `SharedKernel.Scheduling` (public constant `SchedulingTelemetry.Name`);
+`AddServiceDefaults` subscribes to every `SharedKernel.*` source and meter, so no registration is needed. The meter comes
+from `IMeterFactory` (`AddSharedKernelScheduling` calls `AddMetrics()`), and every instrument is tagged
+`scheduling.job_name`.
+
+| Instrument | Kind, unit | Extra tag |
+| --- | --- | --- |
+| `sharedkernel.scheduling.job.executions` | Counter, `{execution}` | `outcome` |
+| `sharedkernel.scheduling.job.duration` | Histogram, `s` | `outcome` |
+| `sharedkernel.scheduling.job.overlap_skipped` | Counter, `{occurrence}` | none |
+| `sharedkernel.scheduling.job.overlap_queued` | Counter, `{occurrence}` | none |
+| `sharedkernel.scheduling.job.misfired` | Counter, `{occurrence}` | none |
+| `sharedkernel.scheduling.lock.not_acquired` | Counter, `{claim}` | none |
+| `sharedkernel.scheduling.lock.store_unavailable` | Counter, `{claim}` | none |
+
+`outcome` takes the shared values `success`, `failure` (the command returned a failed `Result`), `exception` and
+`canceled` (shutdown). An occurrence another replica claimed is not an execution: it counts as `lock.not_acquired` and
+adds no `executions` or `duration` measurement. The duration runs from the claim (or from the start, without a lock
+service) to completion and is measured with `IClock`.
+
+Each occurrence is one span, `scheduling fire` (kind `Internal`), tagged `scheduling.job_name`,
+`scheduling.misfire_policy`, `scheduling.overlap_policy`, `scheduling.claim` (`acquired`, `not_acquired` or
+`store_unavailable`; absent without a lock service) and `outcome` (set once the command was attempted or an exception
+occurred, so a lost claim has none). A failed span carries `error.code` (or the exception full name as `error.type`)
 and an exception event, never an error or exception message.
 
 ### Logging
 
-| Event id | Level | Event |
+| Event id | Level | Message |
 | --- | --- | --- |
-| 19000 | Information | Scheduling hosted service started with `{RegisteredJobCount}` job(s) |
-| 19001 | Information | Scheduling hosted service stopping |
-| 19002 | Warning | No `IDistributedLockService` registered — every replica fires every occurrence |
-| 19003 | Debug | Job firing (scheduled / actual time) |
-| 19004 | Information | Job succeeded |
-| 19005 | Warning | Job failed with `{ErrorCode}` |
-| 19006 | Error | Job threw an unhandled exception |
-| 19007 | Information | Tick skipped — previous execution still running (`OverlapPolicy.Skip`) |
-| 19008 | Debug | Tick queued behind the running execution (`OverlapPolicy.Queue`) |
-| 19009 | Warning | Job misfired |
-| 19010 | Information | Missed occurrence discarded (`MisfirePolicy.Skip`) |
-| 19011 | Debug | Occurrence claim not acquired — another replica holds it |
-| 19012 | Debug | Occurrence claim acquired (fencing token) |
-| 19013 | Critical | Scheduling loop faulted and is stopping |
-| 19014 | Information | Job execution observed shutdown cancellation |
-| 19015 | Warning | Shutdown drain timed out with executions in flight |
-| 19016 | Error | Occurrence skipped — the lock store could not be reached |
+| 19000 | Information | Scheduling started with `{RegisteredJobCount}` registered jobs. |
+| 19001 | Information | Scheduling is stopping. |
+| 19002 | Warning | No `IDistributedLockService` is registered, so every job runs once per replica. |
+| 19003 | Debug | Job `'{JobName}'` is firing the occurrence scheduled at `{ScheduledFireTimeUtc}`. |
+| 19004 | Debug | Job `'{JobName}'` running `'{RequestType}'` succeeded in `{ElapsedMilliseconds}` ms. |
+| 19005 | Warning | Job `'{JobName}'` running `'{RequestType}'` failed with `{ErrorType}` `'{ErrorCode}'`. |
+| 19006 | Error | Job `'{JobName}'` threw an unhandled exception. |
+| 19007 | Warning | Job `'{JobName}'` skipped an occurrence because the previous execution is still running. |
+| 19008 | Debug | Job `'{JobName}'` queued an occurrence behind the running execution. |
+| 19009 | Warning | Job `'{JobName}'` missed an occurrence under the `{MisfirePolicy}` policy. |
+| 19010 | Warning | Job `'{JobName}'` discarded the missed occurrence. |
+| 19011 | Debug | Job `'{JobName}'` did not claim the occurrence because another replica already did. |
+| 19012 | Debug | Job `'{JobName}'` claimed the occurrence with fencing token `{FencingToken}`. |
+| 19013 | Critical | Scheduling loop faulted and is stopping. |
+| 19014 | Information | Job `'{JobName}'` observed shutdown cancellation. |
+| 19015 | Warning | Shutdown drain timed out while waiting for `{InFlightCount}` in-flight executions. |
+| 19016 | Error | Job `'{JobName}'` skipped the occurrence because the lock store is unavailable. |
+| 19017 | Error | Shutdown drain faulted while waiting for in-flight executions. |
+
+### Breaking changes
+
+- All metric names changed from `scheduling.*` to `sharedkernel.scheduling.*`; `scheduling.job.fired`, `.succeeded`
+  and `.failed` are replaced by `sharedkernel.scheduling.job.executions` with an `outcome` tag, and
+  `scheduling.lock.acquisition_failed` is now `sharedkernel.scheduling.lock.not_acquired`.
+- Counter units `{tick}` and `{attempt}` became `{occurrence}` and `{claim}`; a duration histogram was added.
+- The span `Scheduling.Job.Fire` is now `scheduling fire`; the `scheduling.outcome` tag is replaced by `outcome` with the
+  shared values and a separate `scheduling.claim` tag.
+- Log templates were reworded; 19004 is Debug, 19007 and 19010 are Warning, `{CommandType}` became `{RequestType}` (full
+  name), `{Duration}` became `{ElapsedMilliseconds}`; 19017 was added.
+- `SchedulingTelemetry` is now a public static class with the single constant `Name`.
+- `ServiceDefaults`' `WithSchedulingTelemetry()` is removed; the wildcard subscription covers this package.
 
 ## Testing
 

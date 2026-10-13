@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Primitives.Telemetry;
 using SharedKernel.Scheduling.Diagnostics;
@@ -23,7 +24,7 @@ namespace SharedKernel.Scheduling.Hosting;
 /// each due job through its <see cref="IScheduledJobDefinition"/>.
 /// </summary>
 /// <remarks>
-/// This is this package's own hosted loop — never Quartz's <c>IScheduler</c> (Domain Invariant 2).
+/// This is this package's own hosted loop — never Quartz's <c>IScheduler</c>.
 /// Registered as a singleton by <c>AddSharedKernelScheduling</c>, both directly (so
 /// <c>SchedulerServiceProbe</c> can read its in-process state) and as the process's
 /// <see cref="IHostedService"/>.
@@ -35,6 +36,7 @@ internal sealed class SchedulingHostedService : BackgroundService
     private readonly IDistributedLockService? _lockService;
     private readonly IClock _clock;
     private readonly IOptions<SchedulingOptions> _options;
+    private readonly SchedulingMetrics _metrics;
     private readonly ILogger<SchedulingHostedService> _logger;
 
     private readonly Dictionary<string, JobRuntimeState> _states = new(StringComparer.Ordinal);
@@ -52,6 +54,7 @@ internal sealed class SchedulingHostedService : BackgroundService
         IServiceScopeFactory scopeFactory,
         IClock clock,
         IOptions<SchedulingOptions> options,
+        SchedulingMetrics metrics,
         ILogger<SchedulingHostedService> logger,
         IDistributedLockService? lockService = null)
     {
@@ -59,6 +62,7 @@ internal sealed class SchedulingHostedService : BackgroundService
         _scopeFactory = scopeFactory;
         _clock = clock;
         _options = options;
+        _metrics = metrics;
         _logger = logger;
         _lockService = lockService;
     }
@@ -89,7 +93,7 @@ internal sealed class SchedulingHostedService : BackgroundService
 
         if (_lockService is null)
         {
-            Log.SingleReplicaWarning(_logger);
+            SchedulingLog.SingleReplicaWarning(_logger);
         }
 
         DateTimeOffset startupNowUtc = _clock.UtcNow;
@@ -102,7 +106,7 @@ internal sealed class SchedulingHostedService : BackgroundService
         }
 
         _isRunning = true;
-        Log.HostedServiceStarted(_logger, _registry.Definitions.Count);
+        SchedulingLog.HostedServiceStarted(_logger, _registry.Definitions.Count);
 
         try
         {
@@ -133,7 +137,7 @@ internal sealed class SchedulingHostedService : BackgroundService
             // fault — never this method's direct caller. Logging here guarantees a diagnosable trail
             // exists regardless of which host is supervising this service, before rethrowing so that
             // supervision still applies.
-            Log.HostedServiceFaulted(_logger, ex);
+            SchedulingLog.HostedServiceFaulted(_logger, ex);
             throw;
         }
         finally
@@ -147,7 +151,7 @@ internal sealed class SchedulingHostedService : BackgroundService
     {
         using IDisposable loopScope = RequestContextScope.Begin(SchedulerCallers.ForLoop(_loopCorrelationId));
 
-        Log.HostedServiceStopping(_logger);
+        SchedulingLog.HostedServiceStopping(_logger);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
 
         Task[] inFlight;
@@ -167,12 +171,14 @@ internal sealed class SchedulingHostedService : BackgroundService
         }
         catch (OperationCanceledException)
         {
-            Log.ShutdownDrainTimedOut(_logger, inFlight.Length);
+            SchedulingLog.ShutdownDrainTimedOut(_logger, inFlight.Length);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Individual execution failures are already logged by ExecuteOneAsync/ScheduledCommandJob —
-            // Task.WhenAll surfacing the first one here must not fault host shutdown itself.
+            // Individual execution failures are already logged by ExecuteOneAsync and ScheduledCommandJob.
+            // Task.WhenAll surfacing the first one here must not fault host shutdown itself, but the drain
+            // fault is logged so a swallowed failure stays diagnosable.
+            SchedulingLog.ShutdownDrainFaulted(_logger, ex);
         }
     }
 
@@ -224,13 +230,13 @@ internal sealed class SchedulingHostedService : BackgroundService
         CancellationToken stoppingToken)
     {
         MisfirePolicy policy = definition.Options.MisfirePolicy!.Value;
-        SchedulingTelemetry.MisfireCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-        Log.MisfireDetected(_logger, definition.JobName, missedFireTimeUtc, observedAtUtc, policy);
+        _metrics.RecordMisfire(definition.JobName);
+        SchedulingLog.MisfireDetected(_logger, definition.JobName, missedFireTimeUtc, observedAtUtc, policy);
 
         switch (policy)
         {
             case MisfirePolicy.Skip:
-                Log.MisfireSkipped(_logger, definition.JobName, missedFireTimeUtc);
+                SchedulingLog.MisfireSkipped(_logger, definition.JobName, missedFireTimeUtc);
                 AdvancePastNow(definition, state, observedAtUtc);
                 break;
 
@@ -303,13 +309,13 @@ internal sealed class SchedulingHostedService : BackgroundService
             else if (overlapPolicy == OverlapPolicy.Queue)
             {
                 state.PendingQueue.Enqueue(new PendingFire(scheduledFireTimeUtc, actualFireTimeUtc));
-                SchedulingTelemetry.QueuedOverlapCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-                Log.JobQueuedOverlap(_logger, definition.JobName, state.PendingQueue.Count);
+                _metrics.RecordOverlapQueued(definition.JobName);
+                SchedulingLog.JobQueuedOverlap(_logger, definition.JobName, state.PendingQueue.Count);
             }
             else
             {
-                SchedulingTelemetry.SkippedOverlapCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-                Log.JobSkippedOverlap(_logger, definition.JobName);
+                _metrics.RecordOverlapSkipped(definition.JobName);
+                SchedulingLog.JobSkippedOverlap(_logger, definition.JobName);
             }
         }
 
@@ -377,13 +383,16 @@ internal sealed class SchedulingHostedService : BackgroundService
         // no permissions: a job whose command is gated by [RequirePermission] registers its own identity.
         using IDisposable callerScope = RequestContextScope.Begin(SchedulerCallers.ForOccurrence(definition));
 
-        using Activity? activity = SchedulingTelemetry.ActivitySource.StartActivity("Scheduling.Job.Fire", ActivityKind.Internal);
+        using Activity? activity = SchedulingTelemetry.ActivitySource.StartActivity("scheduling fire", ActivityKind.Internal);
         activity?.SetTag(SchedulingTagKeys.JobName, definition.JobName);
         activity?.SetTag(SchedulingTagKeys.MisfirePolicy, definition.Options.MisfirePolicy!.Value.ToString());
         activity?.SetTag(SchedulingTagKeys.OverlapPolicy, definition.Options.OverlapPolicy!.Value.ToString());
 
-        SchedulingTelemetry.FireCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-        Log.JobFireStarted(_logger, definition.JobName, scheduledFireTimeUtc, actualFireTimeUtc);
+        SchedulingLog.JobFireStarted(_logger, definition.JobName, scheduledFireTimeUtc, actualFireTimeUtc);
+
+        // Set when the occurrence is ours to run (the claim is held, or no lock service exists); the
+        // duration of the execution is measured from here with the injected clock.
+        DateTimeOffset? startedAtUtc = null;
 
         try
         {
@@ -403,30 +412,33 @@ internal sealed class SchedulingHostedService : BackgroundService
                 {
                     // Without the lock store no replica can prove it owns this occurrence, so none
                     // runs it. Visible as an error, never mistaken for another replica's claim.
-                    SchedulingTelemetry.LockStoreUnavailableCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-                    Log.LockStoreUnavailable(_logger, definition.JobName, ex);
-                    activity?.SetTag(SchedulingTagKeys.Outcome, "lock-store-unavailable");
-                    activity.RecordException(ex);
+                    _metrics.RecordLockStoreUnavailable(definition.JobName);
+                    SchedulingLog.LockStoreUnavailable(_logger, definition.JobName, ex);
+                    activity?.SetTag(SchedulingTagKeys.Claim, SchedulingClaimResults.StoreUnavailable);
+                    activity?.SetTag(WellKnownTagKeys.Outcome, activity.RecordException(ex));
                     return;
                 }
 
                 if (lease is null)
                 {
-                    // Another replica already claimed this exact occurrence — this IS the
-                    // cross-replica single-execution mechanism (Domain Invariant 3), not an error.
-                    SchedulingTelemetry.LockAcquisitionFailedCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-                    Log.LockAcquisitionFailed(_logger, definition.JobName);
-                    activity?.SetTag(SchedulingTagKeys.Outcome, "lock-not-acquired");
+                    // Another replica already claimed this exact occurrence. This IS the cross-replica
+                    // single-execution mechanism, not an error: it has no outcome of its own.
+                    _metrics.RecordLockNotAcquired(definition.JobName);
+                    SchedulingLog.LockAcquisitionFailed(_logger, definition.JobName);
+                    activity?.SetTag(SchedulingTagKeys.Claim, SchedulingClaimResults.NotAcquired);
                     return;
                 }
 
                 fencingToken = lease.FencingToken;
-                Log.LockAcquired(_logger, definition.JobName, fencingToken);
+                activity?.SetTag(SchedulingTagKeys.Claim, SchedulingClaimResults.Acquired);
+                SchedulingLog.LockAcquired(_logger, definition.JobName, fencingToken);
 
-                // A lease, not a lock: it is never released and simply expires after lockExpiry — see
+                // A lease, not a lock: it is never released and simply expires after lockExpiry, see
                 // SchedulingLockKeys' remarks. Releasing it when this execution finishes would reopen
                 // the cross-replica duplicate-execution window the per-occurrence key exists to close.
             }
+
+            startedAtUtc = _clock.UtcNow;
 
             var context = new ScheduledJobExecutionContext
             {
@@ -440,32 +452,33 @@ internal sealed class SchedulingHostedService : BackgroundService
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
             Result result = await definition.ExecuteAsync(scope.ServiceProvider, context, stoppingToken).ConfigureAwait(false);
 
-            if (result.IsSuccess)
-            {
-                SchedulingTelemetry.SucceededCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-                activity?.SetTag(SchedulingTagKeys.Outcome, "succeeded");
-            }
-            else
-            {
-                SchedulingTelemetry.FailedCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-                activity?.SetTag(SchedulingTagKeys.Outcome, "failed");
-                activity.RecordFailure(result.Error);
-            }
+            string outcome = activity.RecordResult(result);
+            activity?.SetTag(WellKnownTagKeys.Outcome, outcome);
+            RecordExecution(definition.JobName, outcome, startedAtUtc);
         }
         catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
         {
-            activity?.SetTag(SchedulingTagKeys.Outcome, "cancelled");
-            // Cancellation is not a failure: the recorder leaves the status unset.
-            activity.RecordException(ex);
-            Log.JobCancelled(_logger, definition.JobName);
+            // Cancellation is not a failure: the recorder leaves the status unset and returns "canceled".
+            string outcome = activity.RecordException(ex);
+            activity?.SetTag(WellKnownTagKeys.Outcome, outcome);
+            RecordExecution(definition.JobName, outcome, startedAtUtc);
+            SchedulingLog.JobCancelled(_logger, definition.JobName);
         }
         catch (Exception ex)
         {
-            SchedulingTelemetry.FailedCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
-            activity?.SetTag(SchedulingTagKeys.Outcome, "threw");
-            activity.RecordException(ex);
-            Log.JobFireThrew(_logger, definition.JobName, ex);
+            // Job-isolation boundary: one job's exception must not stop the loop. It is logged, recorded
+            // on the span and counted; the loop carries on with the next occurrence.
+            string outcome = activity.RecordException(ex);
+            activity?.SetTag(WellKnownTagKeys.Outcome, outcome);
+            RecordExecution(definition.JobName, outcome, startedAtUtc);
+            SchedulingLog.JobFireThrew(_logger, definition.JobName, ex);
         }
+    }
+
+    private void RecordExecution(string jobName, string outcome, DateTimeOffset? startedAtUtc)
+    {
+        TimeSpan elapsed = startedAtUtc is { } started ? _clock.UtcNow - started : TimeSpan.Zero;
+        _metrics.RecordExecution(jobName, outcome, elapsed.TotalSeconds);
     }
 
     private void TrackInFlight(Task task)

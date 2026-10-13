@@ -49,6 +49,8 @@ namespace SharedKernel.Scheduling.Jobs;
 public sealed class ScheduledCommandJob<TCommand>
     where TCommand : class, ICommand
 {
+    private static readonly string RequestType = typeof(TCommand).FullName ?? typeof(TCommand).Name;
+
     private readonly ISender _sender;
     private readonly IClock _clock;
     private readonly ILogger<ScheduledCommandJob<TCommand>> _logger;
@@ -91,11 +93,11 @@ public sealed class ScheduledCommandJob<TCommand>
 
         if (result.IsSuccess)
         {
-            Log.JobFireSucceeded(_logger, context.JobName, typeof(TCommand).Name, duration);
+            SchedulingLog.JobFireSucceeded(_logger, context.JobName, RequestType, duration.TotalMilliseconds);
         }
         else
         {
-            Log.JobFireFailed(_logger, context.JobName, typeof(TCommand).Name, duration, result.Error.Code);
+            SchedulingLog.JobFireFailed(_logger, context.JobName, RequestType, duration.TotalMilliseconds, result.Error.Type.ToString(), result.Error.Code);
         }
 
         return result;

@@ -29,18 +29,21 @@ internal sealed class AmbientContextLoggerFactory : ILoggerFactory
 
     public InMemoryLoggerFactory Inner { get; } = new();
 
+    /// <summary>When set and true for an event, the logger throws after snapshotting the record (to fault a caller on purpose).</summary>
+    public Func<EventId, bool>? ThrowWhen { get; set; }
+
     public IReadOnlyList<AmbientLogRecord> Ambient => [.. _ambient];
 
     /// <summary>Every record of every category, as the shared in-memory logger captured it.</summary>
     public IReadOnlyList<LogRecord> AllRecords => [.. Inner.Loggers.Values.SelectMany(l => l.Records)];
 
-    public ILogger CreateLogger(string categoryName) => new AmbientLogger(Inner.GetLogger(categoryName), categoryName, _ambient);
+    public ILogger CreateLogger(string categoryName) => new AmbientLogger(Inner.GetLogger(categoryName), categoryName, _ambient, this);
 
     public void AddProvider(ILoggerProvider provider) => Inner.AddProvider(provider);
 
     public void Dispose() => Inner.Dispose();
 
-    private sealed class AmbientLogger(InMemoryLogger inner, string category, ConcurrentQueue<AmbientLogRecord> sink) : ILogger
+    private sealed class AmbientLogger(InMemoryLogger inner, string category, ConcurrentQueue<AmbientLogRecord> sink, AmbientContextLoggerFactory owner) : ILogger
     {
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
@@ -53,6 +56,11 @@ internal sealed class AmbientContextLoggerFactory : ILoggerFactory
                 current?.UserId,
                 current?.CorrelationId,
                 current?.TenantId));
+
+            if (owner.ThrowWhen?.Invoke(eventId) == true)
+            {
+                throw new InvalidOperationException("The test logger was told to throw for this event.");
+            }
 
             inner.Log(logLevel, eventId, state, exception, formatter);
         }

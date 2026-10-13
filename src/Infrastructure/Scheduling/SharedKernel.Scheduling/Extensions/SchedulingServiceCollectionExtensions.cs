@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
+using SharedKernel.Scheduling.Diagnostics;
 using SharedKernel.Scheduling.Hosting;
 using SharedKernel.Scheduling.Options;
 using SharedKernel.Scheduling.Probes;
@@ -35,7 +36,7 @@ public static class SchedulingServiceCollectionExtensions
     /// implementation of the same interface) to already be registered in <paramref name="services"/>
     /// before the host starts — this method does not register one itself, and does not require one.
     /// Its absence is a supported, single-replica-only mode that logs a startup <c>Warning</c> naming
-    /// the caveat (Domain Invariant 3) rather than failing to start.
+    /// the caveat rather than failing to start.
     /// </para>
     /// <para>
     /// <see cref="SchedulingOptions"/> is bound from configuration lazily (via
@@ -71,6 +72,8 @@ public static class SchedulingServiceCollectionExtensions
         services.TryAddSingleton(registry);
         services.TryAddSingleton<IScheduledJobRegistry>(sp => sp.GetRequiredService<ScheduledJobRegistry>());
 
+        services.AddMetrics();
+        services.TryAddSingleton<SchedulingMetrics>();
         services.TryAddSingleton<SchedulingHostedService>();
         services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<SchedulingHostedService>());
         services.AddReadinessProbe<SchedulerServiceProbe>();

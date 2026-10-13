@@ -8,6 +8,7 @@ using SharedKernel.Testing.Caching;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Scheduling.Diagnostics;
 using SharedKernel.Scheduling.Options;
@@ -35,8 +36,30 @@ public sealed class SchedulerLogContextTests
     private static readonly DateTimeOffset SecondDue = Start.AddSeconds(2);
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
 
-    private static readonly int[] LoopEventIds = [19000, 19001, 19002, 19007, 19008, 19009, 19010, 19013, 19015];
+    private static readonly int[] LoopEventIds = [19000, 19001, 19002, 19007, 19008, 19009, 19010, 19013, 19015, 19017];
     private static readonly int[] OccurrenceEventIds = [19003, 19004, 19005, 19006, 19011, 19012, 19014, 19016];
+
+    private static readonly (int Id, LogLevel Level, string Template)[] ExpectedLogs =
+    [
+        (19000, LogLevel.Information, "Scheduling started with {RegisteredJobCount} registered jobs."),
+        (19001, LogLevel.Information, "Scheduling is stopping."),
+        (19002, LogLevel.Warning, "No IDistributedLockService is registered, so every job runs once per replica; register one before running more than one replica."),
+        (19003, LogLevel.Debug, "Job '{JobName}' is firing the occurrence scheduled at {ScheduledFireTimeUtc}, observed at {ActualFireTimeUtc}."),
+        (19004, LogLevel.Debug, "Job '{JobName}' running '{RequestType}' succeeded in {ElapsedMilliseconds} ms."),
+        (19005, LogLevel.Warning, "Job '{JobName}' running '{RequestType}' failed in {ElapsedMilliseconds} ms with {ErrorType} '{ErrorCode}'."),
+        (19006, LogLevel.Error, "Job '{JobName}' threw an unhandled exception."),
+        (19007, LogLevel.Warning, "Job '{JobName}' skipped an occurrence because the previous execution is still running."),
+        (19008, LogLevel.Debug, "Job '{JobName}' queued an occurrence behind the running execution, with {QueueDepth} queued."),
+        (19009, LogLevel.Warning, "Job '{JobName}' missed the occurrence due at {MissedFireTimeUtc}, first observed at {ObservedAtUtc}, under the {MisfirePolicy} policy."),
+        (19010, LogLevel.Warning, "Job '{JobName}' discarded the missed occurrence due at {MissedFireTimeUtc}."),
+        (19011, LogLevel.Debug, "Job '{JobName}' did not claim the occurrence because another replica already did."),
+        (19012, LogLevel.Debug, "Job '{JobName}' claimed the occurrence with fencing token {FencingToken}."),
+        (19013, LogLevel.Critical, "Scheduling loop faulted and is stopping."),
+        (19014, LogLevel.Information, "Job '{JobName}' observed shutdown cancellation."),
+        (19015, LogLevel.Warning, "Shutdown drain timed out while waiting for {InFlightCount} in-flight executions."),
+        (19016, LogLevel.Error, "Job '{JobName}' skipped the occurrence because the lock store is unavailable, so no replica can claim it."),
+        (19017, LogLevel.Error, "Shutdown drain faulted while waiting for in-flight executions."),
+    ];
 
     // ---- Matrix ---------------------------------------------------------------------------------------------
 
@@ -57,6 +80,7 @@ public sealed class SchedulerLogContextTests
             await OverlapAsync(OverlapPolicy.Queue),
             await FaultedLoopAsync(),
             await DrainTimeoutAsync(),
+            await DrainFaultedAsync(),
         ];
 
         AmbientLogRecord[] all = [.. scenarios.SelectMany(s => s.Ambient)];
@@ -89,6 +113,17 @@ public sealed class SchedulerLogContextTests
             exercised,
             "a new EventId must come with a scenario in this matrix (and a loop or occurrence classification)");
         declared.Should().BeEquivalentTo(new HashSet<int>([.. LoopEventIds, .. OccurrenceEventIds]));
+
+        LogRecord[] schedulerRecords = [.. scenarios.SelectMany(s => s.Records).Where(r => r.EventId.Id is >= 19000 and < 20000)];
+        schedulerRecords.ShouldFollowLogConvention();
+        schedulerRecords.ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Scheduling, 0);
+        foreach ((int id, LogLevel level, string template) in ExpectedLogs)
+        {
+            schedulerRecords.ShouldHaveLogged(new EventId(id), level);
+            schedulerRecords.ShouldHaveLoggedTemplate(new EventId(id), template);
+        }
+
+        ExpectedLogs.Select(e => e.Id).Should().BeEquivalentTo(DeclaredEventIds(), "every declared EventId has a pinned template and level");
     }
 
     [Fact]
@@ -233,6 +268,31 @@ public sealed class SchedulerLogContextTests
         ScenarioResult scenario = await DrainTimeoutAsync();
 
         scenario.Records.ShouldHaveLoggedWithoutException(new EventId(19015));
+    }
+
+    [Fact]
+    public async Task Log_DrainFault_KeepsTheException_ButNotItsMessageInTheText()
+    {
+        ScenarioResult scenario = await DrainFaultedAsync();
+
+        scenario.Records.ShouldHaveLoggedWithException(new EventId(19017), typeof(InvalidOperationException));
+        scenario.Records.Where(r => r.EventId.Id is >= 19000 and < 20000).ToList().ShouldNotLeak("marker-drain-fault");
+    }
+
+    [Fact]
+    public async Task Categories_AreTheKernelTypes_NeverAConsumerType()
+    {
+        await using SchedulingTestHarness harness = Build(UniqueName("categories"));
+        await harness.StartAsync();
+        harness.Clock.Set(FirstDue);
+        (await Eventually.UntilAsync(() => harness.Recorder.InvocationCount == 1, Wait)).Should().BeTrue();
+        await harness.StopAsync();
+
+        harness.LoggerFactory
+            .ShouldHaveCategory(typeof(SharedKernel.Scheduling.Hosting.SchedulingHostedService))
+            .ShouldHaveCategory(typeof(SharedKernel.Scheduling.Jobs.ScheduledCommandJob<>))
+            .ShouldOnlyHaveCategoriesStartingWith("SharedKernel.");
+        harness.LoggerFactory.Loggers.Keys.Should().Contain("SharedKernel.Scheduling.Jobs.ScheduledCommandJob");
     }
 
     [Fact]
@@ -533,9 +593,38 @@ public sealed class SchedulerLogContextTests
         return await CollectAsync(jobName, harness, recorder);
     }
 
+    private static async Task<ScenarioResult> DrainFaultedAsync()
+    {
+        string jobName = UniqueName("drain-faulted");
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using ActivityRecorder recorder = ActivityRecorder.StartRecording(SchedulingTelemetry.Name);
+        SchedulingTestHarness harness = Build(jobName);
+        // The handler throws once released, and the logger then throws for that failure's own log record, so
+        // the in-flight task faults after the drain has begun waiting for it.
+        harness.Recorder.OnHandling = async (_, _) =>
+        {
+            await release.Task.ConfigureAwait(false);
+            throw new InvalidOperationException("marker-drain-fault");
+        };
+        harness.AmbientLoggerFactory.ThrowWhen = id => id.Id == 19006;
+
+        await harness.StartAsync();
+        harness.Clock.Set(FirstDue);
+        (await Eventually.UntilAsync(() => harness.Recorder.InvocationCount == 1, Wait)).Should().BeTrue();
+
+        Task stop = harness.StopAsync();
+        (await Eventually.UntilAsync(() => !harness.HostedService.IsRunning && Has(harness, 19001), Wait)).Should().BeTrue();
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+        release.SetResult();
+        await stop.WaitAsync(Wait);
+
+        Has(harness, 19017).Should().BeTrue();
+        return await CollectAsync(jobName, harness, recorder);
+    }
+
     private static HashSet<int> DeclaredEventIds() =>
     [
-        .. typeof(Log)
+        .. typeof(SchedulingLog)
             .GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
             .Select(m => m.GetCustomAttribute<LoggerMessageAttribute>())
             .Where(a => a is not null)

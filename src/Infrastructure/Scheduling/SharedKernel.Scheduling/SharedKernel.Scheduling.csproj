@@ -37,6 +37,7 @@
       rather than riding 07.Messaging's MassTransit.Quartz transitive edge (D-06, WO-073).
     -->
     <PackageReference Include="Quartz" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />

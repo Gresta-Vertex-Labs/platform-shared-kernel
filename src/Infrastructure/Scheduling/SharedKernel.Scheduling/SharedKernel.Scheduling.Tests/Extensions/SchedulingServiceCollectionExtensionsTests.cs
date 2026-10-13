@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Scheduling.Diagnostics;
 using SharedKernel.Scheduling.Extensions;
 using SharedKernel.Scheduling.Options;
 using SharedKernel.Scheduling.Policies;
@@ -61,6 +62,52 @@ public sealed class SchedulingServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddSharedKernelScheduling_OnABareServiceCollection_ResolvesTheMetrics()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelScheduling();
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<SchedulingMetrics>().Should().NotBeNull();
+        provider.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void TwoServiceProviders_GetIsolatedMeters()
+    {
+        using ServiceProvider first = BuildBare();
+        using ServiceProvider second = BuildBare();
+        using SharedKernel.Testing.Telemetry.MetricRecorder recorder = SharedKernel.Testing.Telemetry.MetricRecorder.StartRecording(SchedulingTelemetry.Name);
+
+        first.GetRequiredService<SchedulingMetrics>().RecordMisfire("isolated-a");
+        second.GetRequiredService<SchedulingMetrics>().RecordMisfire("isolated-b");
+
+        first.GetRequiredService<SchedulingMetrics>().Should().NotBeSameAs(second.GetRequiredService<SchedulingMetrics>());
+        first.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>().Should().NotBeSameAs(second.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>());
+        recorder.Sum(SchedulingMetrics.MisfiredName, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, "isolated-a")).Should().Be(1);
+        recorder.Sum(SchedulingMetrics.MisfiredName, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, "isolated-b")).Should().Be(1);
+
+        static ServiceProvider BuildBare()
+        {
+            var services = new ServiceCollection();
+            services.AddSharedKernelScheduling();
+            return services.BuildServiceProvider();
+        }
+    }
+
+    [Fact]
+    public void TheSharedKernelWildcard_SeesTheActivitySource()
+    {
+        using SharedKernel.Testing.Telemetry.ActivityRecorder recorder = SharedKernel.Testing.Telemetry.ActivityRecorder.StartRecordingPrefix("SharedKernel.");
+
+        using System.Diagnostics.Activity? activity = SchedulingTelemetry.ActivitySource.StartActivity("scheduling fire");
+
+        activity.Should().NotBeNull("a listener on the SharedKernel.* wildcard must receive the package source");
+        SchedulingTelemetry.Name.Should().StartWith("SharedKernel.");
+    }
+
+    [Fact]
     public async Task NoDistributedLockServiceRegistered_LogsSingleReplicaStartupWarning()
     {
         await using SchedulingTestHarness harness = SchedulingTestHarness.Build(
@@ -79,7 +126,7 @@ public sealed class SchedulingServiceCollectionExtensionsTests
 
         LogRecord record = harness.HostedServiceLogRecords.ShouldHaveLogged(
             new EventId(19002), LogLevel.Warning);
-        record.Message.Should().Contain("SINGLE-REPLICA");
+        record.Message.Should().Contain("every job runs once per replica");
 
         await harness.StopAsync();
     }

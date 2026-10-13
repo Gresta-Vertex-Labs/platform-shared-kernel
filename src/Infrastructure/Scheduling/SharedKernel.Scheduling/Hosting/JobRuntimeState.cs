@@ -2,7 +2,7 @@ namespace SharedKernel.Scheduling.Hosting;
 
 /// <summary>
 /// The mutable, in-process runtime state <c>SchedulingHostedService</c> tracks for one registered job
-/// across ticks. Never persisted — see Domain Invariant 2 (no job store).
+/// across ticks. Never persisted, because the package keeps no job store.
 /// </summary>
 internal sealed class JobRuntimeState
 {
