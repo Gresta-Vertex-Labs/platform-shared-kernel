@@ -38,7 +38,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
 | 17 | [Workflows](src/Infrastructure/Workflows/state-map.md) | 1 (Adapter) | ○ | Next: `SK.17.WorkflowConformance` (WO-087) |
 | 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
-| 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ○ | Next: `SK.19.SchedulingConformance` (WO-087) |
+| 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ● | None |
 | 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.20.ReportingConformance` (WO-087) |
 | — | [samples](samples/README.md) | `Shop`: one Aspire platform, 7 services (Catalog, Ordering, Inventory, Billing, Merchant, Notify, Reports) | ● | None |
 
@@ -393,7 +393,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-616 — Conform Scheduling to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 19.Scheduling
 **Depends on:** P-580, P-581, P-583, P-598
 **Phase key:** `SK.19.SchedulingConformance`
