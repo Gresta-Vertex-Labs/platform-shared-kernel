@@ -112,7 +112,7 @@ public sealed class TokenPathContentTests
         }
 
         await using ServiceProvider serviceProvider = services.BuildServiceProvider();
-        using var invoker = new HttpMessageInvoker(new ClientAuthenticationHandler("orders", () => options, serviceProvider) { InnerHandler = _service });
+        using var invoker = new HttpMessageInvoker(new ClientAuthenticationHandler("orders", () => options, serviceProvider, serviceProvider.GetRequiredService<ILogger<ClientAuthenticationHandler>>()) { InnerHandler = _service });
         using var request = new HttpRequestMessage(HttpMethod.Get, "http://orders/x");
 
         Exception? failure = null;

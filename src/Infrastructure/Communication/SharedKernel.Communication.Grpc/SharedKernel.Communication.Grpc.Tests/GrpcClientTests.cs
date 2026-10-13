@@ -141,7 +141,7 @@ public sealed class GrpcClientTests
 
         Result<EchoReply> reply = await harness.Client.EchoAsync(new EchoRequest { Text = "x" }).ToResultAsync();
 
-        reply.Error.Should().BeEquivalentTo(new { Type = ErrorType.Unavailable, Code = CommunicationErrorCodes.Unreachable });
+        reply.Error.Should().BeEquivalentTo(new { Type = ErrorType.Unavailable, Code = CommunicationErrorCodes.Unavailable });
     }
 
     [Fact]

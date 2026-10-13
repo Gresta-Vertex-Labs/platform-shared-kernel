@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Communication.Internal;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -152,7 +153,7 @@ public sealed class ClientAuthenticationHandlerTests
         }
 
         IServiceProvider serviceProvider = services.BuildServiceProvider();
-        using var invoker = new HttpMessageInvoker(new ClientAuthenticationHandler("orders", () => options, serviceProvider) { InnerHandler = _service });
+        using var invoker = new HttpMessageInvoker(new ClientAuthenticationHandler("orders", () => options, serviceProvider, serviceProvider.GetRequiredService<ILogger<ClientAuthenticationHandler>>()) { InnerHandler = _service });
         using var request = new HttpRequestMessage(method, "http://orders/x");
         prepare?.Invoke(request);
         return await invoker.SendAsync(request, CancellationToken.None);

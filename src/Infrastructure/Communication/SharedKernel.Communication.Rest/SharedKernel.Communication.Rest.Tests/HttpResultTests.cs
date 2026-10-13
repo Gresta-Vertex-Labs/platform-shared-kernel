@@ -108,7 +108,7 @@ public sealed class HttpResultTests
 
         Result<StockLevel> stock = await harness.Http.GetResultAsync("stock/sku-1", InventoryJson.Default.StockLevel);
 
-        stock.Error.Should().BeEquivalentTo(new { Type = ErrorType.Unavailable, Code = CommunicationErrorCodes.Unreachable });
+        stock.Error.Should().BeEquivalentTo(new { Type = ErrorType.Unavailable, Code = CommunicationErrorCodes.Unavailable });
     }
 
     [Fact]

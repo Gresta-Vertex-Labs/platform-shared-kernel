@@ -20,7 +20,7 @@ namespace SharedKernel.Communication.Grpc.Internal;
 /// logged (11100) without failing the call. It runs before the client's retries, so every attempt carries the same values.
 /// </para>
 /// </remarks>
-internal sealed partial class RequestContextInterceptor(
+internal sealed class RequestContextInterceptor(
     IRequestContextAccessor accessor,
     ILogger<RequestContextInterceptor> logger) : Interceptor
 {
@@ -83,14 +83,8 @@ internal sealed partial class RequestContextInterceptor(
         }
         catch (Exception exception)
         {
-            LogPropagationFailed(logger, context.Method.FullName, exception);
+            CommunicationGrpcLog.PropagationFailed(logger, context.Method.FullName, exception);
             return context;
         }
     }
-
-    [LoggerMessage(
-        EventId = 11100,
-        Level = LogLevel.Error,
-        Message = "The caller could not be written onto the gRPC call {GrpcMethod}; it goes out without the caller's metadata.")]
-    private static partial void LogPropagationFailed(ILogger logger, string grpcMethod, Exception exception);
 }

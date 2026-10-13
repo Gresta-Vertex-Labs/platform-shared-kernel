@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 
@@ -18,6 +19,9 @@ internal static class ClientPipeline
         builder.Services.AddValidatedOptions<TOptions>(
             builder.Configuration.GetSection($"{CommunicationOptions.ClientsSectionName}:{name}"),
             name);
+
+        builder.Services.AddSingleton<IValidateOptions<TOptions>>(
+            services => new AccessTokenProviderRegistrationValidator<TOptions>(name, services));
 
         if (configure is not null)
         {
@@ -51,7 +55,8 @@ internal static class ClientPipeline
         http.AddHttpMessageHandler(services => new ClientAuthenticationHandler(
             name,
             () => services.GetRequiredService<IOptionsMonitor<TOptions>>().Get(name).Authentication,
-            services));
+            services,
+            services.GetRequiredService<ILogger<ClientAuthenticationHandler>>()));
 
         // Microsoft.Extensions.ServiceDiscovery: resolves the host per request, round-robin across its endpoints.
         http.AddServiceDiscovery();

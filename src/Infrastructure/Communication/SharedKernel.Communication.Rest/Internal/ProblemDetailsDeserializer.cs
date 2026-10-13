@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SharedKernel.Communication.Internal;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Communication.Rest.Internal;
@@ -43,17 +44,14 @@ namespace SharedKernel.Communication.Rest.Internal;
 /// as <see cref="ErrorType.Timeout"/>, so a caller retries an outage instead of treating it as a defect: the same
 /// category a ProblemDetails body without field errors gets for that status.
 /// </para>
-/// <para>Never throws.</para>
+/// <para>
+/// Never throws except the caller's own cancellation. A body that cannot be read is logged once (11201) with its
+/// exception; an HTML or empty body from a gateway is expected and silent.
+/// </para>
 /// </remarks>
 internal static class ProblemDetailsDeserializer
 {
     internal const string ProblemDetailsContentType = "application/problem+json";
-
-    /// <summary>
-    /// The prefix of the code given to an error whose response carried no code of its own:
-    /// <c>http.{status}</c>, the code <c>14.Presentation</c> itself gives framework-generated problems.
-    /// </summary>
-    private const string StatusCodePrefix = "http.";
 
     /// <summary>
     /// Reflection-based <see cref="JsonSerializerOptions"/> used in the non-<c>application/problem+json</c>
@@ -67,7 +65,7 @@ internal static class ProblemDetailsDeserializer
     /// Attempts to deserialize a ProblemDetails body from the response.
     /// For a non-JSON, empty, or unrecognizable body, returns an error of the status's
     /// <see cref="ErrorType"/> (via <see cref="HttpStatusErrorTypeMap"/>) with the code <c>http.{status}</c>.
-    /// Never throws.
+    /// Never throws except the caller's own cancellation.
     /// </summary>
     internal static async Task<Error> DeserializeAsync(
         HttpResponseMessage response,
@@ -88,10 +86,11 @@ internal static class ProblemDetailsDeserializer
                 return MapToError(dto, statusCode);
             }
         }
-        catch (Exception)
+        catch (Exception exception) when (!(exception is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
-            // Never throw — swallow all deserialization failures and fall through to a
-            // status-aware generic error below.
+            // A body that cannot be read falls through to the status-aware error below, but never silently. Only the
+            // caller's own cancellation is not swallowed.
+            CommunicationRestLog.ProblemDetailsUnreadable(RestLogger.For(response), statusCode, exception);
         }
 
         return StatusAwareError(statusCode, response.ReasonPhrase);
@@ -164,21 +163,10 @@ internal static class ProblemDetailsDeserializer
             CodeForStatus(statusCode),
             $"HTTP {statusCode} {reasonPhrase}".TrimEnd());
 
-    private static string CodeForStatus(int statusCode) =>
-        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{StatusCodePrefix}{statusCode}");
+    private static string CodeForStatus(int statusCode) => CommunicationErrorCodes.ForHttpStatus(statusCode);
 
-    private static Error CreateError(ErrorType errorType, string code, string message) => errorType switch
-    {
-        ErrorType.Validation => Error.Validation(code, message),
-        ErrorType.Unauthorized => Error.Unauthorized(code, message),
-        ErrorType.Forbidden => Error.Forbidden(code, message),
-        ErrorType.NotFound => Error.NotFound(code, message),
-        ErrorType.Conflict => Error.Conflict(code, message),
-        ErrorType.BusinessRule => Error.BusinessRule(code, message),
-        ErrorType.Unavailable => Error.Unavailable(code, message),
-        ErrorType.Timeout => Error.Timeout(code, message),
-        _ => Error.Unexpected(code, message),
-    };
+    private static Error CreateError(ErrorType errorType, string code, string message) =>
+        CommunicationErrors.Create(errorType, code, message);
 
     /// <summary>
     /// Maps a body with recognizable content. On a 400 or 422 with field errors this is the

@@ -166,7 +166,7 @@ The client's `Result` is an `ErrorType.Validation` error whose `Details` carry o
 ### 3. Simulate an unreachable or slow service
 
 ```csharp
-stub.Throw(HttpMethod.Get, "/stock/sku-1", new HttpRequestException("Connection refused"));   // communication.unreachable
+stub.Throw(HttpMethod.Get, "/stock/sku-1", new HttpRequestException("Connection refused"));   // communication.unavailable
 
 stub.RespondAsync(HttpMethod.Get, "/stock/sku-2", async (_, _, ct) =>
 {

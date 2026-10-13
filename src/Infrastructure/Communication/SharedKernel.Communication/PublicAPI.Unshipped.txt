@@ -89,6 +89,7 @@ SharedKernel.Communication.CommunicationDiscoveryOptions.Mode.set -> void
 SharedKernel.Communication.CommunicationDiscoveryOptions.RefreshPeriod.get -> System.TimeSpan
 SharedKernel.Communication.CommunicationDiscoveryOptions.RefreshPeriod.set -> void
 SharedKernel.Communication.CommunicationErrorCodes
+SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus
 SharedKernel.Communication.CommunicationOptions
 SharedKernel.Communication.CommunicationOptions.CommunicationOptions() -> void
 SharedKernel.Communication.CommunicationOptions.ServiceDiscovery.get -> SharedKernel.Communication.CommunicationDiscoveryOptions!
@@ -109,7 +110,6 @@ const SharedKernel.Communication.CommunicationErrorCodes.CircuitOpen = "communic
 const SharedKernel.Communication.CommunicationErrorCodes.EmptyBody = "communication.empty_body" -> string!
 const SharedKernel.Communication.CommunicationErrorCodes.InvalidBody = "communication.invalid_body" -> string!
 const SharedKernel.Communication.CommunicationErrorCodes.Timeout = "communication.timeout" -> string!
-const SharedKernel.Communication.CommunicationErrorCodes.Unreachable = "communication.unreachable" -> string!
 override SharedKernel.Communication.AccessToken.Equals(object? obj) -> bool
 override SharedKernel.Communication.AccessToken.GetHashCode() -> int
 override SharedKernel.Communication.AccessToken.ToString() -> string!
@@ -124,3 +124,23 @@ static SharedKernel.Communication.CommunicationServiceCollectionExtensions.AddSh
 virtual SharedKernel.Communication.CommunicationClientOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
 ~override SharedKernel.Communication.AccessTokenContext.Equals(object obj) -> bool
 ~override SharedKernel.Communication.AccessTokenContext.ToString() -> string
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Ok = "grpc.ok" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Cancelled = "grpc.cancelled" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Unknown = "grpc.unknown" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.InvalidArgument = "grpc.invalid_argument" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.DeadlineExceeded = "grpc.deadline_exceeded" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.NotFound = "grpc.not_found" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.AlreadyExists = "grpc.already_exists" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.PermissionDenied = "grpc.permission_denied" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.ResourceExhausted = "grpc.resource_exhausted" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.FailedPrecondition = "grpc.failed_precondition" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Aborted = "grpc.aborted" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.OutOfRange = "grpc.out_of_range" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Unimplemented = "grpc.unimplemented" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Internal = "grpc.internal" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Unavailable = "grpc.unavailable" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.DataLoss = "grpc.data_loss" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcStatus.Unauthenticated = "grpc.unauthenticated" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.GrpcInvalidMoney = "communication.grpc.invalid_money" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.Unavailable = "communication.unavailable" -> string!
+static SharedKernel.Communication.CommunicationErrorCodes.ForHttpStatus(int statusCode) -> string!

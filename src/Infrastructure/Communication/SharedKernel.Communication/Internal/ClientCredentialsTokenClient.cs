@@ -141,7 +141,7 @@ internal sealed class ClientCredentialsTokenClient(
                 ? "Bearer"
                 : body.TokenType;
 
-            CommunicationLog.TokenAcquired(logger, clientName, lifetime);
+            CommunicationLog.TokenAcquired(logger, clientName, (int)lifetime.TotalSeconds);
             return (Result<AccessToken>.Success(new AccessToken(body.AccessToken, clock.UtcNow + lifetime, scheme)), lifetime);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -160,6 +160,7 @@ internal sealed class ClientCredentialsTokenClient(
         }
         catch (JsonException)
         {
+            // A body that is not JSON reads as absent; the caller then logs the refusal (11001) with its status.
             return null;
         }
     }
@@ -174,7 +175,7 @@ internal sealed class ClientCredentialsTokenClient(
             : RegisteredOAuthErrors.Contains(error) ? error : "unrecognized";
 
     private static Result<AccessToken> Failure(string message) =>
-        Result<AccessToken>.Failure(Error.Unavailable(CommunicationErrorCodes.AccessTokenUnavailable, message));
+        Result<AccessToken>.Failure(CommunicationErrors.AccessTokenUnavailable(message));
 
     private static void AddIfSet(List<KeyValuePair<string, string>> form, string name, string? value)
     {

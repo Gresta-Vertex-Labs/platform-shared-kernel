@@ -89,6 +89,9 @@ internal sealed class ProbeService : Probe.Probe.ProbeBase
 {
     private static readonly ConcurrentDictionary<string, int> Attempts = new();
 
+    /// <summary>How many times a call with <paramref name="text"/> reached the service, failed or not.</summary>
+    public static int AttemptsFor(string text) => Attempts.GetValueOrDefault(text);
+
     public override async Task<EchoReply> Echo(EchoRequest request, ServerCallContext context)
     {
         int attempt = Attempts.AddOrUpdate(request.Text, 1, (_, n) => n + 1);
@@ -109,6 +112,10 @@ internal sealed class ProbeService : Probe.Probe.ProbeBase
                         MessageArguments = new Dictionary<string, object?> { [ErrorArgumentNames.PropertyPath] = "quantity" },
                     },
                 ]));
+            case "unexpected":
+                throw GrpcCalls.ToRpcException(Error.Unexpected("unexpected.default", "Something went wrong."));
+            case "commit-unknown":
+                throw GrpcCalls.ToRpcException(Error.Timeout("execution.commit_outcome_unknown", "The commit outcome is unknown."));
             case "bare":
                 throw new RpcException(new Status(StatusCode.FailedPrecondition, "Not now."));
             case "slow":

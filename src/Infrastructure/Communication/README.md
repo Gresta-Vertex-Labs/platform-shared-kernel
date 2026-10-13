@@ -35,7 +35,7 @@
 - **The caller travels.** Correlation id, tenant, actor and client from `IRequestContextAccessor` go on every call,
   whether it starts in an HTTP request, a message consumer, a workflow activity or a scheduled job.
 - **Errors round-trip.** ProblemDetails and rich gRPC statuses become the called service's own `Error`; a call with no
-  answer is `communication.unreachable`, `.timeout` or `.circuit_open` (`CommunicationErrorCodes`).
+  answer is `communication.unavailable`, `.timeout` or `.circuit_open` (`CommunicationErrorCodes`); no failure is swallowed silently (log events 11000-11299).
 
 ## Packages
 
@@ -141,7 +141,7 @@ samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-
 | **Caller-supplied values win** | `A_header_the_request_has_is_kept`, `Metadata_the_call_carries_is_kept`, `A_request_with_its_own_authorization_keeps_it`, `Every_call_gets_the_configured_deadline_unless_it_sets_its_own` |
 | **Failures are values** | `HttpResultTests` and `GrpcClientTests`: unreachable, past-deadline and no-token calls are `Error`s; only the caller's cancellation throws. `ProblemDetailsDeserializerTests`: the code is never taken from `title` or `type` |
 | **Bad settings stop the host** | `ClientOptionsValidationTests` and `RestClientRegistrationTests`: a missing address or invalid settings fail at startup, naming the setting |
-| **Secrets stay out of logs** | `A_token_never_prints_its_value`; `LoggingEventIdIntegrityRealAssemblyTests` keeps every event id in the Communication range |
+| **Secrets stay out of logs** | `TokenPathContentTests` and `RestConformanceTests`: no token, host, id or caller value reaches a log record or an `Error`; every event follows the log conventions; `CommunicationErrorCodesTests` pins every error code and `CommunicationConformanceTests` every event id and sub-block |
 | **Clean layering** | `CommunicationLayeringRules`: gRPC never references the Contracts package and interceptors live only in `SharedKernel.Communication.Grpc`; analyzer `SK0013` flags a raw `HttpClient` constructor outside a typed client |
 
 **Out of scope:** inbound middleware and server conventions ([Presentation](../../Hosting/Presentation/README.md)),

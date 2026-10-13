@@ -21,7 +21,7 @@ internal static class ClientTls
             if (authorities.Count == 0)
             {
                 throw new InvalidOperationException(
-                    $"Tls:TrustedCertificateAuthoritiesPath '{tls.TrustedCertificateAuthoritiesPath}' holds no PEM certificate.");
+                    $"The file '{tls.TrustedCertificateAuthoritiesPath}' holds no PEM certificate. Point Tls:TrustedCertificateAuthoritiesPath at a PEM file with at least one certificate.");
             }
 
             handler.SslOptions.RemoteCertificateValidationCallback =
