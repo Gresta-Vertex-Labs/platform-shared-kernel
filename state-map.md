@@ -24,7 +24,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ● | None |
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ● | None |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
-| 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.ApplicationConformance` (WO-087) |
+| 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ● | None |
 | 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceConformance` (WO-087) |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
@@ -276,7 +276,7 @@ Domain stays logging-free and telemetry-free; only error codes change: `domain.r
 - [ ] Breaking renames listed for the release notes; PublicAPI, README and domain `CLAUDE.md` updated.
 
 #### P-603 — Conform Application to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 05.Application
 **Depends on:** P-580, P-581, P-583, P-586
 **Phase key:** `SK.05.ApplicationConformance`
