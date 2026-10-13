@@ -32,7 +32,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ● | None |
 | 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ● | None |
-| 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.ServiceDefaultsConformance` (WO-087) |
+| 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ● | None |
 | 14 | [Presentation](src/Hosting/Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ○ | Next: `SK.14.PresentationConformance` (WO-087) |
 | 15 | [Integration](src/Infrastructure/Integration/state-map.md) | 4 (1 Abstractions, 3 Adapter) | ○ | Next: `SK.15.IntegrationConformance` (WO-087) |
 | 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
@@ -348,7 +348,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-611 — Conform ServiceDefaults to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-580, P-581, P-582, P-583, P-594
 **Phase key:** `SK.13.ServiceDefaultsConformance`
