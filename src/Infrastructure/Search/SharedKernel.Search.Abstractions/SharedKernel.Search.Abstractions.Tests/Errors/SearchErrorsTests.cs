@@ -9,8 +9,8 @@ namespace SharedKernel.Search.Abstractions.Tests.Errors;
 /// <see cref="ErrorType"/> and a dot-separated-lowercase code, and the factory-choice tally is
 /// asserted explicitly against the live <see cref="Error"/> API: <see cref="ErrorType.NotFound"/> x2,
 /// <see cref="ErrorType.Validation"/> x12, <see cref="ErrorType.Conflict"/> x4,
-/// <see cref="ErrorType.Unauthorized"/> x2, <see cref="ErrorType.Unexpected"/> x6,
-/// <see cref="ErrorType.Unavailable"/> x1, <see cref="ErrorType.Timeout"/> x1,
+/// <see cref="ErrorType.Unauthorized"/> x1, <see cref="ErrorType.Unexpected"/> x6,
+/// <see cref="ErrorType.Unavailable"/> x1, <see cref="ErrorType.Timeout"/> x2,
 /// <see cref="ErrorType.BusinessRule"/> x0.
 /// </summary>
 public sealed class SearchErrorsTests
@@ -148,12 +148,12 @@ public sealed class SearchErrorsTests
     }
 
     [Fact]
-    public void UnsupportedCapability_ReturnsValidation()
+    public void NotSupported_ReturnsValidation()
     {
-        var error = SearchErrors.UnsupportedCapability("geo_radius", "meilisearch");
+        var error = SearchErrors.NotSupported("geo_radius", "meilisearch");
 
         error.Type.Should().Be(ErrorType.Validation);
-        error.Code.Should().Be("search.unsupported_capability");
+        error.Code.Should().Be(SearchErrorCodes.NotSupported);
     }
 
     // ---------------------------------------------------------------------------
@@ -199,16 +199,16 @@ public sealed class SearchErrorsTests
     }
 
     // ---------------------------------------------------------------------------
-    // Error.Unauthorized (x2)
+    // Error.Unauthorized (x1)
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void Unauthorized_ReturnsUnauthorized()
+    public void EngineUnauthorized_ReturnsUnexpected_BecauseItIsADeploymentDefect()
     {
-        var error = SearchErrors.Unauthorized("my-index", "search");
+        var error = SearchErrors.EngineUnauthorized("my-index", "search");
 
-        error.Type.Should().Be(ErrorType.Unauthorized);
-        error.Code.Should().Be("search.unauthorized");
+        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Code.Should().Be(SearchErrorCodes.EngineUnauthorized);
     }
 
     [Fact]
@@ -226,19 +226,19 @@ public sealed class SearchErrorsTests
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void Unreachable_ReturnsUnavailable()
+    public void Unavailable_ReturnsUnavailable()
     {
-        var error = SearchErrors.Unreachable("meilisearch");
+        var error = SearchErrors.Unavailable("meilisearch");
 
         error.Type.Should().Be(ErrorType.Unavailable);
-        error.Code.Should().Be("search.unreachable");
+        error.Code.Should().Be(SearchErrorCodes.Unavailable);
         error.Message.Should().Contain("meilisearch").And.NotContain("http", "the endpoint is configuration, never caller-facing text");
     }
 
     [Fact]
     public void Timeout_ReturnsTimeout()
     {
-        var error = SearchErrors.Timeout("search", TimeSpan.FromSeconds(30));
+        var error = SearchErrors.Timeout("search");
 
         error.Type.Should().Be(ErrorType.Timeout);
         error.Code.Should().Be("search.timeout");
@@ -287,12 +287,12 @@ public sealed class SearchErrorsTests
     }
 
     [Fact]
-    public void EngineVersionUnsupported_ReturnsUnexpected()
+    public void EngineVersionNotSupported_ReturnsUnexpected()
     {
-        var error = SearchErrors.EngineVersionUnsupported("8.6.1", "9.x-10.x");
+        var error = SearchErrors.EngineVersionNotSupported("8.6.1", "9.x-10.x");
 
         error.Type.Should().Be(ErrorType.Unexpected);
-        error.Code.Should().Be("search.engine_version_unsupported");
+        error.Code.Should().Be(SearchErrorCodes.EngineVersionNotSupported);
     }
 
     [Fact]
@@ -335,20 +335,20 @@ public sealed class SearchErrorsTests
             SearchErrors.PaginationLimitExceeded(1, 1, 1, "p"),
             SearchErrors.FacetLimitExceeded(1, 1),
             SearchErrors.TotalHitsNotExact(),
-            SearchErrors.UnsupportedCapability("c", "p"),
+            SearchErrors.NotSupported("c", "p"),
             SearchErrors.IndexAlreadyExists("i"),
             SearchErrors.IndexDefinitionConflict("i", "f"),
             SearchErrors.CutoverFailed("s", "l", "r"),
             SearchErrors.SchemaFingerprintMismatch("i", "e", "a"),
-            SearchErrors.Unauthorized("i", "o"),
+            SearchErrors.EngineUnauthorized("i", "o"),
             SearchErrors.TenantScopeMissing("i"),
-            SearchErrors.Unreachable("p"),
-            SearchErrors.Timeout("o", TimeSpan.Zero),
+            SearchErrors.Unavailable("p"),
+            SearchErrors.Timeout("o"),
             SearchErrors.WriteRejected("i", "r"),
             SearchErrors.WriteTimeout("i", TimeSpan.Zero),
             SearchErrors.BulkPartiallyFailed(1, 2),
             SearchErrors.ProbeFailed("i", "r"),
-            SearchErrors.EngineVersionUnsupported("a", "s"),
+            SearchErrors.EngineVersionNotSupported("a", "s"),
             SearchErrors.EngineFault("p", "o", "d"),
         ];
 
@@ -356,8 +356,8 @@ public sealed class SearchErrorsTests
         errors.Count(e => e.Type == ErrorType.NotFound).Should().Be(2);
         errors.Count(e => e.Type == ErrorType.Validation).Should().Be(12);
         errors.Count(e => e.Type == ErrorType.Conflict).Should().Be(4);
-        errors.Count(e => e.Type == ErrorType.Unauthorized).Should().Be(2);
-        errors.Count(e => e.Type == ErrorType.Unexpected).Should().Be(5);
+        errors.Count(e => e.Type == ErrorType.Unauthorized).Should().Be(1);
+        errors.Count(e => e.Type == ErrorType.Unexpected).Should().Be(6);
         errors.Count(e => e.Type == ErrorType.Unavailable).Should().Be(1);
         errors.Count(e => e.Type == ErrorType.Timeout).Should().Be(2);
         errors.Count(e => e.Type == ErrorType.BusinessRule).Should().Be(0);

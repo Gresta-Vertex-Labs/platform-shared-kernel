@@ -1,10 +1,11 @@
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
-using SharedKernel.Search.Meilisearch.Logging;
+using SharedKernel.Search.Meilisearch.Diagnostics;
 using SharedKernel.Search.Meilisearch.Options;
 
 namespace SharedKernel.Search.Meilisearch.Extensions;
@@ -38,6 +39,10 @@ public static class MeilisearchServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(section);
 
         services.AddValidatedOptions<MeilisearchOptions>(section);
+
+        // The provider telemetry creates its meter from the host's IMeterFactory; AddMetrics is a no-op when the host already added it.
+        services.AddMetrics();
+        services.TryAddSingleton<SearchTelemetry>();
 
         services
             .AddHttpClient(HttpClientName, (sp, client) =>
@@ -75,8 +80,8 @@ public static class MeilisearchServiceCollectionExtensions
             var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName);
             var client = new global::Meilisearch.MeilisearchClient(httpClient, options.ApiKey);
 
-            sp.GetRequiredService<ILogger<global::Meilisearch.MeilisearchClient>>()
-                .MeilisearchClientConfigured(builder.RegisteredIndexCount);
+            MeilisearchLog.ClientConfigured(
+                sp.GetRequiredService<ILogger<MeilisearchSearchBuilder>>(), builder.RegisteredIndexCount);
 
             return client;
         });

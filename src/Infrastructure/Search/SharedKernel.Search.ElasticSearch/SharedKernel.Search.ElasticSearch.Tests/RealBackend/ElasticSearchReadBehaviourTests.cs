@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Search.Abstractions.Models;
@@ -252,10 +253,10 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
         var result = await provider.VerifyElasticSearchEngineVersionAsync();
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("search.unreachable");
+        result.Error.Code.Should().Be(SearchErrorCodes.Unavailable);
 
         var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
-        var clientLogger = loggerFactory.GetLogger(typeof(ElasticsearchClient).FullName!);
+        var clientLogger = loggerFactory.GetLogger(typeof(SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder).FullName!);
         clientLogger.Records.ShouldHaveLogged(new EventId(9202), LogLevel.Error);
     }
 }

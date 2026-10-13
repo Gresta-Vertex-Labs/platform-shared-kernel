@@ -1,5 +1,5 @@
 #nullable enable
-SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors
+SharedKernel.Search.Meilisearch.Errors.MeilisearchErrorCodes
 SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder
 SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.AddIndex<TDocument>(string! indexName, System.Action<SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!>! configure) -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
 SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.AllowRawClientAccess() -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
@@ -8,6 +8,8 @@ SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.WithRankingR
 SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder.WithTenantTokens() -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
 SharedKernel.Search.Meilisearch.Extensions.MeilisearchServiceCollectionExtensions
 SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>
+SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>.InstantAsync(SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!>!>!
+SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>.SearchFacetValuesAsync(string! facetField, string! facetQuery, SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.FacetValue>!>!>!
 SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
 SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy.All = 1 -> SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
 SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy.Frequency = 2 -> SharedKernel.Search.Meilisearch.Instant.InstantMatchingStrategy
@@ -64,6 +66,7 @@ SharedKernel.Search.Meilisearch.Raw.IMeilisearchRawClientAccessor
 SharedKernel.Search.Meilisearch.Raw.IMeilisearchRawClientAccessor.Client.get -> Meilisearch.MeilisearchClient!
 SharedKernel.Search.Meilisearch.Raw.IMeilisearchRawClientAccessor.IndexHandle(string! indexName) -> Meilisearch.Index!
 SharedKernel.Search.Meilisearch.Tenancy.ITenantSearchTokenIssuer
+SharedKernel.Search.Meilisearch.Tenancy.ITenantSearchTokenIssuer.IssueAsync(SharedKernel.Execution.Tenancy.TenantScope tenantScope, string! tenantField, System.Collections.Generic.IReadOnlyCollection<string!>! indexNames, System.TimeSpan ttl, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken!>!>!
 SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken
 SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.<Clone>$() -> SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken!
 SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Equals(SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? other) -> bool
@@ -74,6 +77,9 @@ SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.ScopedIndexes.init -> 
 SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.TenantSearchToken() -> void
 SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Value.get -> string!
 SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Value.init -> void
+const SharedKernel.Search.Meilisearch.Errors.MeilisearchErrorCodes.IndexingTaskFailed = "search.meilisearch.indexing_task_failed" -> string!
+const SharedKernel.Search.Meilisearch.Errors.MeilisearchErrorCodes.TenantTokenIssuanceFailed = "search.meilisearch.tenant_token_issuance_failed" -> string!
+const SharedKernel.Search.Meilisearch.Errors.MeilisearchErrorCodes.TenantTokenTtlOutOfRange = "search.meilisearch.tenant_token_ttl_out_of_range" -> string!
 const SharedKernel.Search.Meilisearch.Options.MeilisearchOptions.SectionName = "Search:Meilisearch" -> string!
 override SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.Equals(object? obj) -> bool
 override SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.GetHashCode() -> int
@@ -84,9 +90,6 @@ override SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.ToS
 override SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.Equals(object? obj) -> bool
 override SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.GetHashCode() -> int
 override SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.ToString() -> string!
-static SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors.IndexingTaskFailed(string! providerToken, string! engineErrorCode) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors.TenantTokenIssuanceFailed(string! reason) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Meilisearch.Errors.MeilisearchErrors.TenantTokenTtlOutOfRange(System.TimeSpan requested, int maxMinutes) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Meilisearch.Extensions.MeilisearchServiceCollectionExtensions.AddSharedKernelMeilisearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
 static SharedKernel.Search.Meilisearch.Extensions.MeilisearchServiceCollectionExtensions.AddSharedKernelMeilisearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section) -> SharedKernel.Search.Meilisearch.Extensions.MeilisearchSearchBuilder!
 static SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest.operator !=(SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest? left, SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest? right) -> bool
@@ -103,6 +106,3 @@ static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.opera
 static SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule.operator ==(SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule? left, SharedKernel.Search.Meilisearch.Provisioning.MeilisearchRankingRule? right) -> bool
 static SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.operator !=(SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? left, SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? right) -> bool
 static SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken.operator ==(SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? left, SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken? right) -> bool
-SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>.InstantAsync(SharedKernel.Search.Meilisearch.Instant.InstantSearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!>!>!
-SharedKernel.Search.Meilisearch.Instant.IInstantSearch<TDocument>.SearchFacetValuesAsync(string! facetField, string! facetQuery, SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.FacetValue>!>!>!
-SharedKernel.Search.Meilisearch.Tenancy.ITenantSearchTokenIssuer.IssueAsync(SharedKernel.Execution.Tenancy.TenantScope tenantScope, string! tenantField, System.Collections.Generic.IReadOnlyCollection<string!>! indexNames, System.TimeSpan ttl, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Meilisearch.Tenancy.TenantSearchToken!>!>!

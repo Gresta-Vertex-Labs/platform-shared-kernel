@@ -4,9 +4,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Abstractions;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Options;
+using SharedKernel.Search.Meilisearch.Tests.Support;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Search.Meilisearch.Tests.Index;
@@ -36,7 +38,7 @@ public sealed class MeilisearchFaultClassificationTests
     /// while still proving the point: an operational failure is never reported as a malformed request,
     /// a missing document, or an unclassified engine fault.
     /// </summary>
-    private static readonly string[] OperationalFailureCodes = ["search.unreachable", "search.timeout"];
+    private static readonly string[] OperationalFailureCodes = [SearchErrorCodes.Unavailable, "search.timeout"];
 
     private sealed class TestDocument : ISearchDocument
     {
@@ -51,7 +53,8 @@ public sealed class MeilisearchFaultClassificationTests
             Definition(),
             new MeilisearchOptions { Url = UnreachableUrl, TaskWaitTimeoutSeconds = 1 },
             new FakeClock(),
-            NullLogger<MeilisearchIndex<TestDocument>>.Instance);
+            NullLogger<MeilisearchIndex<TestDocument>>.Instance,
+            MeiliTelemetry.Create());
     }
 
     private static SearchIndexDefinition Definition() => new SearchIndexDefinitionBuilder("products")

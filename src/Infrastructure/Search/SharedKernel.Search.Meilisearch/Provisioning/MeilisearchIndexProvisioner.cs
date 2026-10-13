@@ -8,8 +8,9 @@ using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Abstractions.Telemetry;
+using SharedKernel.Search.Meilisearch.Diagnostics;
 using SharedKernel.Search.Meilisearch.Errors;
-using SharedKernel.Search.Meilisearch.Logging;
 using SharedKernel.Search.Meilisearch.Options;
 
 namespace SharedKernel.Search.Meilisearch.Provisioning;
@@ -22,19 +23,25 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     /// <summary>Meilisearch's error code for creating an index that already exists.</summary>
     private const string IndexAlreadyExistsCode = "index_already_exists";
 
-    private const string OperationEnsureIndex = "ensure_index";
-    private const string OperationIndexExists = "index_exists";
-    private const string OperationDeleteIndex = "delete_index";
-    private const string OperationCutover = "cutover";
     private const string StepCreateLive = "create_live";
     private const string StepSwap = "swap";
     private const string StepDeleteStaging = "delete_staging";
+
+    private static class DriftKinds
+    {
+        internal const string ProbeFailed = "probe_failed";
+        internal const string EngineUnreachable = "engine_unreachable";
+        internal const string NotAddressable = "not_addressable";
+        internal const string NoFingerprint = "no_fingerprint";
+        internal const string FingerprintMismatch = "fingerprint_mismatch";
+    }
 
     private readonly global::Meilisearch.MeilisearchClient _client;
     private readonly MeilisearchOptions _options;
     private readonly IReadOnlyDictionary<string, SearchIndexDefinition> _registeredDefinitions;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _rankingRules;
     private readonly ILogger<MeilisearchIndexProvisioner> _logger;
+    private readonly SearchTelemetry _telemetry;
 
     /// <summary>Initializes a new <see cref="MeilisearchIndexProvisioner"/>.</summary>
     /// <param name="client">The shared Meilisearch client.</param>
@@ -54,18 +61,20 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         MeilisearchOptions options,
         IReadOnlyDictionary<string, SearchIndexDefinition> registeredDefinitions,
         IReadOnlyDictionary<string, IReadOnlyList<string>> rankingRules,
-        ILogger<MeilisearchIndexProvisioner> logger)
+        ILogger<MeilisearchIndexProvisioner> logger,
+        SearchTelemetry telemetry)
     {
         _client = client;
         _options = options;
         _registeredDefinitions = registeredDefinitions;
         _rankingRules = rankingRules;
         _logger = logger;
+        _telemetry = telemetry;
     }
 
     /// <inheritdoc />
     public Task<Result> EnsureIndexAsync(SearchIndexDefinition definition, CancellationToken cancellationToken = default)
-        => ClassifyAsync(OperationEnsureIndex, definition.Name, ct => EnsureIndexCoreAsync(definition, ct), cancellationToken);
+        => ClassifyAsync(SearchOperations.EnsureIndex, definition.Name, ct => EnsureIndexCoreAsync(definition, ct), cancellationToken);
 
     private async Task<Result> EnsureIndexCoreAsync(SearchIndexDefinition definition, CancellationToken cancellationToken)
     {
@@ -85,7 +94,7 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         {
             var createTask = await _client.CreateIndexAsync(definition.Name, definition.PrimaryKeyField, cancellationToken)
                 .ConfigureAwait(false);
-            var (createWait, engineErrorCode) = await WaitForTaskAsync(createTask.TaskUid, cancellationToken)
+            var (createWait, engineErrorCode) = await WaitForTaskAsync(SearchOperations.EnsureIndex, createTask.TaskUid, cancellationToken)
                 .ConfigureAwait(false);
             if (createWait.IsFailure)
             {
@@ -126,7 +135,7 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             if (!await IsUnclaimedAndEmptyAsync(index, currentSettings, cancellationToken).ConfigureAwait(false))
             {
                 var textAnalysisConflict = DetectTextAnalysisConflict(definition, currentSettings);
-                if (textAnalysisConflict is not null)
+                if (textAnalysisConflict != Primitives.Errors.Error.None)
                 {
                     return Result.Failure(textAnalysisConflict);
                 }
@@ -184,14 +193,15 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         }
 
         var updateTask = await index.UpdateSettingsAsync(settings, cancellationToken).ConfigureAwait(false);
-        var updateWait = await WaitAsync(updateTask.TaskUid, cancellationToken).ConfigureAwait(false);
+        var updateWait = await WaitAsync(SearchOperations.EnsureIndex, updateTask.TaskUid, cancellationToken).ConfigureAwait(false);
         if (updateWait.IsFailure)
         {
             return updateWait;
         }
 
-        _logger.MeilisearchIndexEnsured(definition.Name, definition.Fields.Count);
-        _logger.MeilisearchIndexSettingsApplied(
+        MeilisearchLog.IndexEnsured(_logger, definition.Name, definition.Fields.Count);
+        MeilisearchLog.IndexSettingsApplied(
+            _logger,
             definition.Name,
             filterableAttributes.Length,
             sortableAttributes.Length,
@@ -199,13 +209,14 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
 
         if (definition.Synonyms.Count > 0 || definition.StopWords.Count > 0)
         {
-            _logger.MeilisearchTextAnalysisApplied(
+            MeilisearchLog.TextAnalysisApplied(
+                _logger,
                 definition.Name, definition.Synonyms.Count, definition.StopWords.Count);
         }
 
         if (rankingRules is not null)
         {
-            _logger.MeilisearchRankingRulesApplied(definition.Name, rankingRules.Count);
+            MeilisearchLog.RankingRulesApplied(_logger, definition.Name, rankingRules.Count);
         }
 
         return Result.Success();
@@ -214,9 +225,9 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     /// <summary>
     /// Compares the live index's synonym and stop-word settings against
     /// <paramref name="definition"/>'s, returning <see cref="SearchErrors.IndexDefinitionConflict"/>
-    /// when they differ and <see langword="null"/> when they match.
+    /// when they differ and <see cref="Primitives.Errors.Error.None"/> when they match.
     /// </summary>
-    private static Primitives.Errors.Error? DetectTextAnalysisConflict(
+    private static Primitives.Errors.Error DetectTextAnalysisConflict(
         SearchIndexDefinition definition, global::Meilisearch.Settings currentSettings)
     {
         var liveStopWords = (currentSettings.StopWords ?? []).OrderBy(w => w, StringComparer.Ordinal).ToArray();
@@ -247,12 +258,12 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             }
         }
 
-        return null;
+        return Primitives.Errors.Error.None;
     }
 
     /// <inheritdoc />
     public Task<Result<bool>> IndexExistsAsync(string indexName, CancellationToken cancellationToken = default)
-        => ClassifyAsync(OperationIndexExists, indexName, ct => IndexExistsCoreAsync(indexName, ct), cancellationToken);
+        => ClassifyAsync(SearchOperations.IndexExists, indexName, ct => IndexExistsCoreAsync(indexName, ct), cancellationToken);
 
     private async Task<Result<bool>> IndexExistsCoreAsync(string indexName, CancellationToken cancellationToken)
     {
@@ -281,16 +292,32 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
 
     /// <inheritdoc />
     public Task<Result> DeleteIndexAsync(string indexName, CancellationToken cancellationToken = default)
-        => ClassifyAsync(OperationDeleteIndex, indexName, ct => DeleteIndexCoreAsync(indexName, ct), cancellationToken);
+        => ClassifyAsync(SearchOperations.DeleteIndex, indexName, ct => DeleteIndexCoreAsync(indexName, ct), cancellationToken);
 
     private async Task<Result> DeleteIndexCoreAsync(string indexName, CancellationToken cancellationToken)
     {
         var task = await _client.DeleteIndexAsync(indexName, cancellationToken).ConfigureAwait(false);
-        return await WaitAsync(task.TaskUid, cancellationToken).ConfigureAwait(false);
+        return await WaitAsync(SearchOperations.DeleteIndex, task.TaskUid, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<Result> CutoverAsync(IndexCutoverRequest request, CancellationToken cancellationToken = default)
+    {
+        using var scope = _telemetry.Start(SearchOperations.Cutover, request.LiveIndexName);
+        try
+        {
+            var result = await CutoverCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
+        }
+    }
+
+    private async Task<Result> CutoverCoreAsync(IndexCutoverRequest request, CancellationToken cancellationToken)
     {
         // VERIFIED against the real MeiliSearch 0.20.0 SDK/engine (2026-07-20): SwapIndexesAsync requires
         // BOTH index names to already exist — swapping against a live index name that has never been
@@ -312,13 +339,13 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             {
                 var createLiveTask = await _client.CreateIndexAsync(request.LiveIndexName, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
-                var createLiveWait = await WaitAsync(createLiveTask.TaskUid, cancellationToken).ConfigureAwait(false);
+                var createLiveWait = await WaitAsync(SearchOperations.Cutover, createLiveTask.TaskUid, cancellationToken).ConfigureAwait(false);
                 if (createLiveWait.IsFailure)
                 {
                     return Result.Failure(CutoverFault(createLiveWait.Error, request, StepCreateLive, exception: null));
                 }
             }
-            catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, request.LiveIndexName, OperationCutover, cancellationToken, out var nested))
+            catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, request.LiveIndexName, SearchOperations.Cutover, cancellationToken, out var nested))
             {
                 return Result.Failure(CutoverFault(nested, request, StepCreateLive, ex));
             }
@@ -331,23 +358,23 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                     [new global::Meilisearch.IndexSwap(request.StagingIndexName, request.LiveIndexName, rename: false)],
                     cancellationToken)
                 .ConfigureAwait(false);
-            var waitResult = await WaitAsync(task.TaskUid, cancellationToken).ConfigureAwait(false);
+            var waitResult = await WaitAsync(SearchOperations.Cutover, task.TaskUid, cancellationToken).ConfigureAwait(false);
             if (waitResult.IsFailure)
             {
                 return Result.Failure(CutoverFault(waitResult.Error, request, StepSwap, exception: null));
             }
         }
-        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, request.LiveIndexName, OperationCutover, cancellationToken, out var nested))
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, request.LiveIndexName, SearchOperations.Cutover, cancellationToken, out var nested))
         {
             return Result.Failure(CutoverFault(nested, request, StepSwap, ex));
         }
 
-        _logger.MeilisearchIndexesSwapped(request.StagingIndexName, request.LiveIndexName);
+        MeilisearchLog.IndexesSwapped(_logger, request.StagingIndexName, request.LiveIndexName);
 
         if (!request.DeleteStagingAfterCutover)
         {
             // After a Meilisearch swap the staging name still holds the OLD (pre-cutover) data.
-            _logger.MeilisearchStagingIndexRetained(request.StagingIndexName);
+            MeilisearchLog.StagingIndexRetained(_logger, request.StagingIndexName);
             return Result.Success();
         }
 
@@ -366,10 +393,9 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     private Primitives.Errors.Error CutoverFault(
         Primitives.Errors.Error nested, IndexCutoverRequest request, string step, Exception? exception)
     {
-        _logger.MeilisearchCutoverStepFailed(request.StagingIndexName, request.LiveIndexName, step, exception);
-        return nested.Type is Primitives.Errors.ErrorType.Unavailable
-            or Primitives.Errors.ErrorType.Timeout
-            or Primitives.Errors.ErrorType.Unauthorized
+        MeilisearchLog.CutoverStepFailed(_logger, request.StagingIndexName, request.LiveIndexName, step, exception);
+        return nested.Type is Primitives.Errors.ErrorType.Unavailable or Primitives.Errors.ErrorType.Timeout
+            || nested.Code == SearchErrorCodes.EngineUnauthorized
             ? nested
             : SearchErrors.CutoverFailed(
                 request.StagingIndexName, request.LiveIndexName, $"failed step '{step}' ({nested.Code}).");
@@ -382,28 +408,46 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     private async Task<Result> ClassifyAsync(
         string operation, string indexName, Func<CancellationToken, Task<Result>> body, CancellationToken cancellationToken)
     {
+        using var scope = _telemetry.Start(operation, indexName);
         try
         {
-            return await body(cancellationToken).ConfigureAwait(false);
+            var result = await body(cancellationToken).ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
         }
         catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, indexName, operation, cancellationToken, out var error))
         {
-            _logger.MeilisearchOperationFaulted(operation, indexName, error.Code, ex);
+            MeilisearchLog.OperationFaulted(_logger, operation, indexName, error.Code, ex);
+            scope.Failed(error);
             return Result.Failure(error);
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
         }
     }
 
     private async Task<Result<T>> ClassifyAsync<T>(
         string operation, string indexName, Func<CancellationToken, Task<Result<T>>> body, CancellationToken cancellationToken)
     {
+        using var scope = _telemetry.Start(operation, indexName);
         try
         {
-            return await body(cancellationToken).ConfigureAwait(false);
+            var result = await body(cancellationToken).ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
         }
         catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, indexName, operation, cancellationToken, out var error))
         {
-            _logger.MeilisearchOperationFaulted(operation, indexName, error.Code, ex);
+            MeilisearchLog.OperationFaulted(_logger, operation, indexName, error.Code, ex);
+            scope.Failed(error);
             return Result<T>.Failure(error);
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
         }
     }
 
@@ -520,12 +564,12 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
 
         if (!reachable || !indexAddressable || !searchable)
         {
-            _logger.MeilisearchProbeDegraded(indexName, reachable, indexAddressable, searchable, firstFault);
+            MeilisearchLog.ProbeDegraded(_logger, indexName, reachable, indexAddressable, searchable, firstFault);
         }
 
         if (pendingWriteCount is { } pendingCount && pendingCount > 0)
         {
-            _logger.MeilisearchWriteBacklogDeep(pendingCount);
+            MeilisearchLog.WriteBacklogDeep(_logger, pendingCount);
         }
 
         return Result<SearchIndexHealth>.Success(new SearchIndexHealth
@@ -552,11 +596,11 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         return entry?[FingerprintDictionaryPrefix.Length..];
     }
 
-    private async Task<Result> WaitAsync(int taskUid, CancellationToken cancellationToken) =>
-        (await WaitForTaskAsync(taskUid, cancellationToken).ConfigureAwait(false)).Result;
+    private async Task<Result> WaitAsync(string operation, int taskUid, CancellationToken cancellationToken) =>
+        (await WaitForTaskAsync(operation, taskUid, cancellationToken).ConfigureAwait(false)).Result;
 
     /// <summary>Waits for a task; on failure also returns Meilisearch's own error code (e.g. <c>index_already_exists</c>).</summary>
-    private async Task<(Result Result, string? EngineErrorCode)> WaitForTaskAsync(int taskUid, CancellationToken cancellationToken)
+    private async Task<(Result Result, string? EngineErrorCode)> WaitForTaskAsync(string operation, int taskUid, CancellationToken cancellationToken)
     {
         try
         {
@@ -577,8 +621,7 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         }
         catch (global::Meilisearch.MeilisearchTimeoutError)
         {
-            return (Result.Failure(SearchErrors.Timeout(
-                "Provisioning", TimeSpan.FromSeconds(_options.TaskWaitTimeoutSeconds))), null);
+            return (Result.Failure(SearchErrors.Timeout(operation)), null);
         }
     }
 
@@ -601,46 +644,64 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     /// <inheritdoc />
     public async Task<Result> VerifyRegisteredIndexesAsync(CancellationToken cancellationToken = default)
     {
+        using var scope = _telemetry.Start(SearchOperations.VerifyIndexes, string.Join(',', _registeredDefinitions.Keys));
+        try
+        {
+            var result = await VerifyRegisteredIndexesCoreAsync(cancellationToken).ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
+        }
+    }
+
+    private async Task<Result> VerifyRegisteredIndexesCoreAsync(CancellationToken cancellationToken)
+    {
         if (_registeredDefinitions.Count == 0)
         {
             return Result.Success();
         }
 
-        var drifted = new List<string>();
+        var drifted = new List<(string IndexName, string Kind, string Detail)>();
 
         foreach (var (indexName, definition) in _registeredDefinitions)
         {
             var probeResult = await ProbeAsync(indexName, cancellationToken).ConfigureAwait(false);
             if (probeResult.IsFailure)
             {
-                drifted.Add($"{indexName}: probe failed ({probeResult.Error.Code})");
+                drifted.Add((indexName, DriftKinds.ProbeFailed, $"{indexName}: probe failed ({probeResult.Error.Code})"));
                 continue;
             }
 
             var health = probeResult.Value;
             if (!health.Reachable)
             {
-                drifted.Add($"{indexName}: engine unreachable");
+                drifted.Add((indexName, DriftKinds.EngineUnreachable, $"{indexName}: engine unreachable"));
                 continue;
             }
 
             if (!health.IndexAddressable)
             {
-                drifted.Add($"{indexName}: not addressable with this service's API key");
+                drifted.Add((indexName, DriftKinds.NotAddressable, $"{indexName}: not addressable with this service's API key"));
                 continue;
             }
 
             var expectedFingerprint = definition.ComputeFingerprint();
             if (health.SchemaFingerprint is null)
             {
-                drifted.Add($"{indexName}: no schema fingerprint recorded — the index was never provisioned by EnsureIndexAsync");
+                drifted.Add((indexName, DriftKinds.NoFingerprint, $"{indexName}: no schema fingerprint recorded, so the index was never provisioned by EnsureIndexAsync"));
                 continue;
             }
 
             if (!string.Equals(health.SchemaFingerprint, expectedFingerprint, StringComparison.Ordinal))
             {
-                drifted.Add(
-                    $"{indexName}: schema fingerprint '{health.SchemaFingerprint}' does not match the registered definition's '{expectedFingerprint}'");
+                drifted.Add((
+                    indexName,
+                    DriftKinds.FingerprintMismatch,
+                    $"{indexName}: schema fingerprint '{health.SchemaFingerprint}' does not match the registered definition's '{expectedFingerprint}'"));
             }
         }
 
@@ -648,14 +709,18 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         {
             foreach (var indexName in _registeredDefinitions.Keys)
             {
-                _logger.MeilisearchIndexSettingsVerified(indexName);
+                MeilisearchLog.IndexSettingsVerified(_logger, indexName);
             }
 
             return Result.Success();
         }
 
-        var detail = string.Join("; ", drifted);
-        _logger.MeilisearchIndexSettingsDrifted(string.Join(", ", _registeredDefinitions.Keys), detail);
+        foreach (var (driftedIndex, kind, _) in drifted)
+        {
+            MeilisearchLog.IndexSettingsDrifted(_logger, driftedIndex, kind);
+        }
+
+        var detail = string.Join("; ", drifted.Select(d => d.Detail));
         return Result.Failure(SearchErrors.ProbeFailed(
             string.Join(", ", _registeredDefinitions.Keys),
             $"{drifted.Count} of {_registeredDefinitions.Count} registered index(es) did not match: {detail}"));

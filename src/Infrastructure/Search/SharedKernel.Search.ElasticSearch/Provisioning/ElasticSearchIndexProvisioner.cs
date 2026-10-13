@@ -6,13 +6,15 @@ using Elastic.Clients.Elasticsearch.Analysis;
 using Elastic.Clients.Elasticsearch.Mapping;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Search.ElasticSearch.Errors;
-using SharedKernel.Search.ElasticSearch.Logging;
+using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Options;
 // Elastic.Clients.Elasticsearch declares its own non-generic Result enum; alias ours explicitly so
 // the bare identifier in this file resolves to the neutral domain contract.
@@ -30,10 +32,6 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
     private const string IndexAlreadyExistsErrorType = "resource_already_exists_exception";
 
     private const string UnknownConflictField = "(unknown)";
-    private const string OperationEnsureIndex = "ensure_index";
-    private const string OperationIndexExists = "index_exists";
-    private const string OperationDeleteIndex = "delete_index";
-    private const string OperationCutover = "cutover";
 
     /// <summary>
     /// The name of the custom analyzer this provider installs on an index that declares synonyms or
@@ -54,7 +52,19 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
     private readonly IReadOnlyDictionary<string, SearchIndexDefinition> _registeredDefinitions;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _completionFields;
     private readonly IReadOnlyDictionary<string, string> _writeAliases;
+    private readonly IClock _clock;
     private readonly ILogger<ElasticSearchIndexProvisioner> _logger;
+    private readonly SearchTelemetry _telemetry;
+    private static class DriftKinds
+    {
+        internal const string ProbeFailed = "probe_failed";
+        internal const string EngineUnreachable = "engine_unreachable";
+        internal const string NotAddressable = "not_addressable";
+        internal const string NoFingerprint = "no_fingerprint";
+        internal const string FingerprintMismatch = "fingerprint_mismatch";
+        internal const string WriteAliasDrift = "write_alias_drift";
+    }
+
     private readonly Lock _cacheLock = new();
     private readonly Dictionary<string, (SearchIndexHealth Health, DateTimeOffset ObservedAt)> _probeCache = [];
 
@@ -75,28 +85,69 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
     /// a write alias that resolves to nothing lets every write succeed into a mapping-less index nobody
     /// reads, with no error anywhere.
     /// </param>
+    /// <param name="clock">The clock the probe cache ages against.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="telemetry">The provider telemetry.</param>
     public ElasticSearchIndexProvisioner(
         ElasticsearchClient client,
         ElasticSearchOptions options,
         IReadOnlyDictionary<string, SearchIndexDefinition> registeredDefinitions,
         IReadOnlyDictionary<string, IReadOnlyList<string>> completionFields,
         IReadOnlyDictionary<string, string> writeAliases,
-        ILogger<ElasticSearchIndexProvisioner> logger)
+        IClock clock,
+        ILogger<ElasticSearchIndexProvisioner> logger,
+        SearchTelemetry telemetry)
     {
         _client = client;
         _options = options;
         _registeredDefinitions = registeredDefinitions;
         _completionFields = completionFields;
         _writeAliases = writeAliases;
+        _clock = clock;
         _logger = logger;
+        _telemetry = telemetry;
+    }
+
+    private async Task<Result> TraceAsync(
+        string operation, string indexName, Func<CancellationToken, Task<Result>> body, CancellationToken cancellationToken)
+    {
+        using var scope = _telemetry.Start(operation, indexName);
+        try
+        {
+            var result = await body(cancellationToken).ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
+        }
+    }
+
+    private async Task<Result<T>> TraceAsync<T>(
+        string operation, string indexName, Func<CancellationToken, Task<Result<T>>> body, CancellationToken cancellationToken)
+    {
+        using var scope = _telemetry.Start(operation, indexName);
+        try
+        {
+            var result = await body(cancellationToken).ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
+        }
     }
 
     private Primitives.Errors.Error Fault(
         ElasticsearchResponse response, string operation, CancellationToken cancellationToken)
     {
         var error = ElasticSearchFaultMapper.Map(response, string.Empty, operation, cancellationToken);
-        _logger.ElasticSearchEngineFault(
+        ElasticSearchLog.EngineFault(
+            _logger,
             operation,
             string.Empty,
             (int?)response.ApiCallDetails?.HttpStatusCode,
@@ -111,26 +162,29 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
     private Primitives.Errors.Error CutoverFault(
         ElasticsearchResponse response, IndexCutoverRequest request, string step, CancellationToken cancellationToken)
     {
-        var mapped = ElasticSearchFaultMapper.Map(response, request.LiveIndexName, OperationCutover, cancellationToken);
-        _logger.ElasticSearchEngineFault(
-            OperationCutover,
+        var mapped = ElasticSearchFaultMapper.Map(response, request.LiveIndexName, SearchOperations.Cutover, cancellationToken);
+        ElasticSearchLog.EngineFault(
+            _logger,
+            SearchOperations.Cutover,
             request.LiveIndexName,
             (int?)response.ApiCallDetails?.HttpStatusCode,
             ElasticSearchFaultMapper.OriginalException(response));
-        return mapped.Type is Primitives.Errors.ErrorType.Unavailable
-            or Primitives.Errors.ErrorType.Timeout
-            or Primitives.Errors.ErrorType.Unauthorized
+        return mapped.Type is Primitives.Errors.ErrorType.Unavailable or Primitives.Errors.ErrorType.Timeout
+            || mapped.Code == SearchErrorCodes.EngineUnauthorized
             ? mapped
             : SearchErrors.CutoverFailed(request.StagingIndexName, request.LiveIndexName, $"failed step '{step}'.");
     }
 
     /// <inheritdoc />
-    public async Task<Result> EnsureIndexAsync(SearchIndexDefinition definition, CancellationToken cancellationToken = default)
+    public Task<Result> EnsureIndexAsync(SearchIndexDefinition definition, CancellationToken cancellationToken = default)
+        => TraceAsync(SearchOperations.EnsureIndex, definition.Name, ct => EnsureIndexCoreAsync(definition, ct), cancellationToken);
+
+    private async Task<Result> EnsureIndexCoreAsync(SearchIndexDefinition definition, CancellationToken cancellationToken)
     {
         var existsResponse = await _client.Indices.ExistsAsync(definition.Name, cancellationToken).ConfigureAwait(false);
         if (!existsResponse.IsValidResponse)
         {
-            return Result.Failure(Fault(existsResponse, OperationEnsureIndex, cancellationToken));
+            return Result.Failure(Fault(existsResponse, SearchOperations.EnsureIndex, cancellationToken));
         }
 
         var hasTextAnalysis = definition.Synonyms.Count > 0 || definition.StopWords.Count > 0;
@@ -161,10 +215,11 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             var createResponse = await _client.Indices.CreateAsync(createRequest, cancellationToken).ConfigureAwait(false);
             if (createResponse.IsValidResponse)
             {
-                _logger.ElasticSearchIndexEnsured(definition.Name, definition.Fields.Count, definition.MaxTotalHits);
+                ElasticSearchLog.IndexEnsured(_logger, definition.Name, definition.Fields.Count, definition.MaxTotalHits);
                 if (hasTextAnalysis)
                 {
-                    _logger.ElasticSearchTextAnalysisApplied(
+                    ElasticSearchLog.TextAnalysisApplied(
+                        _logger,
                         definition.Name, definition.Synonyms.Count, definition.StopWords.Count);
                 }
 
@@ -179,7 +234,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                     IndexAlreadyExistsErrorType,
                     StringComparison.Ordinal))
             {
-                return Result.Failure(Fault(createResponse, OperationEnsureIndex, cancellationToken));
+                return Result.Failure(Fault(createResponse, SearchOperations.EnsureIndex, cancellationToken));
             }
         }
 
@@ -212,7 +267,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             return Result.Failure(
                 putMappingResponse.ApiCallDetails?.HttpStatusCode == 400
                     ? SearchErrors.IndexDefinitionConflict(definition.Name, UnknownConflictField)
-                    : Fault(putMappingResponse, OperationEnsureIndex, cancellationToken));
+                    : Fault(putMappingResponse, SearchOperations.EnsureIndex, cancellationToken));
         }
 
         var putSettingsResponse = await _client.Indices
@@ -222,33 +277,42 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             .ConfigureAwait(false);
         if (!putSettingsResponse.IsValidResponse)
         {
-            return Result.Failure(Fault(putSettingsResponse, OperationEnsureIndex, cancellationToken));
+            return Result.Failure(Fault(putSettingsResponse, SearchOperations.EnsureIndex, cancellationToken));
         }
 
-        _logger.ElasticSearchIndexEnsured(definition.Name, definition.Fields.Count, definition.MaxTotalHits);
+        ElasticSearchLog.IndexEnsured(_logger, definition.Name, definition.Fields.Count, definition.MaxTotalHits);
         return Result.Success();
     }
 
     /// <inheritdoc />
-    public async Task<Result<bool>> IndexExistsAsync(string indexName, CancellationToken cancellationToken = default)
+    public Task<Result<bool>> IndexExistsAsync(string indexName, CancellationToken cancellationToken = default)
+        => TraceAsync(SearchOperations.IndexExists, indexName, ct => IndexExistsCoreAsync(indexName, ct), cancellationToken);
+
+    private async Task<Result<bool>> IndexExistsCoreAsync(string indexName, CancellationToken cancellationToken)
     {
         var response = await _client.Indices.ExistsAsync(indexName, cancellationToken).ConfigureAwait(false);
         return response.IsValidResponse
             ? Result<bool>.Success(response.Exists)
-            : Result<bool>.Failure(Fault(response, OperationIndexExists, cancellationToken));
+            : Result<bool>.Failure(Fault(response, SearchOperations.IndexExists, cancellationToken));
     }
 
     /// <inheritdoc />
-    public async Task<Result> DeleteIndexAsync(string indexName, CancellationToken cancellationToken = default)
+    public Task<Result> DeleteIndexAsync(string indexName, CancellationToken cancellationToken = default)
+        => TraceAsync(SearchOperations.DeleteIndex, indexName, ct => DeleteIndexCoreAsync(indexName, ct), cancellationToken);
+
+    private async Task<Result> DeleteIndexCoreAsync(string indexName, CancellationToken cancellationToken)
     {
         var response = await _client.Indices.DeleteAsync(indexName, cancellationToken).ConfigureAwait(false);
         return response.IsValidResponse
             ? Result.Success()
-            : Result.Failure(Fault(response, OperationDeleteIndex, cancellationToken));
+            : Result.Failure(Fault(response, SearchOperations.DeleteIndex, cancellationToken));
     }
 
     /// <inheritdoc />
-    public async Task<Result> CutoverAsync(IndexCutoverRequest request, CancellationToken cancellationToken = default)
+    public Task<Result> CutoverAsync(IndexCutoverRequest request, CancellationToken cancellationToken = default)
+        => TraceAsync(SearchOperations.Cutover, request.LiveIndexName, ct => CutoverCoreAsync(request, ct), cancellationToken);
+
+    private async Task<Result> CutoverCoreAsync(IndexCutoverRequest request, CancellationToken cancellationToken)
     {
         // A SINGLE request containing both the remove and the add — ElasticSearch applies the whole
         // actions array atomically, so the read alias is never left undefined.
@@ -273,7 +337,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             return Result.Failure(CutoverFault(response, request, "update_aliases", cancellationToken));
         }
 
-        _logger.ElasticSearchAliasCutoverCompleted(request.StagingIndexName, request.LiveIndexName);
+        ElasticSearchLog.AliasCutoverCompleted(_logger, request.StagingIndexName, request.LiveIndexName);
 
         if (!request.DeleteStagingAfterCutover)
         {
@@ -286,7 +350,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             return Result.Failure(CutoverFault(deleteResponse, request, "delete_staging", cancellationToken));
         }
 
-        _logger.ElasticSearchStagingIndexDeleted(request.StagingIndexName);
+        ElasticSearchLog.StagingIndexDeleted(_logger, request.StagingIndexName);
         return Result.Success();
     }
 
@@ -297,7 +361,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         {
             if (_options.ProbeCacheSeconds > 0
                 && _probeCache.TryGetValue(indexName, out var cached)
-                && DateTimeOffset.UtcNow - cached.ObservedAt < TimeSpan.FromSeconds(_options.ProbeCacheSeconds))
+                && _clock.UtcNow - cached.ObservedAt < TimeSpan.FromSeconds(_options.ProbeCacheSeconds))
             {
                 return Result<SearchIndexHealth>.Success(cached.Health);
             }
@@ -329,7 +393,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 
         if (reachable && healthResponse.Status == HealthStatus.Yellow)
         {
-            _logger.ElasticSearchClusterYellowAccepted(indexName);
+            ElasticSearchLog.ClusterYellowAccepted(_logger, indexName);
         }
 
         Exception? firstFault = ElasticSearchFaultMapper.OriginalException(healthResponse);
@@ -407,7 +471,8 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 
         if (!reachable || !indexAddressable || !searchable)
         {
-            _logger.ElasticSearchProbeDegraded(
+            ElasticSearchLog.ProbeDegraded(
+                _logger,
                 indexName, healthResponse.Status.ToString(), indexAddressable, searchable, firstFault);
         }
 
@@ -427,7 +492,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 
         lock (_cacheLock)
         {
-            _probeCache[indexName] = (health, DateTimeOffset.UtcNow);
+            _probeCache[indexName] = (health, _clock.UtcNow);
         }
 
         return Result<SearchIndexHealth>.Success(health);
@@ -456,7 +521,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                 SearchFieldKind.Decimal => new DoubleNumberProperty(),
                 SearchFieldKind.Boolean => new BooleanProperty(),
                 SearchFieldKind.DateTimeOffset => new DateProperty(),
-                _ => throw new NotSupportedException($"Unrecognized SearchFieldKind '{field.Kind}'."),
+                _ => throw new NotSupportedException($"Search field kind '{field.Kind}' is not recognised, so add its mapping to this provider."),
             };
         }
 
@@ -573,7 +638,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 
         if (!mappingResponse.IsValidResponse)
         {
-            return Fault(mappingResponse, OperationEnsureIndex, cancellationToken);
+            return Fault(mappingResponse, SearchOperations.EnsureIndex, cancellationToken);
         }
 
         var liveFingerprint = mappingResponse.Mappings.Values.FirstOrDefault()?.Mappings.Meta is { } meta
@@ -618,7 +683,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         var mappingResponse = await _client.Indices.GetMappingAsync(writeAlias, cancellationToken).ConfigureAwait(false);
         if (!mappingResponse.IsValidResponse)
         {
-            return $"{indexName}: write alias '{writeAlias}' does not resolve — ElasticSearch auto-creates " +
+            return $"{indexName}: write alias '{writeAlias}' does not resolve, and ElasticSearch auto-creates " +
                    "an index on write, so writes would silently land in a mapping-less index nothing reads";
         }
 
@@ -628,7 +693,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         return hasFingerprint
             ? null
             : $"{indexName}: write alias '{writeAlias}' resolves to an index this platform never " +
-              "provisioned (no schema fingerprint) — most likely one ElasticSearch auto-created on a write";
+              "provisioned (no schema fingerprint), most likely one ElasticSearch auto-created on a write";
     }
 
     /// <summary>
@@ -661,49 +726,60 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
     }
 
     /// <inheritdoc />
-    public async Task<Result> VerifyRegisteredIndexesAsync(CancellationToken cancellationToken = default)
+    public Task<Result> VerifyRegisteredIndexesAsync(CancellationToken cancellationToken = default)
+        => TraceAsync(
+            SearchOperations.VerifyIndexes,
+            string.Join(',', _registeredDefinitions.Keys),
+            VerifyRegisteredIndexesCoreAsync,
+            cancellationToken);
+
+    private async Task<Result> VerifyRegisteredIndexesCoreAsync(CancellationToken cancellationToken)
     {
         if (_registeredDefinitions.Count == 0)
         {
             return Result.Success();
         }
 
-        var drifted = new List<string>();
+        var drifted = new List<(string IndexName, string Kind, string Detail)>();
 
         foreach (var (indexName, definition) in _registeredDefinitions)
         {
             var probeResult = await ProbeAsync(indexName, cancellationToken).ConfigureAwait(false);
             if (probeResult.IsFailure)
             {
-                drifted.Add($"{indexName}: probe failed ({probeResult.Error.Code})");
+                drifted.Add((indexName, DriftKinds.ProbeFailed, $"{indexName}: probe failed ({probeResult.Error.Code})"));
                 continue;
             }
 
             var health = probeResult.Value;
             if (!health.Reachable)
             {
-                drifted.Add($"{indexName}: cluster unreachable");
+                drifted.Add((indexName, DriftKinds.EngineUnreachable, $"{indexName}: cluster unreachable"));
                 continue;
             }
 
             if (!health.IndexAddressable)
             {
-                drifted.Add($"{indexName}: alias or index not addressable with this service's credentials");
+                drifted.Add((indexName, DriftKinds.NotAddressable, $"{indexName}: alias or index not addressable with this service's credentials"));
                 continue;
             }
 
             var expectedFingerprint = definition.ComputeFingerprint();
             if (health.SchemaFingerprint is null)
             {
-                drifted.Add(
-                    $"{indexName}: no schema fingerprint recorded — the index was never provisioned by EnsureIndexAsync");
+                drifted.Add((
+                    indexName,
+                    DriftKinds.NoFingerprint,
+                    $"{indexName}: no schema fingerprint recorded, so the index was never provisioned by EnsureIndexAsync"));
                 continue;
             }
 
             if (!string.Equals(health.SchemaFingerprint, expectedFingerprint, StringComparison.Ordinal))
             {
-                drifted.Add(
-                    $"{indexName}: schema fingerprint '{health.SchemaFingerprint}' does not match the registered definition's '{expectedFingerprint}'");
+                drifted.Add((
+                    indexName,
+                    DriftKinds.FingerprintMismatch,
+                    $"{indexName}: schema fingerprint '{health.SchemaFingerprint}' does not match the registered definition's '{expectedFingerprint}'"));
                 continue;
             }
 
@@ -718,7 +794,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                 .ConfigureAwait(false);
             if (writeAliasDrift is not null)
             {
-                drifted.Add(writeAliasDrift);
+                drifted.Add((indexName, DriftKinds.WriteAliasDrift, writeAliasDrift));
             }
         }
 
@@ -726,14 +802,18 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         {
             foreach (var indexName in _registeredDefinitions.Keys)
             {
-                _logger.ElasticSearchIndexVerified(indexName);
+                ElasticSearchLog.IndexVerified(_logger, indexName);
             }
 
             return Result.Success();
         }
 
-        var detail = string.Join("; ", drifted);
-        _logger.ElasticSearchIndexDrifted(string.Join(", ", _registeredDefinitions.Keys), detail);
+        foreach (var (driftedIndex, kind, _) in drifted)
+        {
+            ElasticSearchLog.IndexDrifted(_logger, driftedIndex, kind);
+        }
+
+        var detail = string.Join("; ", drifted.Select(d => d.Detail));
         return Result.Failure(SearchErrors.ProbeFailed(
             string.Join(", ", _registeredDefinitions.Keys),
             $"{drifted.Count} of {_registeredDefinitions.Count} registered index(es) did not match: {detail}"));

@@ -138,7 +138,7 @@ public abstract record SearchFilter
         if (value.Kind is SearchValueKind.String or SearchValueKind.Boolean)
         {
             throw new ArgumentException(
-                $"SearchFilter.Between only accepts Int64, Double, or DateTimeOffset bounds; received {value.Kind}.",
+                $"SearchFilter.Between only accepts Int64, Double or DateTimeOffset bounds, not a '{value.Kind}' bound.",
                 paramName);
         }
     }

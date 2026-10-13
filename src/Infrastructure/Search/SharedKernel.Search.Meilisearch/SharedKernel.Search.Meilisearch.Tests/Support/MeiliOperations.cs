@@ -36,10 +36,10 @@ internal static class MeiliOperations
         ["instant"] = async (h, ct) => Of(await h.Instant.InstantAsync(new InstantSearchRequest { FreeText = "q" }, Tenant, ct)),
         ["facet_values"] = async (h, ct) => Of(await h.Instant.SearchFacetValuesAsync("status", "ac", null, Tenant, ct)),
         ["ensure_index"] = async (h, ct) => Of(await h.Provisioner.EnsureIndexAsync(h.Definition, ct)),
-        ["index_exists"] = async (h, ct) => Of(await h.Provisioner.IndexExistsAsync("products", ct)),
-        ["delete_index"] = async (h, ct) => Of(await h.Provisioner.DeleteIndexAsync("products", ct)),
+        ["index_exists"] = async (h, ct) => Of(await h.Provisioner.IndexExistsAsync(h.Definition.Name, ct)),
+        ["delete_index"] = async (h, ct) => Of(await h.Provisioner.DeleteIndexAsync(h.Definition.Name, ct)),
         ["cutover"] = async (h, ct) => Of(await h.Provisioner.CutoverAsync(
-            new IndexCutoverRequest { StagingIndexName = "products-staging", LiveIndexName = "products" }, ct)),
+            new IndexCutoverRequest { StagingIndexName = h.Definition.Name + "-staging", LiveIndexName = h.Definition.Name }, ct)),
     };
 
     public static TheoryData<string> Names => new(All.Keys);

@@ -11,7 +11,9 @@ using SharedKernel.Primitives.Logging;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
-using SharedKernel.Search.Meilisearch.Logging;
+using SharedKernel.Search.Abstractions.Errors;
+using SharedKernel.Search.Abstractions.Telemetry;
+using SharedKernel.Search.Meilisearch.Diagnostics;
 using SharedKernel.Search.Meilisearch.Tests.Support;
 using SharedKernel.Testing.Logging;
 using SharedKernel.Testing.Telemetry;
@@ -70,7 +72,7 @@ public sealed class MeilisearchRethrowAndLogTests
     }
 
     [Fact]
-    public async Task RethrownException_StillCompletesTheSpan_WithTheTypeNameAsDescription_AndTheHistogram()
+    public async Task RethrownException_StillCompletesTheSpan_WithTheFullTypeNameAsDescription_AndTheHistogram()
     {
         using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
         using var metrics = MetricRecorder.StartRecording(SearchWellKnown.MeterName);
@@ -80,17 +82,18 @@ public sealed class MeilisearchRethrowAndLogTests
             .Field("name", SearchFieldKind.Text, searchable: true).Build().Value;
         var index = new SharedKernel.Search.Meilisearch.Index.MeilisearchIndex<TestProduct>(
             harness.Client, definition, harness.Options, new SharedKernel.Testing.Clocks.FakeClock(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<SharedKernel.Search.Meilisearch.Index.MeilisearchIndex<TestProduct>>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<SharedKernel.Search.Meilisearch.Index.MeilisearchIndex<TestProduct>>.Instance,
+            harness.Telemetry);
 
         var act = () => index.SearchAsync(SearchRequest.Default, TenantScope.Global);
         await act.Should().ThrowAsync<InvalidOperationException>();
 
-        var span = spans.RecordedActivities.Single(a => (string?)a.GetTagItem(SearchWellKnown.IndexTagName) == "products-rethrow-telemetry");
+        var span = spans.RecordedActivities.Single(a => (string?)a.GetTagItem(SearchTagKeys.Index) == "products-rethrow-telemetry");
         span.Status.Should().Be(ActivityStatusCode.Error);
-        span.StatusDescription.Should().Be(nameof(InvalidOperationException)).And.NotContain("never a description");
+        span.StatusDescription.Should().Be(typeof(InvalidOperationException).FullName).And.NotContain("never a description");
         span.GetTagItem("error.type").Should().Be(typeof(InvalidOperationException).FullName);
-        var measurement = metrics.MeasurementsOf(SearchWellKnown.OperationDurationMetricName)
-            .Single(m => m.TryGetTag(SearchWellKnown.IndexTagName, out var value) && (string?)value == "products-rethrow-telemetry");
+        var measurement = metrics.MeasurementsOf(SearchInstrumentNames.OperationDuration)
+            .Single(m => m.TryGetTag(SearchTagKeys.Index, out var value) && (string?)value == "products-rethrow-telemetry");
         measurement.TryGetTag("error.type", out var errorType).Should().BeTrue();
         errorType.Should().Be(typeof(InvalidOperationException).FullName);
     }
@@ -252,7 +255,7 @@ public sealed class MeilisearchRethrowAndLogTests
             new IndexCutoverRequest { StagingIndexName = "products-staging", LiveIndexName = "products" });
 
         // The first step (does the live index exist) already meets the outage and reports it unchanged.
-        result.Error.Code.Should().Be("search.unreachable");
+        result.Error.Code.Should().Be(SearchErrorCodes.Unavailable);
         result.Error.Message.Should().NotContain(MeiliFaultHarness.HostSentinel);
         harness.ProvisionerLog.Records.ShouldHaveLogged(new EventId(OperationFaulted), LogLevel.Warning).Exception.Should().NotBeNull();
     }
@@ -276,7 +279,7 @@ public sealed class MeilisearchRethrowAndLogTests
 
         var result = await harness.Provisioner.EnsureIndexAsync(harness.Definition);
 
-        result.Error.Code.Should().Be("search.unreachable");
+        result.Error.Code.Should().Be(SearchErrorCodes.Unavailable);
     }
 
     [Fact]

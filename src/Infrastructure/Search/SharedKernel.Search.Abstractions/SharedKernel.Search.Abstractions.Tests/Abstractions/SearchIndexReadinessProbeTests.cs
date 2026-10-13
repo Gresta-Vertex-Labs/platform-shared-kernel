@@ -60,7 +60,7 @@ public sealed class SearchIndexReadinessProbeTests
     [Fact]
     public async Task FailedMeasurement_UnhealthyDescription_IsTheKernelErrorMessage_WithNoEngineText()
     {
-        var error = SearchErrors.Unreachable("meilisearch");
+        var error = SearchErrors.Unavailable("meilisearch");
         var probe = new SearchIndexReadinessProbe(
             "meilisearch", "products", (_, _) => Task.FromResult(Result<SearchIndexHealth>.Failure(error)));
 

@@ -136,7 +136,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchWriteReceipt>.Failure(
-                SearchErrors.WriteRejected(IndexName, "SimulateFailure enabled")));
+                SearchErrors.WriteRejected(IndexName, "the double's SimulateFailure flag is set.")));
         }
 
         if (!IsValidDocumentId(document.DocumentId))
@@ -191,7 +191,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchBulkReceipt>.Failure(
-                SearchErrors.WriteRejected(IndexName, "SimulateFailure enabled")));
+                SearchErrors.WriteRejected(IndexName, "the double's SimulateFailure flag is set.")));
         }
 
         var failures = new List<SearchItemFailure>();
@@ -242,7 +242,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchWriteReceipt>.Failure(
-                SearchErrors.WriteRejected(IndexName, "SimulateFailure enabled")));
+                SearchErrors.WriteRejected(IndexName, "the double's SimulateFailure flag is set.")));
         }
 
         var affected = 0;
@@ -296,7 +296,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchBulkReceipt>.Failure(
-                SearchErrors.WriteRejected(IndexName, "SimulateFailure enabled")));
+                SearchErrors.WriteRejected(IndexName, "the double's SimulateFailure flag is set.")));
         }
 
         var affected = 0;
@@ -340,7 +340,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchWriteReceipt>.Failure(
-                SearchErrors.WriteRejected(IndexName, "SimulateFailure enabled")));
+                SearchErrors.WriteRejected(IndexName, "the double's SimulateFailure flag is set.")));
         }
 
         if (_definition.TenantField is not null && tenantScope.IsGlobal)
@@ -379,7 +379,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
     {
         if (SimulateFailure)
         {
-            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(IndexName, "SimulateFailure enabled")));
+            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(IndexName, "the double's SimulateFailure flag is set.")));
         }
 
         _store.Clear();
@@ -408,7 +408,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         ArgumentNullException.ThrowIfNull(request);
 
         var validationError = ValidateSearchRequest(request, tenantScope);
-        if (validationError is not null)
+        if (validationError != SharedKernel.Primitives.Errors.Error.None)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchResults<TDocument>>.Failure(validationError));
         }
@@ -563,7 +563,9 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
 
         if (!IsValidDocumentId(document.DocumentId))
         {
-            throw new ArgumentException(SearchErrors.InvalidDocumentId(document.DocumentId).Message, nameof(document));
+            throw new ArgumentException(
+                $"Document id '{document.DocumentId}' is invalid, so use only A-Z, a-z, 0-9, '-' and '_'.",
+                nameof(document));
         }
 
         _store[document.DocumentId] = document;
@@ -600,7 +602,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         return filter is null ? tenantClause : SearchFilter.All(tenantClause, filter);
     }
 
-    private SharedKernel.Primitives.Errors.Error? ValidateSearchRequest(SearchRequest request, TenantScope tenantScope)
+    private SharedKernel.Primitives.Errors.Error ValidateSearchRequest(SearchRequest request, TenantScope tenantScope)
     {
         foreach (var sort in request.Sort)
         {
@@ -613,7 +615,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         if (request.Filter is not null)
         {
             var filterError = ValidateFilterFieldRoles(request.Filter);
-            if (filterError is not null)
+            if (filterError != SharedKernel.Primitives.Errors.Error.None)
             {
                 return filterError;
             }
@@ -645,21 +647,21 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
             return SearchErrors.TenantScopeMissing(IndexName);
         }
 
-        return null;
+        return SharedKernel.Primitives.Errors.Error.None;
     }
 
     private bool HasFieldRole(string field, Func<SearchFieldDefinition, bool> roleSelector) =>
         _definition.Fields.Any(f => string.Equals(f.Name, field, StringComparison.Ordinal) && roleSelector(f));
 
-    private SharedKernel.Primitives.Errors.Error? ValidateFilterFieldRoles(SearchFilter filter) => filter switch
+    private SharedKernel.Primitives.Errors.Error ValidateFilterFieldRoles(SearchFilter filter) => filter switch
     {
-        EqualFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? null : SearchErrors.FieldNotFilterable(IndexName, f.Field),
-        NotEqualFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? null : SearchErrors.FieldNotFilterable(IndexName, f.Field),
-        InFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? null : SearchErrors.FieldNotFilterable(IndexName, f.Field),
-        RangeFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? null : SearchErrors.FieldNotFilterable(IndexName, f.Field),
-        ExistsFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? null : SearchErrors.FieldNotFilterable(IndexName, f.Field),
-        AndFilter f => f.Operands.Select(ValidateFilterFieldRoles).FirstOrDefault(static e => e is not null),
-        OrFilter f => f.Operands.Select(ValidateFilterFieldRoles).FirstOrDefault(static e => e is not null),
+        EqualFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? SharedKernel.Primitives.Errors.Error.None : SearchErrors.FieldNotFilterable(IndexName, f.Field),
+        NotEqualFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? SharedKernel.Primitives.Errors.Error.None : SearchErrors.FieldNotFilterable(IndexName, f.Field),
+        InFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? SharedKernel.Primitives.Errors.Error.None : SearchErrors.FieldNotFilterable(IndexName, f.Field),
+        RangeFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? SharedKernel.Primitives.Errors.Error.None : SearchErrors.FieldNotFilterable(IndexName, f.Field),
+        ExistsFilter f => HasFieldRole(f.Field, static x => x.Filterable) ? SharedKernel.Primitives.Errors.Error.None : SearchErrors.FieldNotFilterable(IndexName, f.Field),
+        AndFilter f => f.Operands.Select(ValidateFilterFieldRoles).FirstOrDefault(static e => e != SharedKernel.Primitives.Errors.Error.None, SharedKernel.Primitives.Errors.Error.None),
+        OrFilter f => f.Operands.Select(ValidateFilterFieldRoles).FirstOrDefault(static e => e != SharedKernel.Primitives.Errors.Error.None, SharedKernel.Primitives.Errors.Error.None),
         NotFilter f => ValidateFilterFieldRoles(f.Operand),
     };
 
@@ -778,7 +780,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
     {
         var property = typeof(TDocument).GetProperty(field, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
             ?? throw new InvalidOperationException(
-                $"Field '{field}' does not resolve to any public property on document type '{typeof(TDocument).Name}'.");
+                $"Field '{field}' does not resolve to a public property on document type '{typeof(TDocument).Name}', so declare it on the document.");
         return property.GetValue(document);
     }
 

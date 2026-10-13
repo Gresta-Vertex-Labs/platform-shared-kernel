@@ -58,6 +58,7 @@ SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Buckets.get -> S
 SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult? other) -> bool
 SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Name.get -> string!
 SharedKernel.Search.ElasticSearch.Analytics.IAnalyticsSearch<TDocument>
+SharedKernel.Search.ElasticSearch.Analytics.IAnalyticsSearch<TDocument>.AggregateAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, System.Collections.Generic.IReadOnlyCollection<SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!>! aggregations, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet!>!>!
 SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation
 SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation? other) -> bool
 SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Field.get -> string!
@@ -115,14 +116,16 @@ SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.NextCursor.get -
 SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.NextCursor.init -> void
 SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>
 SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.CloseCursorAsync(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor cursor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.OpenCursorAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.TimeSpan keepAlive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Cursors.SearchCursor>!>!
 SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.ReadCursorAsync(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor cursor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument!>!>!>!
+SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.StreamAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.TimeSpan keepAlive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Search.Abstractions.Models.SearchHit<TDocument!>!>!
 SharedKernel.Search.ElasticSearch.Cursors.SearchCursor
 SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.Equals(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor other) -> bool
 SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.ExpiresAt.get -> System.DateTimeOffset
 SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.SearchCursor() -> void
 SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.SearchCursor(string! token, System.DateTimeOffset expiresAt) -> void
 SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.Token.get -> string!
-SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors
+SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrorCodes
 SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder
 SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder.AddIndex<TDocument>(string! readAlias, string! writeAlias, System.Action<SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!>! configure) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
 SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder.AllowRawClientAccess() -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
@@ -169,6 +172,7 @@ SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.Username.set -> v
 SharedKernel.Search.ElasticSearch.Raw.IElasticSearchRawClientAccessor
 SharedKernel.Search.ElasticSearch.Raw.IElasticSearchRawClientAccessor.Client.get -> Elastic.Clients.Elasticsearch.ElasticsearchClient!
 SharedKernel.Search.ElasticSearch.Suggest.ISuggestSearch<TDocument>
+SharedKernel.Search.ElasticSearch.Suggest.ISuggestSearch<TDocument>.SuggestAsync(string! suggestField, string! prefix, SharedKernel.Execution.Tenancy.TenantScope tenantScope, int size = 10, bool fuzzy = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion!>!>!>!
 SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion
 SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.<Clone>$() -> SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion!
 SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.DocumentId.get -> string!
@@ -181,6 +185,10 @@ SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Text.get -> string!
 SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Text.init -> void
 abstract SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!
 abstract SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.AggregationResult!
+const SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrorCodes.AggregationFailed = "search.elasticsearch.aggregation_failed" -> string!
+const SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrorCodes.CursorExpired = "search.elasticsearch.cursor_expired" -> string!
+const SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrorCodes.InvalidCursor = "search.elasticsearch.invalid_cursor" -> string!
+const SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrorCodes.SourceSerializerContextMissing = "search.elasticsearch.source_serializer_context_missing" -> string!
 const SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.SectionName = "Search:ElasticSearch" -> string!
 override SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.GetHashCode() -> int
 override SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.Equals(object? obj) -> bool
@@ -297,10 +305,6 @@ static SharedKernel.Search.ElasticSearch.Analytics.TermsResult.operator !=(Share
 static SharedKernel.Search.ElasticSearch.Analytics.TermsResult.operator ==(SharedKernel.Search.ElasticSearch.Analytics.TermsResult? left, SharedKernel.Search.ElasticSearch.Analytics.TermsResult? right) -> bool
 static SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.operator !=(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor left, SharedKernel.Search.ElasticSearch.Cursors.SearchCursor right) -> bool
 static SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.operator ==(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor left, SharedKernel.Search.ElasticSearch.Cursors.SearchCursor right) -> bool
-static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.AggregationFailed(string! aggregationName, string! reason) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.CursorExpired(System.DateTimeOffset expiredAt) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.InvalidCursor(string! reason) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.SourceSerializerContextMissing(string! documentTypeName) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchServiceCollectionExtensions.AddSharedKernelElasticSearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
 static SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchServiceCollectionExtensions.AddSharedKernelElasticSearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
 static SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchServiceCollectionExtensions.VerifyElasticSearchEngineVersionAsync(this System.IServiceProvider! services, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
@@ -322,7 +326,3 @@ virtual SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.PrintMembe
 ~override SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.ToString() -> string
 ~static SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.operator !=(SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? left, SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? right) -> bool
 ~static SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.operator ==(SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? left, SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? right) -> bool
-SharedKernel.Search.ElasticSearch.Analytics.IAnalyticsSearch<TDocument>.AggregateAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, System.Collections.Generic.IReadOnlyCollection<SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!>! aggregations, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet!>!>!
-SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.OpenCursorAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.TimeSpan keepAlive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Cursors.SearchCursor>!>!
-SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.StreamAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.TimeSpan keepAlive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Search.Abstractions.Models.SearchHit<TDocument!>!>!
-SharedKernel.Search.ElasticSearch.Suggest.ISuggestSearch<TDocument>.SuggestAsync(string! suggestField, string! prefix, SharedKernel.Execution.Tenancy.TenantScope tenantScope, int size = 10, bool fuzzy = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion!>!>!>!

@@ -4,6 +4,8 @@ using System.Runtime.CompilerServices;
 using Elastic.Transport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Search.Abstractions.Errors;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Tests.Support;
@@ -56,7 +58,7 @@ public sealed class ElasticSearchRethrowAndCancellationTests
     }
 
     [Fact]
-    public async Task RethrownException_StillCompletesTheSpan_WithTheTypeNameAsDescription_AndTheHistogram()
+    public async Task RethrownException_StillCompletesTheSpan_WithTheFullTypeNameAsDescription_AndTheHistogram()
     {
         const string indexName = "products-rethrow-telemetry";
         using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
@@ -67,13 +69,13 @@ public sealed class ElasticSearchRethrowAndCancellationTests
         var act = () => harness.Index.CountAsync(null, EsOperations.Tenant);
         var thrown = (await act.Should().ThrowAsync<Exception>()).Which;
 
-        var span = spans.RecordedActivities.Single(a => (string?)a.GetTagItem(SearchWellKnown.IndexTagName) == indexName);
+        var span = spans.RecordedActivities.Single(a => (string?)a.GetTagItem(SearchTagKeys.Index) == indexName);
         span.Status.Should().Be(ActivityStatusCode.Error);
-        span.StatusDescription.Should().Be(thrown.GetType().Name).And.NotContain("message that must never");
+        span.StatusDescription.Should().Be(thrown.GetType().FullName).And.NotContain("message that must never");
         span.GetTagItem("error.type").Should().Be(thrown.GetType().FullName);
 
-        var measurement = metrics.MeasurementsOf(SearchWellKnown.OperationDurationMetricName)
-            .Single(m => m.TryGetTag(SearchWellKnown.IndexTagName, out var value) && (string?)value == indexName);
+        var measurement = metrics.MeasurementsOf(SearchInstrumentNames.OperationDuration)
+            .Single(m => m.TryGetTag(SearchTagKeys.Index, out var value) && (string?)value == indexName);
         measurement.TryGetTag("error.type", out var errorType).Should().BeTrue();
         errorType.Should().Be(thrown.GetType().FullName);
     }
@@ -86,7 +88,7 @@ public sealed class ElasticSearchRethrowAndCancellationTests
         var result = await harness.Index.CountAsync(null, EsOperations.Tenant);
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("search.unreachable");
+        result.Error.Code.Should().Be(SearchErrorCodes.Unavailable);
     }
 
     [Theory]

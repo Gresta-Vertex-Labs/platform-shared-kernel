@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -83,12 +84,12 @@ public sealed class ElasticSearchNoLeakTests
         var (run, pageRead) = Operations[operationName];
         var expectations = new (int Status, string Code, ErrorType Type)[]
         {
-            (503, "search.unreachable", ErrorType.Unavailable),
-            (502, "search.unreachable", ErrorType.Unavailable),
-            (504, "search.unreachable", ErrorType.Unavailable),
-            (429, "search.unreachable", ErrorType.Unavailable),
-            (401, "search.unauthorized", ErrorType.Unauthorized),
-            (403, "search.unauthorized", ErrorType.Unauthorized),
+            (503, SearchErrorCodes.Unavailable, ErrorType.Unavailable),
+            (502, SearchErrorCodes.Unavailable, ErrorType.Unavailable),
+            (504, SearchErrorCodes.Unavailable, ErrorType.Unavailable),
+            (429, SearchErrorCodes.Unavailable, ErrorType.Unavailable),
+            (401, SearchErrorCodes.EngineUnauthorized, ErrorType.Unexpected),
+            (403, SearchErrorCodes.EngineUnauthorized, ErrorType.Unexpected),
             (408, "search.timeout", ErrorType.Timeout),
         };
 
@@ -112,7 +113,7 @@ public sealed class ElasticSearchNoLeakTests
         var (run, pageRead) = Operations[operationName];
         var cases = new (CannedReply Reply, string Code)[]
         {
-            (CannedReply.TransportFailure(new HttpRequestException("connect to " + EsFaultHarness.HostSentinel + " refused")), "search.unreachable"),
+            (CannedReply.TransportFailure(new HttpRequestException("connect to " + EsFaultHarness.HostSentinel + " refused")), SearchErrorCodes.Unavailable),
             (CannedReply.TransportFailure(new TaskCanceledException("request to " + EsFaultHarness.HostSentinel + " timed out")), "search.timeout"),
             (CannedReply.TransportFailure(new TaskCanceledException("timed out", new TimeoutException(EsFaultHarness.HostSentinel))), "search.timeout"),
         };
@@ -166,7 +167,7 @@ public sealed class ElasticSearchNoLeakTests
         var result = await harness.Index.DeleteManyAsync(["doc-1", "doc-2"], SearchWriteConsistency.Accepted);
 
         result.IsFailure.Should().BeTrue("a bulk request that did not execute must not report success with zero failures");
-        result.Error.Code.Should().Be("search.unreachable");
+        result.Error.Code.Should().Be(SearchErrorCodes.Unavailable);
     }
 
     private static void AssertSafe(Error error, string context)

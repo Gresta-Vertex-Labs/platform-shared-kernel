@@ -31,8 +31,8 @@ on every read, and no engine allowed to answer approximately while claiming to b
 - **Engine-only features without a leaky abstraction.** Instant search and tenant tokens (Meilisearch), aggregations,
   point-in-time cursors and completion suggestions (Elasticsearch) live in their provider package, so a provider swap
   is a build error listing every non-portable call.
-- **Failures as values.** Outages, timeouts and bad credentials come back as `search.unreachable`, `search.timeout`
-  and `search.unauthorized` on both engines; bulk writes report per-item failures in a `SearchBulkReceipt`.
+- **Failures as values.** Outages, timeouts and bad credentials come back as `search.unavailable`, `search.timeout`
+  and `search.engine_unauthorized` on both engines; bulk writes report per-item failures in a `SearchBulkReceipt`.
 - **Safe rebuilds.** Idempotent provisioning from every replica, staging → live `CutoverAsync`, and
   `VerifyRegisteredIndexesAsync` to catch a live schema that no longer matches the code.
 
@@ -47,7 +47,7 @@ on every read, and no engine allowed to answer approximately while claiming to b
 
 Start with Abstractions in the Application project and one provider in Infrastructure; pick Meilisearch for a
 storefront, Elasticsearch for analytics, or register both for different indexes. `SharedKernel.ServiceDefaults` maps
-the probes (`AddSharedKernelReadiness()`) and exports telemetry (`WithSearchTelemetry()`).
+the probes (`AddSharedKernelReadiness()`); its `SharedKernel.*` telemetry subscription picks up the `SharedKernel.Search` spans and instruments with no extra wiring.
 
 ## How it fits together
 
@@ -147,7 +147,7 @@ samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-
 | **Nothing silently dropped** | `*PreflightValidationTests`: undeclared fields, over-ceiling pages and over-cap facets fail before any I/O |
 | **No approximate totals presented as exact** | `SearchResultsToPagedListTests`: `ToPagedList()` fails `TotalHitsNotExact` for estimated or lower-bound counts |
 | **Both engines answer alike** | One fixed-corpus conformance suite (`*CrossProviderParityTests`) runs against real Meilisearch and Elasticsearch containers |
-| **Same failure vocabulary on both engines** | `SearchErrorsTests` and `MeilisearchFaultClassificationTests`: outage → `Unavailable`, timeout → `Timeout` |
+| **Same failure vocabulary on both engines** | `SearchErrorCodesTests` pins every code and its `ErrorType`; `*ErrorCodesTests` assert the same fault-class table on both providers: outage → `Unavailable`, timeout → `Timeout`, refused engine key → `Unexpected` |
 | **A forgotten rebuild is caught** | `SearchIndexDefinitionFingerprintTests`: every schema change alters the fingerprint `VerifyRegisteredIndexesAsync` compares |
 | **Provider-neutral contracts** | `SearchTopologyRules`: Abstractions takes no third-party package and the providers never reference each other; analyzers `SK0024` (literal field names) and `SK0025` (NEST) |
 

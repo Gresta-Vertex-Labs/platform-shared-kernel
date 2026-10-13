@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Meilisearch.Diagnostics;
 using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Instant;
 using SharedKernel.Search.Meilisearch.Options;
@@ -20,7 +21,7 @@ internal sealed class MeiliFaultHarness
     public const string Sentinel = "SENTINEL-reason-4c9e";
     public const string HostSentinel = "meili-host.sentinel.invalid";
 
-    public MeiliFaultHarness(ScriptedHttpHandler handler, MeilisearchOptions? options = null)
+    public MeiliFaultHarness(ScriptedHttpHandler handler, MeilisearchOptions? options = null, string indexName = "products")
     {
         Handler = handler;
         Options = options ?? new MeilisearchOptions
@@ -33,7 +34,7 @@ internal sealed class MeiliFaultHarness
         };
         var http = new HttpClient(new global::Meilisearch.MeilisearchMessageHandler(handler)) { BaseAddress = new Uri(Options.Url), Timeout = TimeSpan.FromSeconds(5) };
         Client = new global::Meilisearch.MeilisearchClient(http, Options.ApiKey);
-        Definition = new SearchIndexDefinitionBuilder("products")
+        Definition = new SearchIndexDefinitionBuilder(indexName)
             .PrimaryKey("documentId")
             .TenantField("tenantId")
             .Field("tenantId", SearchFieldKind.Keyword, filterable: true)
@@ -41,16 +42,19 @@ internal sealed class MeiliFaultHarness
             .Field("status", SearchFieldKind.Keyword, filterable: true, facetable: true)
             .Build()
             .Value;
-        Index = new MeilisearchIndex<TestProduct>(Client, Definition, Options, new FakeClock(), IndexLog);
+        Index = new MeilisearchIndex<TestProduct>(Client, Definition, Options, new FakeClock(), IndexLog, Telemetry);
         Provisioner = new MeilisearchIndexProvisioner(
             Client,
             Options,
-            new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal) { ["products"] = Definition },
+            new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal) { [indexName] = Definition },
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal),
-            ProvisionerLog);
-        Instant = new MeilisearchInstantSearch<TestProduct>(Client, Definition, InstantLog);
-        TokenIssuer = new MeilisearchTenantTokenIssuer(Client, Options, new FakeClock(), TokenLog);
+            ProvisionerLog,
+            Telemetry);
+        Instant = new MeilisearchInstantSearch<TestProduct>(Client, Definition, InstantLog, Telemetry);
+        TokenIssuer = new MeilisearchTenantTokenIssuer(Client, Options, new FakeClock(), TokenLog, Telemetry);
     }
+
+    public SearchTelemetry Telemetry { get; } = MeiliTelemetry.Create();
 
     public ScriptedHttpHandler Handler { get; }
 

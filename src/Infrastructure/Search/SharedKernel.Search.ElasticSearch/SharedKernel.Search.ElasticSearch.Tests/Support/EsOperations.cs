@@ -48,10 +48,10 @@ internal static class EsOperations
         ["stream_open"] = ((h, ct) => Drain(h.Cursor.StreamAsync(SearchRequest.Default, Tenant, TimeSpan.FromMinutes(1), ct), ct), false),
         ["stream_read"] = ((h, ct) => Drain(h.Cursor.StreamAsync(SearchRequest.Default, Tenant, TimeSpan.FromMinutes(1), ct), ct), true),
         ["ensure_index"] = (async (h, ct) => Of(await h.Provisioner.EnsureIndexAsync(h.Definition, ct)), false),
-        ["index_exists"] = (async (h, ct) => Of(await h.Provisioner.IndexExistsAsync("products", ct)), false),
-        ["delete_index"] = (async (h, ct) => Of(await h.Provisioner.DeleteIndexAsync("products", ct)), false),
+        ["index_exists"] = (async (h, ct) => Of(await h.Provisioner.IndexExistsAsync(h.Definition.Name, ct)), false),
+        ["delete_index"] = (async (h, ct) => Of(await h.Provisioner.DeleteIndexAsync(h.Definition.Name, ct)), false),
         ["cutover"] = (async (h, ct) => Of(await h.Provisioner.CutoverAsync(
-            new IndexCutoverRequest { StagingIndexName = "products-staging", LiveIndexName = "products" }, ct)), false),
+            new IndexCutoverRequest { StagingIndexName = h.Definition.Name + "-staging", LiveIndexName = h.Definition.Name }, ct)), false),
     };
 
     public static TheoryData<string> Names => new(All.Keys);

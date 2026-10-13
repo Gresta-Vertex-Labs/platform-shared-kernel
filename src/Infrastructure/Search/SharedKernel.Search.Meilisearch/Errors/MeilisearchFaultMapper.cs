@@ -100,10 +100,10 @@ internal static partial class MeilisearchFaultMapper
         error = exception switch
         {
             global::Meilisearch.MeilisearchCommunicationError
-                => SearchErrors.Unreachable(SearchWellKnown.MeilisearchProviderName),
+                => SearchErrors.Unavailable(SearchWellKnown.MeilisearchProviderName),
 
             global::Meilisearch.MeilisearchTimeoutError
-                => SearchErrors.Timeout(operation, TimeSpan.Zero),
+                => SearchErrors.Timeout(operation),
 
             global::Meilisearch.MeilisearchApiError apiError
                 => MapApiError(apiError, indexName, operation),
@@ -114,10 +114,10 @@ internal static partial class MeilisearchFaultMapper
             // request never got an answer, which is unreachability; one carrying a status code is
             // classified the same way an API error would be.
             HttpRequestException { StatusCode: null }
-                => SearchErrors.Unreachable(SearchWellKnown.MeilisearchProviderName),
+                => SearchErrors.Unavailable(SearchWellKnown.MeilisearchProviderName),
 
             HttpRequestException { StatusCode: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden }
-                => SearchErrors.Unauthorized(indexName, operation),
+                => SearchErrors.EngineUnauthorized(indexName, operation),
 
             HttpRequestException { StatusCode: HttpStatusCode.NotFound }
                 => SearchErrors.IndexNotFound(indexName),
@@ -128,10 +128,10 @@ internal static partial class MeilisearchFaultMapper
                     or HttpStatusCode.BadGateway
                     or HttpStatusCode.GatewayTimeout,
             }
-                => SearchErrors.Unreachable(SearchWellKnown.MeilisearchProviderName),
+                => SearchErrors.Unavailable(SearchWellKnown.MeilisearchProviderName),
 
             HttpRequestException { StatusCode: HttpStatusCode.RequestTimeout }
-                => SearchErrors.Timeout(operation, TimeSpan.Zero),
+                => SearchErrors.Timeout(operation),
 
             // Any other HTTP status is a reply the kernel has no specific mapping for: a recognised engine
             // answer, so a soft failure without engine text.
@@ -139,17 +139,17 @@ internal static partial class MeilisearchFaultMapper
                 => SearchErrors.EngineFault(SearchWellKnown.MeilisearchProviderName, operation),
 
             SocketException or IOException or System.Security.Authentication.AuthenticationException
-                => SearchErrors.Unreachable(SearchWellKnown.MeilisearchProviderName),
+                => SearchErrors.Unavailable(SearchWellKnown.MeilisearchProviderName),
 
             TimeoutException
-                => SearchErrors.Timeout(operation, TimeSpan.Zero),
+                => SearchErrors.Timeout(operation),
 
             // An HttpClient whose Timeout elapses raises TaskCanceledException, not TimeoutException, and
             // that is the single most common shape "the search engine is down" actually takes, because an
             // unresponsive or firewalled instance leaves the request hanging rather than refusing it.
             // Reaching this arm means the caller's own token was NOT the cause (guarded above).
             OperationCanceledException
-                => SearchErrors.Timeout(operation, TimeSpan.Zero),
+                => SearchErrors.Timeout(operation),
 
             // An engine payload the SDK cannot read is an engine-side fact.
             JsonException
@@ -169,7 +169,7 @@ internal static partial class MeilisearchFaultMapper
 
         if (UnauthorizedCodes.Contains(code))
         {
-            return SearchErrors.Unauthorized(indexName, operation);
+            return SearchErrors.EngineUnauthorized(indexName, operation);
         }
 
         if (InvalidFilterCodes.Contains(code))

@@ -24,7 +24,7 @@ public sealed class SearchStreamExceptionTests
     [Fact]
     public void ErrorConstructor_CarriesTheError_AndUsesItsMessage()
     {
-        var error = SearchErrors.Unreachable("elasticsearch");
+        var error = SearchErrors.Unavailable("elasticsearch");
 
         var exception = new SearchStreamException(error);
 
@@ -37,7 +37,7 @@ public sealed class SearchStreamExceptionTests
     [Fact]
     public void ErrorAndInnerConstructor_KeepsTheInnerExceptionInstance()
     {
-        var error = SearchErrors.Timeout("enumerate", TimeSpan.Zero);
+        var error = SearchErrors.Timeout("enumerate");
         var inner = new TimeoutException("engine detail that must stay out of the error");
 
         var exception = new SearchStreamException(error, inner);
@@ -55,8 +55,8 @@ public sealed class SearchStreamExceptionTests
     {
         var error = kind switch
         {
-            "unavailable" => SearchErrors.Unreachable("meilisearch"),
-            "timeout" => SearchErrors.Timeout("enumerate", TimeSpan.Zero),
+            "unavailable" => SearchErrors.Unavailable("meilisearch"),
+            "timeout" => SearchErrors.Timeout("enumerate"),
             _ => SearchErrors.EngineFault("meilisearch", "enumerate"),
         };
 

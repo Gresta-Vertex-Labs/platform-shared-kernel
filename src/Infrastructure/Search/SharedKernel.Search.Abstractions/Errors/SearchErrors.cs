@@ -11,93 +11,65 @@ namespace SharedKernel.Search.Abstractions.Errors;
 /// Only real <see cref="SharedKernel.Primitives.Errors.Error"/> factories are used:
 /// <see cref="Error.Unexpected"/>, <see cref="Error.Validation(string, string)"/>, <see cref="Error.NotFound"/>,
 /// <see cref="Error.Conflict"/>, <see cref="Error.Unauthorized"/>, and — for an engine that is down or
-/// too slow — <see cref="Error.Unavailable"/> (<see cref="Unreachable"/>) and <see cref="Error.Timeout"/>
+/// too slow — <see cref="Error.Unavailable"/> (<see cref="Unavailable"/>) and <see cref="Error.Timeout"/>
 /// (<see cref="Timeout"/>). <see cref="Error.BusinessRule"/> is used zero times in this domain —
 /// nothing in a capability package is a domain rule. <see cref="Error.None"/> is never returned by any
 /// member here.
 /// </remarks>
 public static class SearchErrors
 {
-    private const string IndexNotFoundCode = "search.index_not_found";
-    private const string DocumentNotFoundCode = "search.document_not_found";
-    private const string InvalidSearchRequestCode = "search.invalid_request";
-    private const string InvalidFilterCode = "search.invalid_filter";
-    private const string InvalidIndexDefinitionCode = "search.invalid_index_definition";
-    private const string InvalidDocumentIdCode = "search.invalid_document_id";
-    private const string FieldNotSearchableCode = "search.field_not_searchable";
-    private const string FieldNotFilterableCode = "search.field_not_filterable";
-    private const string FieldNotSortableCode = "search.field_not_sortable";
-    private const string FieldNotFacetableCode = "search.field_not_facetable";
-    private const string PaginationLimitExceededCode = "search.pagination_limit_exceeded";
-    private const string FacetLimitExceededCode = "search.facet_limit_exceeded";
-    private const string TotalHitsNotExactCode = "search.total_hits_not_exact";
-    private const string UnsupportedCapabilityCode = "search.unsupported_capability";
-    private const string IndexAlreadyExistsCode = "search.index_already_exists";
-    private const string IndexDefinitionConflictCode = "search.index_definition_conflict";
-    private const string CutoverFailedCode = "search.cutover_failed";
-    private const string SchemaFingerprintMismatchCode = "search.schema_fingerprint_mismatch";
-    private const string UnauthorizedCode = "search.unauthorized";
-    private const string TenantScopeMissingCode = "search.tenant_scope_missing";
-    private const string UnreachableCode = "search.unreachable";
-    private const string TimeoutCode = "search.timeout";
-    private const string WriteRejectedCode = "search.write_rejected";
-    private const string WriteTimeoutCode = "search.write_timeout";
-    private const string BulkPartiallyFailedCode = "search.bulk_partially_failed";
-    private const string ProbeFailedCode = "search.probe_failed";
-    private const string EngineVersionUnsupportedCode = "search.engine_version_unsupported";
-    private const string EngineFaultCode = "search.engine_fault";
 
     /// <summary>The named index does not exist.</summary>
     public static Error IndexNotFound(string indexName) =>
-        Error.NotFound(IndexNotFoundCode, $"Search index '{indexName}' was not found.");
+        Error.NotFound(SearchErrorCodes.IndexNotFound, $"Search index '{indexName}' was not found.");
 
     /// <summary>The named document does not exist (or is not visible to the caller's tenant).</summary>
     public static Error DocumentNotFound(string indexName, string documentId) =>
-        Error.NotFound(DocumentNotFoundCode, $"Document '{documentId}' was not found in index '{indexName}'.");
+        Error.NotFound(SearchErrorCodes.DocumentNotFound, $"Document '{documentId}' was not found in index '{indexName}'.");
 
     /// <summary>The search request violates a provider-independent structural invariant.</summary>
     /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error InvalidSearchRequest(string reason) =>
-        Error.Validation(InvalidSearchRequestCode, $"The search request is invalid: {reason}");
+        Error.Validation(SearchErrorCodes.InvalidRequest, $"The search request is invalid: {reason}");
 
     /// <summary>The filter predicate is malformed.</summary>
     /// <param name="reason">Kernel-authored text, never provider, engine or exception text, and never a filter value.</param>
     public static Error InvalidFilter(string reason) =>
-        Error.Validation(InvalidFilterCode, $"The search filter is invalid: {reason}");
+        Error.Validation(SearchErrorCodes.InvalidFilter, $"The search filter is invalid: {reason}");
 
     /// <summary>The index definition violates a structural invariant.</summary>
     /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error InvalidIndexDefinition(string reason) =>
-        Error.Validation(InvalidIndexDefinitionCode, $"The index definition is invalid: {reason}");
+        Error.Validation(SearchErrorCodes.InvalidIndexDefinition, $"The index definition is invalid: {reason}");
 
     /// <summary>The document id violates the platform-wide charset rule (A-Z, a-z, 0-9, '-', '_').</summary>
     public static Error InvalidDocumentId(string documentId) =>
         Error.Validation(
-            InvalidDocumentIdCode,
+            SearchErrorCodes.InvalidDocumentId,
             $"Document id '{documentId}' must contain only A-Z, a-z, 0-9, '-', and '_'.");
 
     /// <summary>The field is not declared searchable on the index.</summary>
     public static Error FieldNotSearchable(string indexName, string field) =>
         Error.Validation(
-            FieldNotSearchableCode,
+            SearchErrorCodes.FieldNotSearchable,
             $"Field '{field}' on index '{indexName}' is not declared searchable.");
 
     /// <summary>The field is not declared filterable on the index.</summary>
     public static Error FieldNotFilterable(string indexName, string field) =>
         Error.Validation(
-            FieldNotFilterableCode,
+            SearchErrorCodes.FieldNotFilterable,
             $"Field '{field}' on index '{indexName}' is not declared filterable.");
 
     /// <summary>The field is not declared sortable on the index.</summary>
     public static Error FieldNotSortable(string indexName, string field) =>
         Error.Validation(
-            FieldNotSortableCode,
+            SearchErrorCodes.FieldNotSortable,
             $"Field '{field}' on index '{indexName}' is not declared sortable.");
 
     /// <summary>The field is not declared facetable on the index.</summary>
     public static Error FieldNotFacetable(string indexName, string field) =>
         Error.Validation(
-            FieldNotFacetableCode,
+            SearchErrorCodes.FieldNotFacetable,
             $"Field '{field}' on index '{indexName}' is not declared facetable.");
 
     /// <summary>
@@ -105,36 +77,35 @@ public static class SearchErrors
     /// </summary>
     public static Error PaginationLimitExceeded(int page, int pageSize, int ceiling, string providerName) =>
         Error.Validation(
-            PaginationLimitExceededCode,
-            $"Page {page} with PageSize {pageSize} exceeds provider '{providerName}''s MaxTotalHits ceiling of " +
-            $"{ceiling}. For deep pagination use ICursorSearch (ElasticSearch only), or " +
-            "ISearchIndex.EnumerateAsync for an unordered corpus walk.");
+            SearchErrorCodes.PaginationLimitExceeded,
+            $"Page {page} with PageSize {pageSize} exceeds the MaxTotalHits ceiling of {ceiling} of provider '{providerName}'. " +
+            "Use ICursorSearch (ElasticSearch only) for deep pagination, or ISearchIndex.EnumerateAsync for an unordered corpus walk.");
 
     /// <summary>The requested facet-value count exceeds the provider's <c>MaxFacetValues</c> cap.</summary>
     public static Error FacetLimitExceeded(int requested, int ceiling) =>
         Error.Validation(
-            FacetLimitExceededCode,
-            $"Requested {requested} facet values exceeds the provider's MaxFacetValues ceiling of {ceiling}.");
+            SearchErrorCodes.FacetLimitExceeded,
+            $"Requested {requested} facet values, which exceeds the MaxFacetValues ceiling of {ceiling}.");
 
     /// <summary><c>ToPagedList()</c> was called on a result whose <c>TotalHits</c> is not exact.</summary>
     public static Error TotalHitsNotExact() =>
         Error.Validation(
-            TotalHitsNotExactCode,
+            SearchErrorCodes.TotalHitsNotExact,
             "TotalHits is not exact. Set SearchRequest.RequireExactTotalHits = true before calling ToPagedList().");
 
     /// <summary>
-    /// Reserved and currently unreachable by construction — the closed 8-node filter hierarchy has no
+    /// Reserved and currently unreachable by construction: the closed 8-node filter hierarchy has no
     /// untranslatable node today. Exists so a future filter node produces a loud failure on the
     /// lagging adapter rather than a dropped predicate.
     /// </summary>
-    public static Error UnsupportedCapability(string capability, string providerName) =>
+    public static Error NotSupported(string capability, string providerName) =>
         Error.Validation(
-            UnsupportedCapabilityCode,
+            SearchErrorCodes.NotSupported,
             $"Capability '{capability}' is not supported by provider '{providerName}'.");
 
     /// <summary>The index already exists (its creation was not idempotent for the caller's intent).</summary>
     public static Error IndexAlreadyExists(string indexName) =>
-        Error.Conflict(IndexAlreadyExistsCode, $"Search index '{indexName}' already exists.");
+        Error.Conflict(SearchErrorCodes.IndexAlreadyExists, $"Search index '{indexName}' already exists.");
 
     /// <summary>
     /// The requested field declaration conflicts with the live mapping.
@@ -143,7 +114,7 @@ public static class SearchErrors
     /// </summary>
     public static Error IndexDefinitionConflict(string indexName, string field) =>
         Error.Conflict(
-            IndexDefinitionConflictCode,
+            SearchErrorCodes.IndexDefinitionConflict,
             $"Field '{field}' on index '{indexName}' conflicts with the live mapping. EnsureIndexAsync is " +
             "additive-only; use a staging index, bulk-load, then CutoverAsync to change an incompatible field.");
 
@@ -153,20 +124,20 @@ public static class SearchErrors
     /// <param name="reason">Kernel-authored text (a step name and an optional bounded code), never provider, engine or exception text.</param>
     public static Error CutoverFailed(string stagingIndexName, string liveIndexName, string reason) =>
         Error.Conflict(
-            CutoverFailedCode,
+            SearchErrorCodes.CutoverFailed,
             $"Cutover from staging index '{stagingIndexName}' to live index '{liveIndexName}' failed: {reason}");
 
     /// <summary>The live index's recorded schema fingerprint does not match the expected definition.</summary>
     public static Error SchemaFingerprintMismatch(string indexName, string expected, string actual) =>
         Error.Conflict(
-            SchemaFingerprintMismatchCode,
+            SearchErrorCodes.SchemaFingerprintMismatch,
             $"Index '{indexName}' schema fingerprint mismatch: expected '{expected}', found '{actual}'.");
 
-    /// <summary>The caller is not authorized to perform the given operation on the index.</summary>
-    public static Error Unauthorized(string indexName, string operation) =>
-        Error.Unauthorized(
-            UnauthorizedCode,
-            $"Not authorized to perform '{operation}' on index '{indexName}'.");
+    /// <summary>The engine rejected the kernel's own credentials for the operation, a deployment defect and not the end user's authentication (<see cref="ErrorType.Unexpected"/>).</summary>
+    public static Error EngineUnauthorized(string indexName, string operation) =>
+        Error.Unexpected(
+            SearchErrorCodes.EngineUnauthorized,
+            $"The engine rejected the credentials for operation '{operation}' on index '{indexName}'.");
 
     /// <summary>
     /// The index declares a tenant field but the caller supplied <c>TenantScope.Global</c> — an
@@ -174,7 +145,7 @@ public static class SearchErrors
     /// </summary>
     public static Error TenantScopeMissing(string indexName) =>
         Error.Unauthorized(
-            TenantScopeMissingCode,
+            SearchErrorCodes.TenantScopeMissing,
             $"Index '{indexName}' declares a TenantField; TenantScope.Global is not permitted.");
 
     /// <summary>
@@ -182,21 +153,21 @@ public static class SearchErrors
     /// <see cref="ErrorType.Unavailable"/> error, so the HTTP boundary answers 503 and the caller
     /// knows a retry may succeed.
     /// </summary>
-    public static Error Unreachable(string providerName) =>
-        Error.Unavailable(UnreachableCode, $"Search provider '{providerName}' is unreachable.");
+    public static Error Unavailable(string providerName) =>
+        Error.Unavailable(SearchErrorCodes.Unavailable, $"Search provider '{providerName}' is unavailable.");
 
     /// <summary>
     /// The operation exceeded its allotted time — an <see cref="ErrorType.Timeout"/> error, so the
     /// HTTP boundary answers 504. A timed-out write may still have been applied.
     /// </summary>
-    public static Error Timeout(string operation, TimeSpan elapsed) =>
-        Error.Timeout(TimeoutCode, $"Operation '{operation}' timed out after {elapsed}.");
+    public static Error Timeout(string operation) =>
+        Error.Timeout(SearchErrorCodes.Timeout, $"Operation '{operation}' timed out.");
 
     /// <summary>The provider rejected the write outright.</summary>
     /// <param name="indexName">The index name.</param>
     /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error WriteRejected(string indexName, string reason) =>
-        Error.Unexpected(WriteRejectedCode, $"Write to index '{indexName}' was rejected: {reason}");
+        Error.Unexpected(SearchErrorCodes.WriteRejected, $"Write to index '{indexName}' was rejected: {reason}");
 
     /// <summary>
     /// Waiting for a write to become searchable timed out (<see cref="ErrorType.Timeout"/>). The write may
@@ -204,9 +175,9 @@ public static class SearchErrors
     /// </summary>
     public static Error WriteTimeout(string indexName, TimeSpan elapsed) =>
         Error.Timeout(
-            WriteTimeoutCode,
+            SearchErrorCodes.WriteTimeout,
             $"Waiting for a write on index '{indexName}' to become searchable timed out after {elapsed}. " +
-            "The write may still land — do not retry blindly.");
+            "The write may still land, so do not retry blindly.");
 
     /// <summary>
     /// A canonical error for consumers/rebuild orchestrators that treat any bulk item failure as
@@ -216,20 +187,20 @@ public static class SearchErrors
     /// </summary>
     public static Error BulkPartiallyFailed(int failedCount, int totalCount) =>
         Error.Unexpected(
-            BulkPartiallyFailedCode,
+            SearchErrorCodes.BulkPartiallyFailed,
             $"{failedCount} of {totalCount} documents failed in this bulk operation.");
 
     /// <summary>Probing the index's readiness failed outright (as distinct from a degraded-but-answered probe).</summary>
     /// <param name="indexName">The index name.</param>
     /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error ProbeFailed(string indexName, string reason) =>
-        Error.Unexpected(ProbeFailedCode, $"Probing index '{indexName}' failed: {reason}");
+        Error.Unexpected(SearchErrorCodes.ProbeFailed, $"Probing index '{indexName}' failed: {reason}");
 
     /// <summary>The connected engine's version is outside the supported range.</summary>
-    public static Error EngineVersionUnsupported(string actual, string supportedRange) =>
+    public static Error EngineVersionNotSupported(string actual, string supportedRange) =>
         Error.Unexpected(
-            EngineVersionUnsupportedCode,
-            $"Search engine version '{actual}' is not supported; expected {supportedRange}.");
+            SearchErrorCodes.EngineVersionNotSupported,
+            $"Search engine version '{actual}' is not supported, expected '{supportedRange}'.");
 
     /// <summary>
     /// A recognised engine reply the kernel has no specific mapping for. A rise in this code is the signal
@@ -244,7 +215,7 @@ public static class SearchErrors
     /// </param>
     public static Error EngineFault(string providerName, string operation, string? engineErrorCode = null) =>
         Error.Unexpected(
-            EngineFaultCode,
+            SearchErrorCodes.EngineFault,
             engineErrorCode is null
                 ? $"Provider '{providerName}' operation '{operation}' faulted."
                 : $"Provider '{providerName}' operation '{operation}' faulted with engine error code '{engineErrorCode}'.");

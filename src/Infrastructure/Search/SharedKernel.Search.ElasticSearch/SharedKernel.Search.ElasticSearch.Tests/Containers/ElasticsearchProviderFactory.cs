@@ -11,6 +11,7 @@ using SharedKernel.Search.ElasticSearch.Index;
 using SharedKernel.Search.ElasticSearch.Options;
 using SharedKernel.Search.ElasticSearch.Provisioning;
 using SharedKernel.Search.ElasticSearch.Suggest;
+using SharedKernel.Search.ElasticSearch.Tests.Support;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 
@@ -70,7 +71,8 @@ internal static class ElasticsearchProviderFactory
             writeAlias ?? definition.Name,
             options ?? CreateOptions(),
             clock ?? new FakeClock(),
-            logger ?? NullLogger<ElasticSearchIndex<TDocument>>.Instance);
+            logger ?? NullLogger<ElasticSearchIndex<TDocument>>.Instance,
+            EsTelemetry.Create());
 
     /// <summary>Creates an <see cref="ElasticSearchIndexProvisioner"/> against <paramref name="client"/>.</summary>
     public static ElasticSearchIndexProvisioner CreateProvisioner(
@@ -86,7 +88,9 @@ internal static class ElasticsearchProviderFactory
             registeredDefinitions ?? new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal),
             completionFields ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal),
             writeAliases ?? new Dictionary<string, string>(StringComparer.Ordinal),
-            logger ?? NullLogger<ElasticSearchIndexProvisioner>.Instance);
+            new FakeClock(),
+            logger ?? NullLogger<ElasticSearchIndexProvisioner>.Instance,
+            EsTelemetry.Create());
 
     /// <summary>
     /// Creates an <see cref="ElasticSearchSuggestSearch{TDocument}"/> against <paramref name="client"/>,
@@ -104,13 +108,14 @@ internal static class ElasticsearchProviderFactory
             definition,
             completionFields,
             options ?? CreateOptions(),
-            logger ?? NullLogger<ElasticSearchSuggestSearch<TDocument>>.Instance);
+            logger ?? NullLogger<ElasticSearchSuggestSearch<TDocument>>.Instance,
+            EsTelemetry.Create());
 
     /// <summary>Creates an <see cref="ElasticSearchAnalytics{TDocument}"/> against <paramref name="client"/>.</summary>
     public static ElasticSearchAnalytics<TDocument> CreateAnalytics<TDocument>(
         ElasticsearchClient client, SearchIndexDefinition definition, ILogger<ElasticSearchAnalytics<TDocument>>? logger = null)
         where TDocument : class, ISearchDocument
-        => new(client, definition, logger ?? NullLogger<ElasticSearchAnalytics<TDocument>>.Instance);
+        => new(client, definition, logger ?? NullLogger<ElasticSearchAnalytics<TDocument>>.Instance, EsTelemetry.Create());
 
     /// <summary>Creates an <see cref="ElasticSearchCursorSearch{TDocument}"/> against <paramref name="client"/>.</summary>
     public static ElasticSearchCursorSearch<TDocument> CreateCursorSearch<TDocument>(
@@ -119,5 +124,5 @@ internal static class ElasticsearchProviderFactory
         IClock? clock = null,
         ILogger<ElasticSearchCursorSearch<TDocument>>? logger = null)
         where TDocument : class, ISearchDocument
-        => new(client, definition, clock ?? new FakeClock(), logger ?? NullLogger<ElasticSearchCursorSearch<TDocument>>.Instance);
+        => new(client, definition, clock ?? new FakeClock(), logger ?? NullLogger<ElasticSearchCursorSearch<TDocument>>.Instance, EsTelemetry.Create());
 }

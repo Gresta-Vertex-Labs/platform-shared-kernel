@@ -7,6 +7,7 @@ using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Options;
+using SharedKernel.Search.Meilisearch.Tests.Support;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Search.Meilisearch.Tests.Index;
@@ -69,7 +70,8 @@ public sealed class MeilisearchGetAsyncNullDeserializationTests
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:7700") };
         var client = new global::Meilisearch.MeilisearchClient(httpClient, "test-api-key");
         var index = new MeilisearchIndex<TestDocument>(
-            client, Definition(), new MeilisearchOptions(), new FakeClock(), NullLogger<MeilisearchIndex<TestDocument>>.Instance);
+            client, Definition(), new MeilisearchOptions(), new FakeClock(), NullLogger<MeilisearchIndex<TestDocument>>.Instance,
+            MeiliTelemetry.Create());
 
         var act = async () => await index.GetAsync("some-document-id", TenantScope.Global);
 

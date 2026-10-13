@@ -37,6 +37,7 @@
 //      the neutral interfaces (P-07)
 
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Exceptions;
@@ -222,11 +223,17 @@ static Task SurfaceStreamExceptionIsASharedKernelException()
     Error? caught = null;
     try
     {
-        throw new SearchStreamException(SearchErrors.Unreachable(SearchWellKnown.MeilisearchProviderName));
+        throw new SearchStreamException(SearchErrors.Unavailable(SearchWellKnown.MeilisearchProviderName));
     }
     catch (SharedKernelException e) when (e is SearchStreamException)
     {
         caught = e.Error;
+    }
+
+    if (caught?.Code != SearchErrorCodes.Unavailable || SearchOperations.Search != "search" || SearchTagKeys.Provider != "search.provider"
+        || SharedKernel.Search.Meilisearch.Errors.MeilisearchErrorCodes.IndexingTaskFailed != "search.meilisearch.indexing_task_failed")
+    {
+        throw new InvalidOperationException("FAIL: the public SearchErrorCodes, SearchOperations and SearchTagKeys constants are reachable from the packed Abstractions");
     }
 
     if (caught is null || caught.Type != ErrorType.Unavailable)

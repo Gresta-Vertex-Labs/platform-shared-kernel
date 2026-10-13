@@ -6,12 +6,13 @@ using Elastic.Transport;
 using HttpMethod = System.Net.Http.HttpMethod;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Cursors;
-using SharedKernel.Search.ElasticSearch.Logging;
+using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Tests.Support;
 using SharedKernel.Testing.Logging;
 using SearchRequest = SharedKernel.Search.Abstractions.Models.SearchRequest;
@@ -115,7 +116,8 @@ public sealed class ElasticSearchLogAndProbeTests
             "products",
             new SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions { Nodes = ["http://es-host.sentinel.invalid:9200"] },
             new SharedKernel.Testing.Clocks.FakeClock(),
-            logger);
+            logger,
+            SharedKernel.Search.ElasticSearch.Tests.Support.EsTelemetry.Create());
         var request = SearchRequest.Default with { Page = 0 };
 
         var result = await index.SearchAsync(request, EsOperations.Tenant);
@@ -220,12 +222,12 @@ public sealed class ElasticSearchLogAndProbeTests
 
         var result = await harness.Provisioner.EnsureIndexAsync(harness.Definition);
 
-        result.Error.Code.Should().Be("search.unreachable");
+        result.Error.Code.Should().Be(SearchErrorCodes.Unavailable);
     }
 
     [Theory]
-    [InlineData(503, "search.unreachable")]
-    [InlineData(401, "search.unauthorized")]
+    [InlineData(503, SearchErrorCodes.Unavailable)]
+    [InlineData(401, SearchErrorCodes.EngineUnauthorized)]
     [InlineData(400, "search.cutover_failed")]
     [InlineData(500, "search.cutover_failed")]
     public async Task Cutover_AliasUpdateFault_KeepsOutageClassification_ElseNamesTheFailedStep(int status, string expectedCode)

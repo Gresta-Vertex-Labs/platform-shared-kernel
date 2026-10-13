@@ -3,6 +3,7 @@ using Elastic.Transport;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Analytics;
 using SharedKernel.Search.ElasticSearch.Cursors;
+using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Index;
 using SharedKernel.Search.ElasticSearch.Options;
 using SharedKernel.Search.ElasticSearch.Provisioning;
@@ -30,18 +31,22 @@ internal sealed class EsFaultHarness
         Client = client ?? StubbedClient.Create(invoker);
         Definition = TestProductIndexDefinitions.Standard(indexName);
         var options = new ElasticSearchOptions { Nodes = ["http://" + HostSentinel + ":9200"] };
-        Index = new ElasticSearchIndex<TestProduct>(Client, Definition, indexName, options, new FakeClock(), IndexLog);
+        Index = new ElasticSearchIndex<TestProduct>(Client, Definition, indexName, options, new FakeClock(), IndexLog, Telemetry);
         Provisioner = new ElasticSearchIndexProvisioner(
             Client,
             new ElasticSearchOptions { Nodes = options.Nodes, ProbeCacheSeconds = 0 },
             new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal) { [indexName] = Definition },
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal),
             new Dictionary<string, string>(StringComparer.Ordinal),
-            ProvisionerLog);
-        Analytics = new ElasticSearchAnalytics<TestProduct>(Client, Definition, AnalyticsLog);
-        Suggest = new ElasticSearchSuggestSearch<TestProduct>(Client, Definition, [SuggestField], options, SuggestLog);
-        Cursor = new ElasticSearchCursorSearch<TestProduct>(Client, Definition, new FakeClock(), CursorLog);
+            new FakeClock(),
+            ProvisionerLog,
+            Telemetry);
+        Analytics = new ElasticSearchAnalytics<TestProduct>(Client, Definition, AnalyticsLog, Telemetry);
+        Suggest = new ElasticSearchSuggestSearch<TestProduct>(Client, Definition, [SuggestField], options, SuggestLog, Telemetry);
+        Cursor = new ElasticSearchCursorSearch<TestProduct>(Client, Definition, new FakeClock(), CursorLog, Telemetry);
     }
+
+    public SearchTelemetry Telemetry { get; } = EsTelemetry.Create();
 
     public ScriptedRequestInvoker Invoker { get; }
 

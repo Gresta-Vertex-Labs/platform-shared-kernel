@@ -57,31 +57,31 @@ public readonly record struct SearchValue
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not <see cref="SearchValueKind.String"/>.</exception>
     public string AsString => Kind == SearchValueKind.String
         ? _stringValue!
-        : throw new InvalidOperationException($"SearchValue holds {Kind}, not {SearchValueKind.String}.");
+        : throw new InvalidOperationException($"The SearchValue holds a '{Kind}' value, not a '{SearchValueKind.String}' value; check Kind before reading it.");
 
     /// <summary>Gets the held value as an <see cref="long"/>.</summary>
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not <see cref="SearchValueKind.Int64"/>.</exception>
     public long AsInt64 => Kind == SearchValueKind.Int64
         ? _int64Value
-        : throw new InvalidOperationException($"SearchValue holds {Kind}, not {SearchValueKind.Int64}.");
+        : throw new InvalidOperationException($"The SearchValue holds a '{Kind}' value, not a '{SearchValueKind.Int64}' value; check Kind before reading it.");
 
     /// <summary>Gets the held value as a <see cref="double"/>.</summary>
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not <see cref="SearchValueKind.Double"/>.</exception>
     public double AsDouble => Kind == SearchValueKind.Double
         ? _doubleValue
-        : throw new InvalidOperationException($"SearchValue holds {Kind}, not {SearchValueKind.Double}.");
+        : throw new InvalidOperationException($"The SearchValue holds a '{Kind}' value, not a '{SearchValueKind.Double}' value; check Kind before reading it.");
 
     /// <summary>Gets the held value as a <see cref="bool"/>.</summary>
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not <see cref="SearchValueKind.Boolean"/>.</exception>
     public bool AsBoolean => Kind == SearchValueKind.Boolean
         ? _booleanValue
-        : throw new InvalidOperationException($"SearchValue holds {Kind}, not {SearchValueKind.Boolean}.");
+        : throw new InvalidOperationException($"The SearchValue holds a '{Kind}' value, not a '{SearchValueKind.Boolean}' value; check Kind before reading it.");
 
     /// <summary>Gets the held value as a <see cref="DateTimeOffset"/>.</summary>
     /// <exception cref="InvalidOperationException"><see cref="Kind"/> is not <see cref="SearchValueKind.DateTimeOffset"/>.</exception>
     public DateTimeOffset AsDateTimeOffset => Kind == SearchValueKind.DateTimeOffset
         ? _dateTimeOffsetValue
-        : throw new InvalidOperationException($"SearchValue holds {Kind}, not {SearchValueKind.DateTimeOffset}.");
+        : throw new InvalidOperationException($"The SearchValue holds a '{Kind}' value, not a '{SearchValueKind.DateTimeOffset}' value; check Kind before reading it.");
 
     /// <summary>Creates a <see cref="SearchValueKind.String"/> value.</summary>
     public static SearchValue From(string value)

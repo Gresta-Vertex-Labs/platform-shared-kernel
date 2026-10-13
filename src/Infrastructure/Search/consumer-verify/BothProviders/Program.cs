@@ -11,7 +11,11 @@
 // THIS PROGRAM DELIBERATELY DEMONSTRATES THE VIOLATION — do not copy this composition into real
 // service code.
 
+using System.Diagnostics.Metrics;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Exceptions;
@@ -29,6 +33,7 @@ using SharedKernel.Search.Meilisearch.Options;
 
 await Surface_BothProvidersAgainstSameTDocumentLastRegistrationWins();
 await SurfaceStreamExceptionIsASharedKernelException();
+await Surface_TwoProvidersShareOneMeterAndAreSeparableByTheProviderTag();
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify.BothProviders PASSED");
@@ -111,6 +116,95 @@ static async Task Surface_BothProvidersAgainstSameTDocumentLastRegistrationWins(
         + "Verified above, both ways.");
 }
 
+// ── Telemetry: both providers share one meter and stay separable by search.provider ──────────────
+// Each provider creates the same two instruments on the meter IMeterFactory returns for "SharedKernel.Search", so
+// the factory hands both the SAME Meter instance. Duplicate instrument names on one meter are legal; the
+// search.provider tag is what tells the two series apart. Both engines are pointed at a refused port, so each call
+// fails fast as search.unavailable and still records its duration.
+static async Task Surface_TwoProvidersShareOneMeterAndAreSeparableByTheProviderTag()
+{
+    var builder = Host.CreateApplicationBuilder();
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        [$"{MeilisearchOptions.SectionName}:Url"] = "http://127.0.0.1:1",
+        [$"{MeilisearchOptions.SectionName}:ApiKey"] = "development-master-key",
+        [$"{ElasticSearchOptions.SectionName}:Nodes:0"] = "http://127.0.0.1:1",
+        [$"{ElasticSearchOptions.SectionName}:ValidateEngineVersionOnStart"] = "false",
+    });
+    builder.Services.AddSingleton<IClock, SystemClock>();
+    builder.Services
+        .AddSharedKernelMeilisearchSearch(builder.Configuration)
+        .AddIndex<MeilisearchOnlyDocument>("meili-products", index => index.Field("name", SearchFieldKind.Text, searchable: true))
+        .Build();
+    builder.Services
+        .AddSharedKernelElasticSearchSearch(builder.Configuration)
+        .AddIndex<ElasticSearchOnlyDocument>(
+            "es-products-read", "es-products-write", index => index.Field("name", SearchFieldKind.Text, searchable: true))
+        .Build();
+
+    var meters = new List<Meter>();
+    var durations = new List<(string? Provider, string? Outcome, string? ErrorType, string Instrument)>();
+    using var listener = new MeterListener();
+    listener.InstrumentPublished = (instrument, meterListener) =>
+    {
+        if (instrument.Meter.Name == SearchWellKnown.MeterName)
+        {
+            lock (meters)
+            {
+                meters.Add(instrument.Meter);
+            }
+
+            meterListener.EnableMeasurementEvents(instrument);
+        }
+    };
+    listener.SetMeasurementEventCallback<double>((instrument, _, tags, _) =>
+    {
+        string? provider = null;
+        string? outcome = null;
+        string? errorType = null;
+        foreach (var tag in tags)
+        {
+            switch (tag.Key)
+            {
+                case SearchTagKeys.Provider: provider = tag.Value as string; break;
+                case WellKnownTagKeys.Outcome: outcome = tag.Value as string; break;
+                case WellKnownTagKeys.ErrorType: errorType = tag.Value as string; break;
+            }
+        }
+
+        lock (durations)
+        {
+            durations.Add((provider, outcome, errorType, instrument.Name));
+        }
+    });
+    listener.Start();
+
+    using var host = builder.Build();
+    await host.StartAsync();
+    using var scope = host.Services.CreateScope();
+
+    var meili = await scope.ServiceProvider.GetRequiredService<ISearchIndex<MeilisearchOnlyDocument>>()
+        .GetAsync("doc-1", TenantScope.Global);
+    var elastic = await scope.ServiceProvider.GetRequiredService<ISearchIndex<ElasticSearchOnlyDocument>>()
+        .GetAsync("doc-1", TenantScope.Global);
+    await host.StopAsync();
+
+    Verify(
+        meili.IsFailure && meili.Error.Code == SearchErrorCodes.Unavailable
+        && elastic.IsFailure && elastic.Error.Code == SearchErrorCodes.Unavailable,
+        "the same outage is search.unavailable on both providers");
+    Verify(meters.Distinct().Count() == 1, "both providers created their instruments on ONE Meter instance named SharedKernel.Search");
+    Verify(
+        durations.Any(d => d.Provider == SearchWellKnown.MeilisearchProviderName && d.Instrument == SearchInstrumentNames.OperationDuration
+            && d.Outcome == WellKnownOutcomes.Failure && d.ErrorType == "Unavailable"),
+        "the Meilisearch duration is recorded under search.provider=meilisearch with outcome failure and error.type Unavailable");
+    Verify(
+        durations.Any(d => d.Provider == SearchWellKnown.ElasticSearchProviderName && d.Instrument == SearchInstrumentNames.OperationDuration
+            && d.Outcome == WellKnownOutcomes.Failure && d.ErrorType == "Unavailable"),
+        "the ElasticSearch duration is recorded under search.provider=elasticsearch, separable from the Meilisearch series");
+    Console.WriteLine("Surface PASS: two providers, one SharedKernel.Search meter, series separable by search.provider.");
+}
+
 static void Verify(bool condition, string label)
 {
     if (!condition)
@@ -128,7 +222,7 @@ static Task SurfaceStreamExceptionIsASharedKernelException()
     Error? caught = null;
     try
     {
-        throw new SearchStreamException(SearchErrors.Unreachable(SearchWellKnown.MeilisearchProviderName));
+        throw new SearchStreamException(SearchErrors.Unavailable(SearchWellKnown.MeilisearchProviderName));
     }
     catch (SharedKernelException e) when (e is SearchStreamException)
     {
@@ -147,3 +241,9 @@ static Task SurfaceStreamExceptionIsASharedKernelException()
 /// <summary>Minimal <see cref="ISearchDocument"/> used only by this verification harness.</summary>
 internal sealed record ProductDocument(string DocumentId, string Name) : ISearchDocument;
 
+
+/// <summary>A document registered with Meilisearch only, for the shared-meter surface.</summary>
+internal sealed record MeilisearchOnlyDocument(string DocumentId) : ISearchDocument;
+
+/// <summary>A document registered with ElasticSearch only, for the shared-meter surface.</summary>
+internal sealed record ElasticSearchOnlyDocument(string DocumentId) : ISearchDocument;

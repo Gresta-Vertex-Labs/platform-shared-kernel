@@ -5,9 +5,11 @@ using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Search.ElasticSearch.Errors;
-using SharedKernel.Search.ElasticSearch.Logging;
+using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Querying;
 
 namespace SharedKernel.Search.ElasticSearch.Analytics;
@@ -27,14 +29,19 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
     private readonly ElasticsearchClient _client;
     private readonly SearchIndexDefinition _definition;
     private readonly ILogger<ElasticSearchAnalytics<TDocument>> _logger;
+    private readonly SearchTelemetry _telemetry;
 
     /// <summary>Initializes a new <see cref="ElasticSearchAnalytics{TDocument}"/>.</summary>
     public ElasticSearchAnalytics(
-        ElasticsearchClient client, SearchIndexDefinition definition, ILogger<ElasticSearchAnalytics<TDocument>> logger)
+        ElasticsearchClient client,
+        SearchIndexDefinition definition,
+        ILogger<ElasticSearchAnalytics<TDocument>> logger,
+        SearchTelemetry telemetry)
     {
         _client = client;
         _definition = definition;
         _logger = logger;
+        _telemetry = telemetry;
     }
 
     /// <inheritdoc />
@@ -43,6 +50,26 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
         IReadOnlyCollection<AggregationRequest> aggregations,
         TenantScope tenantScope,
         CancellationToken cancellationToken = default)
+    {
+        using var scope = _telemetry.Start(SearchOperations.Aggregate, _definition.Name);
+        try
+        {
+            var result = await AggregateCoreAsync(filter, aggregations, tenantScope, cancellationToken).ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
+        }
+    }
+
+    private async Task<Result<AggregationResultSet>> AggregateCoreAsync(
+        SearchFilter? filter,
+        IReadOnlyCollection<AggregationRequest> aggregations,
+        TenantScope tenantScope,
+        CancellationToken cancellationToken)
     {
         var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
         if (filterResult.IsFailure)
@@ -66,21 +93,22 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
         var response = await _client.SearchAsync<TDocument>(searchRequest, cancellationToken).ConfigureAwait(false);
         if (!response.IsValidResponse)
         {
-            var mapped = ElasticSearchFaultMapper.Map(response, _definition.Name, "aggregate", cancellationToken);
+            var mapped = ElasticSearchFaultMapper.Map(response, _definition.Name, SearchOperations.Aggregate, cancellationToken);
             // An outage, timeout or credential fault keeps its own classification; only an engine rejection of the
             // aggregation itself is AggregationFailed, with kernel wording and the bounded engine code.
-            var error = mapped.Type is ErrorType.Unavailable or ErrorType.Timeout or ErrorType.Unauthorized
+            var error = mapped.Type is ErrorType.Unavailable or ErrorType.Timeout || mapped.Code == SearchErrorCodes.EngineUnauthorized
                 ? mapped
                 : ElasticSearchErrors.AggregationFailed(
                     _definition.Name, ElasticSearchFaultMapper.DescribeRejection(response));
-            _logger.ElasticSearchOperationFaulted(
-                "aggregate", _definition.Name, error.Code, ElasticSearchFaultMapper.OriginalException(response));
+            ElasticSearchLog.OperationFaulted(
+                _logger,
+                SearchOperations.Aggregate, _definition.Name, error.Code, ElasticSearchFaultMapper.OriginalException(response));
             return Result<AggregationResultSet>.Failure(error);
         }
 
         // response.IsValidResponse == true guarantees Aggregations is populated.
         var resultSet = MapResultSet(response.Aggregations!, aggregations);
-        _logger.ElasticSearchAggregationExecuted(_definition.Name, aggregations.Count, response.Took);
+        ElasticSearchLog.AggregationExecuted(_logger, _definition.Name, aggregations.Count, response.Took);
         return Result<AggregationResultSet>.Success(resultSet);
     }
 
@@ -168,7 +196,7 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
 
             default:
                 throw new NotSupportedException(
-                    $"Unrecognized AggregationRequest node type '{request.GetType()}' — the closed hierarchy has grown a new node.");
+                    $"Aggregation request node type '{request.GetType()}' is not recognised, so add its translation to this provider.");
         }
     }
 
@@ -182,7 +210,7 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
             DateHistogramInterval.Month => global::Elastic.Clients.Elasticsearch.Aggregations.CalendarInterval.Month,
             DateHistogramInterval.Quarter => global::Elastic.Clients.Elasticsearch.Aggregations.CalendarInterval.Quarter,
             DateHistogramInterval.Year => global::Elastic.Clients.Elasticsearch.Aggregations.CalendarInterval.Year,
-            _ => throw new NotSupportedException($"Unrecognized DateHistogramInterval '{interval}'."),
+            _ => throw new NotSupportedException($"Date histogram interval '{interval}' is not recognised, so add its translation to this provider."),
         };
 
     private static AggregationResultSet MapResultSet(
@@ -279,7 +307,7 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
 
             default:
                 throw new NotSupportedException(
-                    $"Unrecognized AggregationRequest node type '{request.GetType()}' — the closed hierarchy has grown a new node.");
+                    $"Aggregation request node type '{request.GetType()}' is not recognised, so add its translation to this provider.");
         }
     }
 }

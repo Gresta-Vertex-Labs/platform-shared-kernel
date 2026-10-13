@@ -127,8 +127,8 @@ flowchart LR
 - **Parity ceiling.** `MaxTotalHits` defaults to 1000, and `EnsureIndexAsync` lowers `index.max_result_window` to the
   index's ceiling, so a query legal here is legal on Meilisearch. Raise it per index with `.MaxTotalHits(n)`.
 - **Counts** use the `_count` API and are always exact.
-- **Failures.** Invalid responses are classified onto `search.unreachable`, `search.timeout`, `search.unauthorized`
-  or `search.engine_fault` (EventId 9222, with the transport exception), the same codes the Meilisearch provider returns
+- **Failures.** Invalid responses are classified onto `search.unavailable`, `search.timeout`, `search.engine_unauthorized`
+  (the engine refusing this service's own credentials, `Unexpected`) or `search.engine_fault` (EventId 9222, with the transport exception), the same codes the Meilisearch provider returns
   for exceptions. The error text is the kernel's own wording plus, at most, the server's short `error.type` (only when it
   matches `^[a-z0-9_.]{1,64}$`); the response body, `DebugInformation`, the server `reason` and the node address never
   reach an `Error`. An exception the client throws is classified when recognised (transport, timeout, a payload it cannot
@@ -188,7 +188,7 @@ await cursorSearch.CloseCursorAsync(cursor.Value, ct);
 
 Point-in-time plus `search_after`, never scroll. `SearchCursor.Token` is opaque. Only the engine's "point-in-time missing" answer (HTTP 404 with `search_context_missing_exception`, which is what an
 expired or closed point-in-time returns) is `search.elasticsearch.cursor_expired`; an outage or credential fault while
-reading is `search.unreachable` or `search.unauthorized`, and cancellation propagates. A malformed cursor is
+reading is `search.unavailable` or `search.engine_unauthorized`, and cancellation propagates. A malformed cursor is
 `search.elasticsearch.invalid_cursor`, with fixed text that names nothing of the token.
 `StreamAsync` faults surface as `SearchStreamException`.
 
@@ -277,21 +277,22 @@ Section `Search:ElasticSearch` (`ElasticSearchOptions.SectionName`), validated w
 | `.WithSourceSerializerContext(JsonSerializerContext)` | The client's source serializer |
 | `.AllowRawClientAccess()` | `IElasticSearchRawClientAccessor` (singleton; `Client`) — bypasses tenant scoping |
 | `.Build()` | `ISearchIndexProvisioner`, `ISearchProviderDescriptor` (singleton, keyed `elasticsearch` + unkeyed), one readiness probe per index |
-| `IServiceProvider.VerifyElasticSearchEngineVersionAsync(ct)` | — returns `Result`: `search.engine_version_unsupported` or `search.unreachable` on failure |
+| `IServiceProvider.VerifyElasticSearchEngineVersionAsync(ct)` | — returns `Result`: `search.engine_version_not_supported` or `search.unavailable` on failure |
 
 ### Errors
 
-Neutral codes come from `SearchErrors` (see the Abstractions README). Elasticsearch-only codes, from
-`ElasticSearchErrors`:
+Neutral codes come from `SearchErrors` (see the Abstractions README). Elasticsearch-only codes are the public constants of `ElasticSearchErrorCodes`; the factory that builds them is internal:
 
 | Code | Type | When |
 | --- | --- | --- |
 | `search.elasticsearch.invalid_cursor` | Validation | A cursor token that cannot be read |
 | `search.elasticsearch.cursor_expired` | Conflict | The cursor's point-in-time is gone (expired or closed) |
-| `search.elasticsearch.aggregation_failed` | Unexpected | The engine rejected an aggregation; an outage keeps `search.unreachable` |
+| `search.elasticsearch.aggregation_failed` | Unexpected | The engine rejected an aggregation; an outage keeps `search.unavailable` |
 | `search.elasticsearch.source_serializer_context_missing` | Unexpected | The client could not (de)serialize a document type because no `JsonSerializerContext` covers it (see 9221) |
 
 ### Logging
+
+Log statements are plain static methods of an internal `ElasticSearchLog` class (EventIds in `ElasticSearchLoggingEventIds`), each one sentence ending in a period, with the exception as the last parameter on every caught-exception path. Ids are never renumbered, and every logger category is a kernel type.
 
 | Event id | Level | Event |
 | --- | --- | --- |
@@ -311,8 +312,8 @@ Neutral codes come from `SearchErrors` (see the Abstractions README). Elasticsea
 | 9213 | Debug | Point-in-time opened |
 | 9214 | Debug | Point-in-time closed |
 | 9215 | Warning | Failed to close a point-in-time; carries the exception |
-| 9216 | Warning | Raw client access enabled — bypasses tenant scoping |
-| 9217 | Warning | TLS certificate validation disabled |
+| 9216 | Warning | Raw client access is enabled, so the raw client bypasses tenant scoping |
+| 9217 | Warning | TLS certificate validation is disabled |
 | 9218 | Information | Cluster health yellow, treated as healthy |
 | 9219 | Warning | Probe degraded; carries the first measurement exception |
 | 9220 | Warning | Schema fingerprint mismatch |
@@ -322,10 +323,14 @@ Neutral codes come from `SearchErrors` (see the Abstractions README). Elasticsea
 | 9224 | Debug | Bulk operation throttled |
 | 9225 | Warning | Operation faulted and was mapped to an error code; carries the exception |
 | 9226 | Information | Synonyms and stop words applied |
-| 9227 | Warning | Index drifted from the registered definition |
+| 9227 | Warning | Index drifted from its registered definition, with a bounded `{DriftKind}` (`probe_failed`, `engine_unreachable`, `not_addressable`, `no_fingerprint`, `fingerprint_mismatch`, `write_alias_drift`); one line per index |
 | 9228 | Information | Index verified against the registered definition |
 | 9229 | Debug | Completion suggester returned suggestions |
 | 9230 | Warning | A cursor read faulted and was mapped to an error code; carries the exception |
+
+### Telemetry
+
+The provider records the shared `SharedKernel.Search` telemetry described in the Abstractions package: Client spans named `search {operation}` and the `sharedkernel.search.operation.duration` (`s`) and `sharedkernel.search.documents` (`{document}`) instruments, tagged `search.index`, `search.operation`, `search.provider` = `elasticsearch`, `outcome` and, on a failure, `error.type`. The instruments come from the host's `IMeterFactory` (the registration calls `AddMetrics()`), so they share one meter with the Meilisearch provider when both are registered and are told apart by `search.provider`. Elasticsearch-only operations: `open_cursor`, `read_cursor`, `close_cursor`, `stream`, `suggest` and `aggregate`.
 
 ### Health
 

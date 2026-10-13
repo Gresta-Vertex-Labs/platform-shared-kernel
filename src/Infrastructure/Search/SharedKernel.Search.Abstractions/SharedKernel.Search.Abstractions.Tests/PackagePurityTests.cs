@@ -68,6 +68,16 @@ public sealed class PackagePurityTests
     }
 
     [Fact]
+    public void Assembly_DeclaresNo_LoggingEventIdsClass_AndReferencesNoLoggingAssembly()
+    {
+        AbstractionsAssembly.GetTypes()
+            .Should().NotContain(t => t.Name.EndsWith("LoggingEventIds", StringComparison.Ordinal) || t.Name.EndsWith("Log", StringComparison.Ordinal));
+
+        AbstractionsAssembly.GetReferencedAssemblies().Select(a => a.Name)
+            .Should().NotContain(name => name!.StartsWith("Microsoft.Extensions.Logging", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Assembly_DeclaresNo_IHealthCheckImplementation()
     {
         var hasHealthCheckImplementation = AbstractionsAssembly.GetTypes()

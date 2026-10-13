@@ -65,7 +65,7 @@ internal static class ElasticSearchResultMapper
 
             result.Add(new SearchHit<TDocument>
             {
-                Document = hit.Source ?? throw new InvalidOperationException("ElasticSearch returned a hit with no _source."),
+                Document = hit.Source ?? throw new InvalidOperationException("The engine returned a hit with no _source, so the index does not store the registered document type."),
                 Rank = rank,
                 Highlights = highlights,
             });

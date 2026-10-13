@@ -7,6 +7,7 @@ using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Options;
 using SharedKernel.Search.Meilisearch.Provisioning;
 using SharedKernel.Search.Meilisearch.Tenancy;
+using SharedKernel.Search.Meilisearch.Tests.Support;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 
@@ -40,7 +41,7 @@ internal static class MeilisearchProviderFactory
     public static MeilisearchIndex<TDocument> CreateIndex<TDocument>(
         MeilisearchContainerFixture fixture, SearchIndexDefinition definition, ILogger<MeilisearchIndex<TDocument>>? logger = null)
         where TDocument : class, ISearchDocument =>
-        new(CreateClient(fixture), definition, CreateOptions(fixture), new FakeClock(), logger ?? NullLogger<MeilisearchIndex<TDocument>>.Instance);
+        new(CreateClient(fixture), definition, CreateOptions(fixture), new FakeClock(), logger ?? NullLogger<MeilisearchIndex<TDocument>>.Instance, MeiliTelemetry.Create());
 
     /// <summary>Creates a <see cref="MeilisearchIndex{TDocument}"/> from an already-built client/options pair.</summary>
     public static MeilisearchIndex<TDocument> CreateIndex<TDocument>(
@@ -49,7 +50,7 @@ internal static class MeilisearchProviderFactory
         MeilisearchOptions options,
         ILogger<MeilisearchIndex<TDocument>>? logger = null)
         where TDocument : class, ISearchDocument =>
-        new(client, definition, options, new FakeClock(), logger ?? NullLogger<MeilisearchIndex<TDocument>>.Instance);
+        new(client, definition, options, new FakeClock(), logger ?? NullLogger<MeilisearchIndex<TDocument>>.Instance, MeiliTelemetry.Create());
 
     /// <summary>Creates a <see cref="MeilisearchIndexProvisioner"/> backed by a fresh client against <paramref name="fixture"/>.</summary>
     public static MeilisearchIndexProvisioner CreateProvisioner(
@@ -61,7 +62,8 @@ internal static class MeilisearchProviderFactory
             CreateOptions(fixture),
             registeredDefinitions ?? EmptyDefinitions,
             EmptyRankingRules,
-            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
+            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance,
+            MeiliTelemetry.Create());
 
     /// <summary>Creates a <see cref="MeilisearchIndexProvisioner"/> authenticated with a specific (e.g. mis-scoped) API key.</summary>
     public static MeilisearchIndexProvisioner CreateProvisioner(
@@ -74,7 +76,8 @@ internal static class MeilisearchProviderFactory
             options,
             EmptyDefinitions,
             EmptyRankingRules,
-            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
+            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance,
+            MeiliTelemetry.Create());
     }
 
     /// <summary>Creates a <see cref="MeilisearchIndexProvisioner"/> from an already-built client/options pair.</summary>
@@ -88,7 +91,8 @@ internal static class MeilisearchProviderFactory
             options,
             registeredDefinitions ?? EmptyDefinitions,
             EmptyRankingRules,
-            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance);
+            logger ?? NullLogger<MeilisearchIndexProvisioner>.Instance,
+            MeiliTelemetry.Create());
 
     /// <summary>
     /// Creates a provisioner that will apply <paramref name="rankingRules"/> to
@@ -104,7 +108,8 @@ internal static class MeilisearchProviderFactory
             CreateOptions(fixture),
             new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal) { [definition.Name] = definition },
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { [definition.Name] = rankingRules },
-            NullLogger<MeilisearchIndexProvisioner>.Instance);
+            NullLogger<MeilisearchIndexProvisioner>.Instance,
+            MeiliTelemetry.Create());
 
     private static readonly IReadOnlyDictionary<string, SearchIndexDefinition> EmptyDefinitions =
         new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal);
@@ -129,7 +134,7 @@ internal static class MeilisearchProviderFactory
         var options = CreateOptions(fixture);
         options.ApiKeyUid = apiKeyUid;
         return new MeilisearchTenantTokenIssuer(
-            CreateClient(fixture), options, new SystemClock(), logger ?? NullLogger<MeilisearchTenantTokenIssuer>.Instance);
+            CreateClient(fixture), options, new SystemClock(), logger ?? NullLogger<MeilisearchTenantTokenIssuer>.Instance, MeiliTelemetry.Create());
     }
 
     /// <summary>
@@ -148,6 +153,6 @@ internal static class MeilisearchProviderFactory
         options.ApiKey = apiKey;
         options.ApiKeyUid = apiKeyUid;
         return new MeilisearchTenantTokenIssuer(
-            CreateClient(fixture, apiKey), options, new SystemClock(), logger ?? NullLogger<MeilisearchTenantTokenIssuer>.Instance);
+            CreateClient(fixture, apiKey), options, new SystemClock(), logger ?? NullLogger<MeilisearchTenantTokenIssuer>.Instance, MeiliTelemetry.Create());
     }
 }

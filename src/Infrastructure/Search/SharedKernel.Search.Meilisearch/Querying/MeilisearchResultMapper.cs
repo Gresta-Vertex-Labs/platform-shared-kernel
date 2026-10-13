@@ -105,7 +105,7 @@ internal static class MeilisearchResultMapper
             // Result-threaded signature through every private mapping helper for one impossible-by-contract
             // case.
             var document = raw.Deserialize<TDocument>(DocumentSerializerOptions)
-                ?? throw new InvalidOperationException("Meilisearch returned a null document for a hit.");
+                ?? throw new InvalidOperationException("The engine returned a null document for a hit, so the stored documents do not match the registered document type.");
 
             hits.Add(new SearchHit<TDocument>
             {

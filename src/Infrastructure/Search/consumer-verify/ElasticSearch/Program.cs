@@ -42,6 +42,7 @@
 
 using Elastic.Clients.Elasticsearch;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Exceptions;
@@ -286,11 +287,17 @@ static Task SurfaceStreamExceptionIsASharedKernelException()
     Error? caught = null;
     try
     {
-        throw new SearchStreamException(SearchErrors.Unreachable(SearchWellKnown.ElasticSearchProviderName));
+        throw new SearchStreamException(SearchErrors.Unavailable(SearchWellKnown.ElasticSearchProviderName));
     }
     catch (SharedKernelException e) when (e is SearchStreamException)
     {
         caught = e.Error;
+    }
+
+    if (caught?.Code != SearchErrorCodes.Unavailable || SearchOperations.Search != "search" || SearchTagKeys.Provider != "search.provider"
+        || SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrorCodes.CursorExpired != "search.elasticsearch.cursor_expired")
+    {
+        throw new InvalidOperationException("FAIL: the public SearchErrorCodes, SearchOperations and SearchTagKeys constants are reachable from the packed Abstractions");
     }
 
     if (caught is null || caught.Type != ErrorType.Unavailable)

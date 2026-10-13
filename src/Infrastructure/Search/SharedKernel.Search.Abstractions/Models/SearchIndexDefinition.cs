@@ -120,7 +120,7 @@ public sealed record SearchIndexDefinition
         }
 
         var fieldValidation = ValidateFields(fields);
-        if (fieldValidation is not null)
+        if (fieldValidation != Primitives.Errors.Error.None)
         {
             return Result<SearchIndexDefinition>.Failure(fieldValidation);
         }
@@ -134,12 +134,12 @@ public sealed record SearchIndexDefinition
 
     /// <summary>
     /// Validates that no <paramref name="fields"/> entry has an empty name and that no two entries
-    /// share a name. Returns <see langword="null"/> when valid, or the
+    /// share a name. Returns <see cref="Primitives.Errors.Error.None"/> when valid, or the
     /// <see cref="SearchErrors.InvalidIndexDefinition"/> <see cref="Primitives.Errors.Error"/> when
     /// not. Shared by <see cref="Create"/> and <see cref="SearchIndexDefinitionBuilder.Build"/> so the
     /// rule lives in exactly one place.
     /// </summary>
-    internal static Primitives.Errors.Error? ValidateFields(IReadOnlyList<SearchFieldDefinition> fields)
+    internal static Primitives.Errors.Error ValidateFields(IReadOnlyList<SearchFieldDefinition> fields)
     {
         var seenNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var field in fields)
@@ -155,13 +155,13 @@ public sealed record SearchIndexDefinition
             }
         }
 
-        return null;
+        return Primitives.Errors.Error.None;
     }
 
     /// <summary>
     /// Validates that no <paramref name="synonyms"/> key or replacement and no
     /// <paramref name="stopWords"/> entry is blank, and that no replacement list is empty. Returns
-    /// <see langword="null"/> when valid, or the <see cref="SearchErrors.InvalidIndexDefinition"/>
+    /// <see cref="Primitives.Errors.Error.None"/> when valid, or the <see cref="SearchErrors.InvalidIndexDefinition"/>
     /// <see cref="Primitives.Errors.Error"/> when not. Shared by <see cref="Create"/> and
     /// <see cref="SearchIndexDefinitionBuilder.Build"/> so the rule lives in exactly one place.
     /// </summary>
@@ -170,7 +170,7 @@ public sealed record SearchIndexDefinition
     /// match it, and silently dropping it would hide a configuration typo behind a synonym list that
     /// simply does not work.
     /// </remarks>
-    internal static Primitives.Errors.Error? ValidateTextAnalysis(
+    internal static Primitives.Errors.Error ValidateTextAnalysis(
         IReadOnlyDictionary<string, IReadOnlyList<string>> synonyms,
         IReadOnlyList<string> stopWords)
     {
@@ -199,7 +199,7 @@ public sealed record SearchIndexDefinition
             return SearchErrors.InvalidIndexDefinition("A stop word must not be empty.");
         }
 
-        return null;
+        return Primitives.Errors.Error.None;
     }
 
     /// <summary>

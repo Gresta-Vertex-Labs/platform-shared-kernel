@@ -1,6 +1,7 @@
 using System.Net;
 using FluentAssertions;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Errors;
 using SharedKernel.Search.Meilisearch.Tests.Support;
@@ -72,10 +73,10 @@ public sealed class MeilisearchNoLeakTests
     {
         var cases = new (HttpReply Reply, string Code, ErrorType Type)[]
         {
-            (HttpReply.Throws(new HttpRequestException("connect to " + MeiliFaultHarness.HostSentinel + " refused")), "search.unreachable", ErrorType.Unavailable),
-            (HttpReply.Throws(new TaskCanceledException("timed out " + MeiliFaultHarness.HostSentinel)), "search.timeout", ErrorType.Timeout),
-            (HttpReply.ApiError(401, "invalid_api_key", MeiliFaultHarness.Sentinel), "search.unauthorized", ErrorType.Unauthorized),
-            (HttpReply.ApiError(403, "missing_authorization_header", MeiliFaultHarness.Sentinel), "search.unauthorized", ErrorType.Unauthorized),
+            (HttpReply.Throws(new HttpRequestException("connect to " + MeiliFaultHarness.HostSentinel + " refused")), SearchErrorCodes.Unavailable, ErrorType.Unavailable),
+            (HttpReply.Throws(new TaskCanceledException("timed out " + MeiliFaultHarness.HostSentinel)), SearchErrorCodes.Timeout, ErrorType.Timeout),
+            (HttpReply.ApiError(401, "invalid_api_key", MeiliFaultHarness.Sentinel), SearchErrorCodes.EngineUnauthorized, ErrorType.Unexpected),
+            (HttpReply.ApiError(403, "missing_authorization_header", MeiliFaultHarness.Sentinel), SearchErrorCodes.EngineUnauthorized, ErrorType.Unexpected),
         };
 
         foreach (var (reply, code, type) in cases)

@@ -43,7 +43,8 @@ public sealed class ElasticSearchPreflightValidationTests
             writeAlias: definition.Name,
             new ElasticSearchOptions(),
             new FakeClock(),
-            NullLogger<ElasticSearchIndex<TestDocument>>.Instance);
+            NullLogger<ElasticSearchIndex<TestDocument>>.Instance,
+            SharedKernel.Search.ElasticSearch.Tests.Support.EsTelemetry.Create());
 
     private static SearchIndexDefinition Definition() => new SearchIndexDefinitionBuilder("products")
         .Field("name", SearchFieldKind.Text, searchable: true)

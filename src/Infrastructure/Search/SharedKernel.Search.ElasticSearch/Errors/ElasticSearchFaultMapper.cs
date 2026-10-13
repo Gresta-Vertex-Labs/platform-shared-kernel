@@ -121,14 +121,14 @@ internal static partial class ElasticSearchFaultMapper
         {
             case TimeoutException:
             case OperationCanceledException:
-                error = SearchErrors.Timeout(operation, TimeSpan.Zero);
+                error = SearchErrors.Timeout(operation);
                 return true;
             case HttpRequestException:
             case SocketException:
             case IOException:
             case TransportException:
             case System.Security.Authentication.AuthenticationException:
-                error = SearchErrors.Unreachable(SearchWellKnown.ElasticSearchProviderName);
+                error = SearchErrors.Unavailable(SearchWellKnown.ElasticSearchProviderName);
                 return true;
             case JsonException:
                 error = SearchErrors.EngineFault(SearchWellKnown.ElasticSearchProviderName, operation);
@@ -171,7 +171,7 @@ internal static partial class ElasticSearchFaultMapper
         {
             if (original is null)
             {
-                return SearchErrors.Unreachable(SearchWellKnown.ElasticSearchProviderName);
+                return SearchErrors.Unavailable(SearchWellKnown.ElasticSearchProviderName);
             }
 
             if (!TryClassify(original, operation, documentTypeName, out var classified))
@@ -184,14 +184,14 @@ internal static partial class ElasticSearchFaultMapper
 
         return apiCall.HttpStatusCode.Value switch
         {
-            401 or 403 => SearchErrors.Unauthorized(indexName, operation),
+            401 or 403 => SearchErrors.EngineUnauthorized(indexName, operation),
             404 => SearchErrors.IndexNotFound(indexName),
-            408 => SearchErrors.Timeout(operation, TimeSpan.Zero),
+            408 => SearchErrors.Timeout(operation),
 
             // 429 is ElasticSearch's rejected-execution / circuit-breaker signal. It is a capacity
             // condition, not a malformed request: the identical call succeeds once load drops, which is
             // the same operational shape as unreachability and must be told apart from a 400.
-            429 or 502 or 503 or 504 => SearchErrors.Unreachable(SearchWellKnown.ElasticSearchProviderName),
+            429 or 502 or 503 or 504 => SearchErrors.Unavailable(SearchWellKnown.ElasticSearchProviderName),
 
             409 => SearchErrors.IndexAlreadyExists(indexName),
             400 => SearchErrors.InvalidSearchRequest(DescribeRejection(response)),

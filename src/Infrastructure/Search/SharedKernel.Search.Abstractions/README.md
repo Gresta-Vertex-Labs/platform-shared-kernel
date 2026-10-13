@@ -20,7 +20,7 @@
 | `SearchCount` and `TotalHitsAccuracy` | A capped or estimated total is never reported as exact; `ToPagedList()` refuses one |
 | `ISearchIndexProvisioner` | Idempotent, additive-only provisioning, staging → live cutover, and a check that the live schema matches the code |
 | `SearchIndexReadinessProbe` | One `search-{provider}-{index}` readiness probe per registered index, registered by the provider |
-| `SearchErrors` | Outages, timeouts and auth failures are `Result` values (`search.unreachable`, `search.timeout`, `search.unauthorized`) on both engines |
+| `SearchErrors` | Outages, timeouts and auth failures are `Result` values (`search.unavailable`, `search.timeout`, `search.engine_unauthorized`) on both engines |
 
 ## Contents
 
@@ -153,13 +153,13 @@ flowchart LR
   acknowledgement; `Searchable` waits until the write is visible to search. There is no default.
 - **Bulk writes report per document.** `IndexManyAsync`/`DeleteManyAsync` return a *successful* `Result` whose
   `SearchBulkReceipt.Failures` lists the documents that failed; `Result.Failure` means the request itself did not run.
-- **Operational failures are values.** An outage is `search.unreachable` (`ErrorType.Unavailable`, 503), a timeout
-  `search.timeout` (504), bad credentials `search.unauthorized` — identical on both providers. Cancellation you
+- **Operational failures are values.** An outage is `search.unavailable` (`ErrorType.Unavailable`, 503), a timeout
+  `search.timeout` (504), and the engine refusing this service's own key `search.engine_unauthorized` (`ErrorType.Unexpected`, 500: a deployment defect, not the end user's authentication), identical on both providers. Cancellation you
   requested propagates as `OperationCanceledException`.
 - **Error text is kernel-authored.** An `Error.Message` holds the kernel's own wording and bounded identifiers only
   (index, operation and provider names, a short engine error code). It never carries an engine response body, a server
   reason, an exception message, an endpoint or host, a query or a filter value; engine detail reaches the log through the
-  exception. `SearchErrors.Unreachable(providerName)` therefore names no endpoint.
+  exception. `SearchErrors.Unavailable(providerName)` therefore names no endpoint.
 - **Faults are classified or they propagate.** Only a recognised engine or transport fault becomes a `Result`
   failure; an unrecognised exception (a defect) is rethrown with its stack instead of being reported as
   `search.engine_fault`.
@@ -170,10 +170,10 @@ flowchart LR
   unspecified.
 - **Honest totals.** `SearchResults<T>.TotalHits` comes with `Accuracy` (`Exact`, `LowerBound`, `Estimated`);
   `CountAsync` returns a `SearchCount` whose `ToString()` renders a lower bound as `>=N`.
-- **Telemetry.** Providers emit a `search {operation}` span and the `search.client.operation.duration` (s) and
-  `search.client.documents` instruments on the `SharedKernel.Search` source and meter, tagged `search.index`,
-  `search.operation`, `search.provider`, `error.type`. Query text, filter values and document ids are never recorded.
-  Wire them with `builder.WithSearchTelemetry()` (`SharedKernel.ServiceDefaults`).
+- **Telemetry.** Providers emit a Client-kind `search {operation}` span and the `sharedkernel.search.operation.duration` (`s`)
+  and `sharedkernel.search.documents` (`{document}`) instruments on the `SharedKernel.Search` source and meter, identical
+  on both providers (see Telemetry below). Query text, filter values, document ids and cursor tokens are never recorded.
+  `AddServiceDefaults` subscribes to `SharedKernel.*`, so nothing else needs wiring.
 
 ## Recipes
 
@@ -303,11 +303,13 @@ An unkeyed resolution returns whichever provider registered last.
 
 `SearchFieldKind`: `Text`, `Keyword`, `Integer`, `Decimal`, `Boolean`, `DateTimeOffset`. `SearchWellKnown` holds
 `DefaultPageSize` (20), `MaxPageSize` (1000), `DefaultMaxTotalHits` (1000), `DefaultMaxFacetValues` (100),
-`DefaultPrimaryKeyField` (`documentId`), the provider names (`meilisearch`, `elasticsearch`) and the telemetry names.
+`DefaultPrimaryKeyField` (`documentId`), the provider names (`meilisearch`, `elasticsearch`) and the source and meter name
+(`SharedKernel.Search`). The telemetry vocabulary is `SearchTagKeys`, `SearchOperations` and `SearchInstrumentNames`; the error
+codes are `SearchErrorCodes`.
 
 ### Errors
 
-All from `SearchErrors`; each factory takes the details it names. The free-text `reason` parameters (`InvalidSearchRequest`, `InvalidFilter`,
+All from `SearchErrors` (public because both providers and the in-memory double build the same vocabulary); each factory takes the details it names. The codes are the public constants of `SearchErrorCodes`. The free-text `reason` parameters (`InvalidSearchRequest`, `InvalidFilter`,
 `WriteRejected`, `CutoverFailed`, `ProbeFailed`) take kernel-authored text only, never provider or exception text.
 
 | Code | Type | When |
@@ -322,21 +324,43 @@ All from `SearchErrors`; each factory takes the details it names. The free-text 
 | `search.pagination_limit_exceeded` | Validation | `page × pageSize` past the index's `MaxTotalHits` |
 | `search.facet_limit_exceeded` | Validation | More facet values than `MaxFacetValues` |
 | `search.total_hits_not_exact` | Validation | `ToPagedList()` on a non-exact total |
-| `search.unsupported_capability` | Validation | Reserved; unreachable with the closed filter set |
+| `search.not_supported` | Validation | Reserved; unreachable with the closed filter set |
 | `search.index_already_exists` | Conflict | Creating an index that exists |
 | `search.index_definition_conflict` | Conflict | An incompatible field, synonym or stop-word change on a live index |
 | `search.cutover_failed` | Conflict | `CutoverAsync` could not complete |
 | `search.schema_fingerprint_mismatch` | Conflict | Declared for a live index built from another definition |
-| `search.unauthorized` | Unauthorized | The engine refused this service's credentials |
+| `search.engine_unauthorized` | Unexpected | The engine refused this service's own credentials: a deployment defect, not the end user's authentication |
 | `search.tenant_scope_missing` | Unauthorized | `TenantScope.Global` on an index that declares a `TenantField` |
-| `search.unreachable` | Unavailable | The engine did not answer |
+| `search.unavailable` | Unavailable | The engine did not answer or refused the call as overloaded |
 | `search.timeout` | Timeout | The operation timed out |
 | `search.write_timeout` | Timeout | A `Searchable` write was not visible in time |
 | `search.write_rejected` | Unexpected | The engine rejected a write |
 | `search.bulk_partially_failed` | Unexpected | Declared; bulk writes report failures in `SearchBulkReceipt.Failures` instead |
 | `search.probe_failed` | Unexpected | A readiness probe or `VerifyRegisteredIndexesAsync` failed |
-| `search.engine_version_unsupported` | Unexpected | The engine version is outside the supported range |
+| `search.engine_version_not_supported` | Unexpected | The engine version is outside the supported range |
 | `search.engine_fault` | Unexpected | A recognised engine reply with no more specific code; the message carries the engine's bounded error code when it sent one. An unrecognised exception is not mapped here: it propagates |
+
+### Telemetry
+
+Both providers emit the same telemetry on one source and one meter named `SharedKernel.Search` (`SearchWellKnown.ActivitySourceName`
+and `MeterName`); the host's `SharedKernel.*` wildcard subscription picks them up. A provider swap changes no dashboard except the
+`search.provider` tag value.
+
+| Instrument | Unit | Tags |
+| --- | --- | --- |
+| `sharedkernel.search.operation.duration` (histogram, `SearchInstrumentNames.OperationDuration`) | `s` | `search.index`, `search.operation`, `search.provider`, `outcome`, and `error.type` on a failure |
+| `sharedkernel.search.documents` (counter, `SearchInstrumentNames.Documents`) | `{document}` | `search.index`, `search.operation`, `search.provider` |
+
+`outcome` is `success`, `failure` (a failed `Result`), `exception` (an unrecognised exception that rethrew) or `canceled` (the
+caller's cancellation, never an error). `error.type` is the `ErrorType` name for a `Result` failure and the exception full name for
+an exception. The tag keys are the constants of `SearchTagKeys`.
+
+Spans are named `search {operation}` in lowercase and are `Client` kind (the tenant-token issuance is `Internal`). A `Result` failure
+sets the span status to `Error` with `error.code` and `error.type`; an unrecognised exception adds the full exception event; a
+cancellation leaves the status unset. The readiness probe starts no span. The operation names are the constants of `SearchOperations`:
+`index`, `index_many`, `delete`, `delete_many`, `delete_by_filter`, `clear`, `wait_until_searchable`, `search`, `get`, `count`,
+`enumerate`, `ensure_index`, `index_exists`, `delete_index`, `cutover`, `verify_indexes`, and the provider-exclusive `open_cursor`,
+`read_cursor`, `close_cursor`, `stream`, `suggest`, `aggregate`, `instant_search`, `search_facet_values`, `issue_tenant_token`.
 
 ### Logging
 

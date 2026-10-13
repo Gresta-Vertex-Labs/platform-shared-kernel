@@ -5,6 +5,7 @@ using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Options;
+using SharedKernel.Search.Meilisearch.Tests.Support;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Search.Meilisearch.Tests.Index;
@@ -39,7 +40,8 @@ public sealed class MeilisearchPreflightValidationTests
             definition,
             new MeilisearchOptions(),
             new FakeClock(),
-            NullLogger<MeilisearchIndex<TestDocument>>.Instance);
+            NullLogger<MeilisearchIndex<TestDocument>>.Instance,
+            MeiliTelemetry.Create());
 
     private static SearchIndexDefinition Definition() => new SearchIndexDefinitionBuilder("products")
         .Field("name", SearchFieldKind.Text, searchable: true)
