@@ -30,7 +30,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.ObservabilityConformance` (WO-087) |
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
-| 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ○ | Next: `SK.11.CommunicationConformance` (WO-087) |
+| 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ● | None |
 | 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ● | None |
 | 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.ServiceDefaultsConformance` (WO-087) |
 | 14 | [Presentation](src/Hosting/Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ○ | Next: `SK.14.PresentationConformance` (WO-087) |
@@ -330,7 +330,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-609 — Conform Communication to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 11.Communication
 **Depends on:** P-580, P-581, P-583, P-592
 **Phase key:** `SK.11.CommunicationConformance`
