@@ -50,8 +50,8 @@ public static class BrotliCompressionExtensions
         if (builder.Services.Any(sd => sd.ServiceType == typeof(CacheEncryptionMarker)))
         {
             throw new InvalidOperationException(
-                "Brotli compression must be registered before cache encryption — call "
-                    + "AddBrotliCompression() before AddCacheEncryption(), never after.");
+                "AddBrotliCompression cannot run after AddCacheEncryption. "
+                    + "Call AddBrotliCompression() before AddCacheEncryption() so values are compressed before they are encrypted.");
         }
 
         var options = new CacheCompressionOptions();

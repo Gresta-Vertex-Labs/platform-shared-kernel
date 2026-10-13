@@ -6,10 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Caching.Redis.Core.Diagnostics;
 using SharedKernel.Caching.Redis.Core.Health;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Primitives.Health;
-using SharedKernel.Primitives.Logging;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.Core.Extensions;
@@ -18,10 +18,8 @@ namespace SharedKernel.Caching.Redis.Core.Extensions;
 /// <see cref="IServiceCollection"/> extension methods that register the Redis connection shared by every
 /// <c>SharedKernel.Caching.Redis</c> package.
 /// </summary>
-public static partial class RedisConnectionCoreExtensions
+public static class RedisConnectionCoreExtensions
 {
-    private const string LoggerCategoryName = "SharedKernel.Caching.Redis.Core.RedisConnection";
-
     /// <summary>
     /// Registers the shared <see cref="IConnectionMultiplexer"/> and its readiness probe (<see cref="RedisReadinessProbeNames.Connection"/>), with
     /// <see cref="RedisConnectionOptions"/> bound from the <c>SharedKernel:Caching:Redis</c> section and
@@ -116,29 +114,14 @@ public static partial class RedisConnectionCoreExtensions
         if (!IsRegistered(services))
         {
             throw new InvalidOperationException(
-                $"{caller} uses the shared Redis connection. Call services.AddRedisConnection(...) before {caller}.");
+                $"{caller} requires the shared Redis connection. Call services.AddRedisConnection(...) before {caller}.");
         }
     }
 
     private static IServiceCollection AddCore(IServiceCollection services)
     {
-        services.AddSingleton<IConnectionMultiplexer>(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<RedisConnectionOptions>>().Value;
-            var configurationOptions = BuildConfigurationOptions(options);
-            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger(LoggerCategoryName);
-
-            WarnIfNonLoopbackWithoutTls(logger, configurationOptions);
-
-            var multiplexer = ConnectionMultiplexer.Connect(configurationOptions);
-            multiplexer.ConnectionFailed += (_, e) => Log.ConnectionFailed(logger, e.EndPoint?.ToString() ?? "(unknown)", e.FailureType, e.Exception);
-            multiplexer.ConnectionRestored += (_, e) => Log.ConnectionRestored(logger, e.EndPoint?.ToString() ?? "(unknown)");
-
-            if (!multiplexer.IsConnected)
-                Log.NotConnectedAtStartup(logger);
-
-            return multiplexer;
-        });
+        services.AddSingleton<RedisConnectionFactory>();
+        services.AddSingleton<IConnectionMultiplexer>(sp => sp.GetRequiredService<RedisConnectionFactory>().Connect());
 
         services.AddReadinessProbe<RedisConnectionProbe>();
 
@@ -206,7 +189,7 @@ public static partial class RedisConnectionCoreExtensions
 
         var nonLoopback = configurationOptions.EndPoints.FirstOrDefault(endPoint => !IsLoopback(endPoint));
         if (nonLoopback is not null)
-            Log.NonLoopbackWithoutTls(logger, nonLoopback.ToString() ?? "(unknown)");
+            RedisCoreLog.NonLoopbackWithoutTls(logger);
     }
 
     internal static bool IsLoopback(EndPoint endPoint) => endPoint switch
@@ -216,24 +199,4 @@ public static partial class RedisConnectionCoreExtensions
             || (IPAddress.TryParse(dns.Host, out var address) && IPAddress.IsLoopback(address)),
         _ => false,
     };
-
-    private static partial class Log
-    {
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 100, Level = LogLevel.Information,
-            Message = "Redis connection to {EndPoint} restored")]
-        internal static partial void ConnectionRestored(ILogger logger, string endPoint);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 101, Level = LogLevel.Warning,
-            Message = "Redis connection to {EndPoint} failed ({FailureType}); reconnecting in the background")]
-        internal static partial void ConnectionFailed(ILogger logger, string endPoint, ConnectionFailureType failureType, Exception? exception);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 102, Level = LogLevel.Warning,
-            Message = "Redis endpoint {EndPoint} is not a loopback address and TLS is off. Traffic is unencrypted unless "
-                + "TLS is terminated in front of Redis; set RedisConnectionOptions.Ssl to true to encrypt it.")]
-        internal static partial void NonLoopbackWithoutTls(ILogger logger, string endPoint);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 103, Level = LogLevel.Warning,
-            Message = "Redis is not reachable at startup; the connection keeps retrying in the background")]
-        internal static partial void NotConnectedAtStartup(ILogger logger);
-    }
 }

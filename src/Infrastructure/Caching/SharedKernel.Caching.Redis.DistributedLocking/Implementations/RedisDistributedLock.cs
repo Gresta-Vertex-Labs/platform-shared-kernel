@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Caching.Redis.DistributedLocking.Diagnostics;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.DistributedLocking.Implementations;
@@ -10,7 +10,7 @@ namespace SharedKernel.Caching.Redis.DistributedLocking.Implementations;
 /// through <see cref="IsHeld"/> and <see cref="LostToken"/>, when an extension finds another owner, or when no
 /// extension has succeeded for five sixths of the expiry, before the key can expire on the server.
 /// </summary>
-internal sealed partial class RedisDistributedLock : IDistributedLock
+internal sealed class RedisDistributedLock : IDistributedLock
 {
     private const int Held = 0;
     private const int Lost = 1;
@@ -96,12 +96,12 @@ internal sealed partial class RedisDistributedLock : IDistributedLock
             try
             {
                 await _database.ScriptEvaluateAsync(RedisLockScripts.Release, [_lockKey], [_owner]).ConfigureAwait(false);
-                Log.LockReleased(_logger, Resource);
+                DistributedLockingLog.LockReleased(_logger, Resource);
             }
             catch (Exception ex) when (RedisLockScripts.IsStoreFailure(ex))
             {
                 // The key still expires on its own.
-                Log.ReleaseFailed(_logger, Resource, ex);
+                DistributedLockingLog.ReleaseFailed(_logger, Resource, ex);
             }
         }
 
@@ -131,13 +131,13 @@ internal sealed partial class RedisDistributedLock : IDistributedLock
                         continue;
                     }
 
-                    MarkLost("another owner holds the key");
+                    MarkLost(LockLossCause.OwnerChanged);
                     return;
                 }
                 catch (Exception ex) when (RedisLockScripts.IsStoreFailure(ex))
                 {
                     // The loss deadline reports the lock lost if extensions keep failing.
-                    Log.ExtendFailed(_logger, Resource, ex);
+                    DistributedLockingLog.ExtendFailed(_logger, Resource, ex);
                 }
             }
         }
@@ -166,14 +166,14 @@ internal sealed partial class RedisDistributedLock : IDistributedLock
     }
 
     private void OnLossDeadline() =>
-        MarkLost("no extension succeeded before the key could expire");
+        MarkLost(LockLossCause.DeadlineElapsed);
 
-    private void MarkLost(string reason)
+    private void MarkLost(LockLossCause cause)
     {
         if (Interlocked.CompareExchange(ref _state, Lost, Held) != Held)
             return;
 
-        Log.LockLost(_logger, Resource, FencingToken, reason);
+        DistributedLockingLog.LockLost(_logger, Resource, FencingToken, cause);
         _lost.Cancel();
 
         // Stop extending: the holder has been told to stop, so the key must be allowed to expire.
@@ -185,24 +185,5 @@ internal sealed partial class RedisDistributedLock : IDistributedLock
         {
             // Disposal already stopped the loop.
         }
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 304, Level = LogLevel.Debug,
-            Message = "Distributed lock on '{Resource}' released")]
-        internal static partial void LockReleased(ILogger logger, string resource);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 305, Level = LogLevel.Warning,
-            Message = "Distributed lock on '{Resource}' could not be released; it expires on its own")]
-        internal static partial void ReleaseFailed(ILogger logger, string resource, Exception exception);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 306, Level = LogLevel.Warning,
-            Message = "Distributed lock on '{Resource}' could not be extended; retrying until it would expire")]
-        internal static partial void ExtendFailed(ILogger logger, string resource, Exception exception);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 307, Level = LogLevel.Error,
-            Message = "Distributed lock on '{Resource}' (fencing token {FencingToken}) was lost: {Reason}")]
-        internal static partial void LockLost(ILogger logger, string resource, long fencingToken, string reason);
     }
 }

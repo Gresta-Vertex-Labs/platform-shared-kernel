@@ -183,6 +183,7 @@ is cancelled.*
 A **lease** has no lifecycle to manage. It is claimed once, never extended or released, and simply expires after its
 duration. Both return `null` only when another holder has the resource. When the lock store is unreachable they throw
 `DistributedLockUnavailableException`.
+A resource name is logged, so it must never carry a tenant id or personal data.
 
 ### Providers
 

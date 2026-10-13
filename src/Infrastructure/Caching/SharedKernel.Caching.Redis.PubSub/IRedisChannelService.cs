@@ -19,7 +19,8 @@ namespace SharedKernel.Caching.Redis.PubSub;
 /// </para>
 /// <para>
 /// <b>Failures.</b> A handler that throws is logged and the subscription continues with the next message; a
-/// typed message that cannot be deserialized is logged and skipped. Channel names are literal, never patterns.
+/// typed message that cannot be deserialized is logged and skipped. Channel names are literal, never patterns, and are
+/// logged, so a channel name must never carry a tenant id or personal data.
 /// </para>
 /// </remarks>
 public interface IRedisChannelService

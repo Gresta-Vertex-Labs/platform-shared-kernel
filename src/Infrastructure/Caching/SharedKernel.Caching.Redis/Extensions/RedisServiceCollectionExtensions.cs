@@ -101,7 +101,7 @@ public static class RedisServiceCollectionExtensions
         services.EnsureRedisConnectionRegistered(nameof(AddRedisL2));
 
         if (services.Any(d => d.ServiceType == typeof(RedisL2Marker)))
-            throw new InvalidOperationException("AddRedisL2 has already been called for this service collection.");
+            throw new InvalidOperationException("AddRedisL2 has already been called for this service collection. Call it once.");
     }
 
     private static void AddCore(IServiceCollection services)

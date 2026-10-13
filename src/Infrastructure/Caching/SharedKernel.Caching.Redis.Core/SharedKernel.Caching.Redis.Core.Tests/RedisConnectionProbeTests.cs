@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 using SharedKernel.Primitives.Health;
+using SharedKernel.Caching.Redis.Core.Diagnostics;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Core.Health;
 using SharedKernel.Primitives.Logging;
@@ -102,6 +104,60 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProbeAsync_PingFails_IsUnhealthy_AndLogsTheExceptionAtDebug()
+    {
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.IsConnected.Returns(true);
+        var database = Substitute.For<IDatabase>();
+        database.PingAsync(Arg.Any<CommandFlags>()).Returns(Task.FromException<TimeSpan>(new TimeoutException("ping timed out")));
+        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        await using var provider = new ServiceCollection().AddSingleton(multiplexer).BuildServiceProvider();
+        var logger = new InMemoryLogger<RedisConnectionProbe>();
+        var probe = new RedisConnectionProbe(provider, logger);
+
+        var health = await probe.ProbeAsync();
+
+        Assert.False(health.IsHealthy);
+        var record = logger.Records.ShouldHaveLoggedWithException(new EventId(RedisCoreLoggingEventIds.ProbeFailed), typeof(TimeoutException));
+        Assert.Equal(LogLevel.Debug, record.LogLevel);
+        Assert.Equal(LoggingEventIdRanges.Caching + 104, record.EventId.Id);
+        logger.Records.ShouldFollowLogConvention();
+    }
+
+    [Fact]
+    public void EventIds_StayInTheRedisCoreSubBlock_AndKeepTheirNumbers()
+    {
+        Assert.Equal(2100, RedisCoreLoggingEventIds.ConnectionRestored);
+        Assert.Equal(2101, RedisCoreLoggingEventIds.ConnectionFailed);
+        Assert.Equal(2102, RedisCoreLoggingEventIds.NonLoopbackWithoutTls);
+        Assert.Equal(2103, RedisCoreLoggingEventIds.NotConnectedAtStartup);
+        Assert.Equal(2104, RedisCoreLoggingEventIds.ProbeFailed);
+        Assert.All(
+            typeof(RedisCoreLoggingEventIds).GetFields().Where(f => f.IsLiteral && f.Name != nameof(RedisCoreLoggingEventIds.Base)),
+            field => Assert.True(
+                LoggingEventIdRanges.IsInSubBlock((int)field.GetRawConstantValue()!, LoggingEventIdRanges.Caching, 1),
+                field.Name));
+    }
+
+    [Fact]
+    public async Task Connection_LogsUnderTheKernelFactoryCategory_NotAHandTypedString()
+    {
+        var loggerFactory = new InMemoryLoggerFactory();
+        await using var provider = Build(
+            o =>
+            {
+                o.ConnectionString = "localhost:1";
+                o.ConnectTimeout = TimeSpan.FromMilliseconds(200);
+            },
+            loggerFactory);
+
+        _ = provider.GetRequiredService<IConnectionMultiplexer>();
+
+        loggerFactory.ShouldHaveCategory(typeof(RedisConnectionFactory));
+        Assert.DoesNotContain("SharedKernel.Caching.Redis.Core.RedisConnection", loggerFactory.Loggers.Keys);
+    }
+
+    [Fact]
     public async Task ProbeAsync_UnreachableEndpoint_RepeatedCalls_StayUnhealthy()
     {
         await using var provider = Build(o =>
@@ -132,6 +188,7 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
     {
         await using var container = new RedisBuilder("redis:7-alpine").Build();
         await container.StartAsync();
+        var endpoint = container.GetConnectionString().Split(',')[0];
         var loggerFactory = new InMemoryLoggerFactory();
 
         await using var provider = Build(o => o.ConnectionString = container.GetConnectionString(), loggerFactory);
@@ -154,6 +211,13 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
         Assert.NotNull(failed);
         Assert.Equal(LogLevel.Warning, failed.LogLevel);
         Assert.NotNull(failed.Exception);
+
+        var records = loggerFactory.Loggers.Values.SelectMany(l => l.Records).ToList();
+        records.ShouldHaveLoggedWithException(eventId, typeof(Exception));
+        records.ShouldHaveLoggedTemplate(eventId, "The Redis connection failed with failure type {FailureType}, and it reconnects in the background.");
+
+        // No endpoint, host or port reaches the text (L5).
+        Assert.DoesNotContain(endpoint, failed.Message, StringComparison.Ordinal);
     }
 
     [Fact]

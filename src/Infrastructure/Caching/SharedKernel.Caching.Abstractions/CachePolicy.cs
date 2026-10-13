@@ -190,7 +190,7 @@ public sealed record CachePolicy
             if (tag[0] == CacheKeyFormat.TenantMarker)
             {
                 throw new ArgumentException(
-                    $"Tag '{tag}' starts with '{CacheKeyFormat.TenantMarker}', which is reserved for tenant tags. Use ForTenant to scope tags to a tenant.",
+                    $"A tag must not start with '{CacheKeyFormat.TenantMarker}', which is reserved for tenant tags. Use ForTenant to scope tags to a tenant.",
                     nameof(tags));
             }
 

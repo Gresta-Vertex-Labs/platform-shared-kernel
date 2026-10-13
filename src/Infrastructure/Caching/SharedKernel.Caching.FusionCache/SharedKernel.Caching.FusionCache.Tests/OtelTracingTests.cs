@@ -1,36 +1,25 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Diagnostics;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Primitives.Telemetry;
+using SharedKernel.Testing.Telemetry;
 using Xunit;
 
 namespace SharedKernel.Caching.FusionCache.Tests;
 
 /// <summary>
-/// Unit tests verifying that <see cref="Implementations.FusionCacheService"/> produces
-/// the correct distributed-trace spans under the activity source
-/// <c>SharedKernel.Caching</c> (Phase 41, P-304).
-///
-/// Each test sets up an <see cref="ActivityListener"/> scoped to that test to
-/// capture spans started while the listener is active — mirrors
-/// <see cref="OtelMetricsTests"/>'s <c>MeterListener</c>-based structure and,
-/// like that suite, asserts existence ("a span with these characteristics was
-/// produced") rather than exact single-item identity: xUnit's default
-/// cross-class test parallelism means other test classes in this assembly may
-/// concurrently drive their own <c>ICacheService</c> instances against the same
-/// static <see cref="ActivitySource"/>, so an <see cref="ActivityListener"/>
-/// registered process-wide can observe spans this test did not itself produce.
-/// The captured-span accumulator is a <see cref="ConcurrentBag{T}"/>, not a plain
-/// <see cref="List{T}"/> — <see cref="ActivityListener.ActivityStopped"/> can be
-/// invoked concurrently from multiple threads under that same cross-class
-/// parallelism (see <see cref="OtelMetricsTests"/>'s own
-/// <see cref="ConcurrentDictionary{TKey, TValue}"/> fix for the identical hazard).
+/// The cache's spans, recorded through the shared <see cref="ActivityRecorder"/>. The source is static and shared, so
+/// every test uses its own entity and looks only at the spans tagged with that entity's key prefix (the assembly also
+/// runs serially, see <c>AssemblyInfo</c>).
 /// </summary>
 public sealed class OtelTracingTests : IDisposable
 {
     private readonly ServiceProvider _provider;
     private readonly ICacheService _cache;
+    private readonly ActivityRecorder _spans = ActivityRecorder.StartRecording(CachingTelemetry.SourceName);
+    private readonly string _entity = "e" + Guid.NewGuid().ToString("N");
 
     public OtelTracingTests()
     {
@@ -41,130 +30,65 @@ public sealed class OtelTracingTests : IDisposable
         _cache = _provider.GetRequiredService<ICacheService>();
     }
 
-    public void Dispose() => _provider.Dispose();
-
-    // The source is versioned with the package assembly, so telemetry backends can tell releases apart.
-    internal static string ExpectedInstrumentationVersion() =>
-        typeof(CachingOptions).Assembly
-            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-            .Cast<System.Reflection.AssemblyInformationalVersionAttribute>()
-            .Single().InformationalVersion;
-
-    // -------------------------------------------------------------------------
-    // Helper: build an ActivityListener that captures completed spans from the
-    // "SharedKernel.Caching" activity source.
-    // -------------------------------------------------------------------------
-
-    private static ActivityListener BuildListener(out ConcurrentBag<Activity> activities)
+    public void Dispose()
     {
-        var captured = new ConcurrentBag<Activity>();
-        activities = captured;
-
-        var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "SharedKernel.Caching",
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activity => captured.Add(activity),
-        };
-
-        ActivitySource.AddActivityListener(listener);
-        return listener;
+        _spans.Dispose();
+        _provider.Dispose();
     }
 
-    // -------------------------------------------------------------------------
-    // Helper: does the captured set contain a span matching every criterion?
-    // -------------------------------------------------------------------------
+    private string Prefix => "svc:" + _entity;
 
-    private static bool HasMatchingSpan(
-        IEnumerable<Activity> activities,
-        string operationName,
-        ActivityKind kind,
-        string keyPrefix,
-        string? outcome) =>
-        activities.Any(a =>
-            a.OperationName == operationName &&
-            a.Kind == kind &&
-            (string?)a.GetTagItem("cache.key_prefix") == keyPrefix &&
-            (string?)a.GetTagItem("cache.outcome") == outcome);
+    private string Key(string id) => CacheKeyFormat.BuildKey("svc", _entity, id);
 
-    // -------------------------------------------------------------------------
-    // OT-02: TryGetAsync hit — span "cache.get", ActivityKind.Client, outcome "hit"
-    // -------------------------------------------------------------------------
+    private IEnumerable<Activity> Mine() =>
+        _spans.RecordedActivities.Where(a => (string?)a.GetTagItem(CachingTagKeys.KeyPrefix) == Prefix);
 
     [Fact]
-    public async Task TryGetAsync_Hit_ProducesSpanWithHitOutcome()
+    public async Task TryGetAsync_Hit_ProducesAClientSpanWithTheHitResult()
     {
-        const string key = "svc:entity:get-hit-" + nameof(TryGetAsync_Hit_ProducesSpanWithHitOutcome);
+        await _cache.SetAsync(Key("hit"), "value", CachePolicy.Default);
+        _spans.Clear();
 
-        // Populate the cache first, outside the listener's capture window.
-        await _cache.SetAsync(key, "value", CachePolicy.Default);
-
-        using var listener = BuildListener(out var activities);
-
-        var result = await _cache.TryGetAsync<string>(key);
+        var result = await _cache.TryGetAsync<string>(Key("hit"));
 
         Assert.Equal("value", result.Value);
-        Assert.True(
-            HasMatchingSpan(activities, "cache.get", ActivityKind.Client, "svc:entity", "hit"),
-            "Expected a cache.get span (ActivityKind.Client) tagged cache.key_prefix=svc:entity, cache.outcome=hit.");
+        Mine().ShouldHaveSingleSpan("caching get")
+            .ShouldHaveKind(ActivityKind.Client)
+            .ShouldHaveSource(CachingTelemetry.SourceName)
+            .ShouldHaveTag(CachingTagKeys.Result, CachingTagValues.ResultHit)
+            .ShouldBeRecordedSuccess();
     }
 
-    // -------------------------------------------------------------------------
-    // OT-02: TryGetAsync miss — span "cache.get", ActivityKind.Client, outcome "miss"
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public async Task TryGetAsync_Miss_ProducesSpanWithMissOutcome()
+    public async Task TryGetAsync_Miss_ProducesAClientSpanWithTheMissResult()
     {
-        var key = "svc:entity:get-miss-" + Guid.NewGuid();
-
-        using var listener = BuildListener(out var activities);
-
-        var result = await _cache.TryGetAsync<string>(key);
+        var result = await _cache.TryGetAsync<string>(Key("miss"));
 
         Assert.False(result.IsHit);
-        Assert.True(
-            HasMatchingSpan(activities, "cache.get", ActivityKind.Client, "svc:entity", "miss"),
-            "Expected a cache.get span (ActivityKind.Client) tagged cache.key_prefix=svc:entity, cache.outcome=miss.");
+        Mine().ShouldHaveSingleSpan("caching get")
+            .ShouldHaveTag(CachingTagKeys.Result, CachingTagValues.ResultMiss);
     }
 
-    // -------------------------------------------------------------------------
-    // OT-03: SetAsync — span "cache.set", ActivityKind.Client, key_prefix only
-    // (no cache.outcome tag — a write has no hit/miss concept)
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public async Task SetAsync_ProducesSpanWithKeyPrefixOnly()
+    public async Task SetAsync_ProducesAClientSpanWithTheKeyPrefixOnly()
     {
-        var key = "svc:entity:set-" + Guid.NewGuid();
+        await _cache.SetAsync(Key("set"), "value", CachePolicy.Default);
 
-        using var listener = BuildListener(out var activities);
-
-        await _cache.SetAsync(key, "value", CachePolicy.Default);
-
-        Assert.True(
-            HasMatchingSpan(activities, "cache.set", ActivityKind.Client, "svc:entity", outcome: null),
-            "Expected a cache.set span (ActivityKind.Client) tagged cache.key_prefix=svc:entity with no cache.outcome tag.");
+        Mine().ShouldHaveSingleSpan("caching set")
+            .ShouldHaveKind(ActivityKind.Client)
+            .ShouldNotHaveTag(CachingTagKeys.Result)
+            .ShouldBeRecordedSuccess();
     }
 
-    // -------------------------------------------------------------------------
-    // OT-04: GetOrSetAsync hit — span "cache.get_or_set", outcome "hit"; the
-    // factory must not run when FusionCache satisfies the request from cache.
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public async Task GetOrSetAsync_Hit_ProducesSpanWithHitOutcome()
+    public async Task GetOrSetAsync_Hit_RunsNoFactory_AndTagsTheHitResult()
     {
-        var key = "svc:entity:getorset-hit-" + Guid.NewGuid();
-
-        // Populate the cache first, outside the listener's capture window.
-        await _cache.SetAsync(key, "cached-value", CachePolicy.Default);
-
-        using var listener = BuildListener(out var activities);
+        await _cache.SetAsync(Key("cached"), "cached-value", CachePolicy.Default);
+        _spans.Clear();
 
         var factoryInvoked = false;
-        var result = await _cache.GetOrSetAsync<string>(
-            key,
+        var result = await _cache.GetOrSetAsync(
+            Key("cached"),
             _ =>
             {
                 factoryInvoked = true;
@@ -173,50 +97,72 @@ public sealed class OtelTracingTests : IDisposable
             CachePolicy.Default);
 
         Assert.Equal("cached-value", result);
-        Assert.False(factoryInvoked, "Factory must not run on a cache hit.");
-        Assert.True(
-            HasMatchingSpan(activities, "cache.get_or_set", ActivityKind.Client, "svc:entity", "hit"),
-            "Expected a cache.get_or_set span (ActivityKind.Client) tagged cache.key_prefix=svc:entity, cache.outcome=hit.");
+        Assert.False(factoryInvoked);
+        Mine().ShouldHaveSingleSpan("caching get_or_set")
+            .ShouldHaveTag(CachingTagKeys.Result, CachingTagValues.ResultHit);
     }
 
-    // -------------------------------------------------------------------------
-    // OT-04: GetOrSetAsync miss — span "cache.get_or_set", outcome "miss"; the
-    // factory ran because no prior entry existed for the key.
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public async Task GetOrSetAsync_Miss_ProducesSpanWithMissOutcome()
+    public async Task GetOrSetAsync_Miss_TagsTheMissResult()
     {
-        var key = "svc:entity:getorset-miss-" + Guid.NewGuid();
-
-        using var listener = BuildListener(out var activities);
-
-        var result = await _cache.GetOrSetAsync<string>(
-            key,
-            _ => ValueTask.FromResult("factory-value"),
-            CachePolicy.Default);
+        var result = await _cache.GetOrSetAsync(Key("computed"), _ => ValueTask.FromResult("factory-value"), CachePolicy.Default);
 
         Assert.Equal("factory-value", result);
-        Assert.True(
-            HasMatchingSpan(activities, "cache.get_or_set", ActivityKind.Client, "svc:entity", "miss"),
-            "Expected a cache.get_or_set span (ActivityKind.Client) tagged cache.key_prefix=svc:entity, cache.outcome=miss.");
+        Mine().ShouldHaveSingleSpan("caching get_or_set")
+            .ShouldHaveTag(CachingTagKeys.Result, CachingTagValues.ResultMiss);
     }
 
-    // -------------------------------------------------------------------------
-    // ActivitySource identity — name and version match the existing Meter's
-    // instrumentation scope.
-    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GetOrSetAsync_FactoryException_RecordsTheExceptionOnTheSpan_WithoutTheMessageInTheStatus()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _cache.GetOrSetAsync<string>(Key("boom"), _ => throw new InvalidOperationException("secret factory message"), CachePolicy.Default));
+
+        var span = Mine().ShouldHaveSingleSpan("caching get_or_set")
+            .ShouldBeRecordedException(typeof(InvalidOperationException));
+        Assert.DoesNotContain("secret factory message", span.StatusDescription, StringComparison.Ordinal);
+    }
 
     [Fact]
-    public async Task ActivitySource_HasCorrectNameAndVersion()
+    public async Task GetOrSetAsync_FactoryCancellation_LeavesTheStatusUnset()
     {
-        using var listener = BuildListener(out var activities);
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(100));
 
-        await _cache.SetAsync("svc:entity:source-identity-" + Guid.NewGuid(), "value", CachePolicy.Default);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await _cache.GetOrSetAsync<string>(
+                Key("cancelled"),
+                async ct =>
+                {
+                    await Task.Delay(Timeout.Infinite, ct);
+                    return "never";
+                },
+                CachePolicy.Default,
+                cts.Token));
 
-        Assert.Contains(activities, a =>
-            a.OperationName == "cache.set" &&
-            a.Source.Name == "SharedKernel.Caching" &&
-            a.Source.Version == ExpectedInstrumentationVersion());
+        Mine().ShouldHaveSingleSpan("caching get_or_set").ShouldBeRecordedCancellation();
+    }
+
+    [Fact]
+    public async Task EverySpan_FollowsTheSpanConvention_AndCarriesNoId()
+    {
+        await _cache.SetAsync(Key("secret-id-42"), "v", CachePolicy.Default);
+        await _cache.TryGetAsync<string>(Key("secret-id-42"));
+        await _cache.GetOrSetAsync(Key("secret-id-43"), _ => ValueTask.FromResult("v"), CachePolicy.Default);
+
+        var spans = Mine().ToList();
+        Assert.Equal(3, spans.Count);
+        spans.ShouldFollowSpanConvention().ShouldNotLeak("secret-id-42", "secret-id-43");
+    }
+
+    [Fact]
+    public async Task TheActivitySource_IsNamedAndVersionedWithTheAssembly()
+    {
+        await _cache.SetAsync(Key("version"), "v", CachePolicy.Default);
+
+        var source = Mine().Single().Source;
+
+        Assert.Equal("SharedKernel.Caching", source.Name);
+        Assert.Equal(TelemetryVersion.Of(typeof(CachingOptions).Assembly), source.Version);
     }
 }

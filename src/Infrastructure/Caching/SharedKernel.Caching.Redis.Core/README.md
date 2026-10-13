@@ -281,16 +281,17 @@ password.
 
 ### Logging
 
-Category `SharedKernel.Caching.Redis.Core.RedisConnection`.
+Categories are `RedisConnectionFactory` and `RedisConnectionProbe`.
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 2100 | Information | Connection to `{EndPoint}` restored |
-| 2101 | Warning | Connection to `{EndPoint}` failed (`{FailureType}`); reconnecting in the background |
-| 2102 | Warning | Endpoint `{EndPoint}` is not a loopback address and TLS is off; logged once, for the first such endpoint |
+| 2100 | Information | The Redis connection was restored |
+| 2101 | Warning | The connection failed (`{FailureType}`, exception attached); reconnecting in the background |
+| 2102 | Warning | A non-loopback endpoint is configured without TLS; logged once, never with the host |
 | 2103 | Warning | Redis is not reachable at startup; the connection keeps retrying |
+| 2104 | Debug | The `redis` readiness probe failed (`{ErrorType}`, exception attached) |
 
-No event contains the connection string, a password or a key.
+No event contains the connection string, a host, a password or a key.
 
 ### Health
 

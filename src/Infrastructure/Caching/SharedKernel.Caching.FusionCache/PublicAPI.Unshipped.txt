@@ -35,3 +35,26 @@ static SharedKernel.Caching.FusionCache.Extensions.CachingServiceCollectionExten
 static SharedKernel.Caching.FusionCache.Extensions.TenantCacheServiceCachingBuilderExtensions.AddTenantCacheService(this SharedKernel.Caching.Abstractions.ICachingBuilder! builder) -> SharedKernel.Caching.Abstractions.ICachingBuilder!
 SharedKernel.Caching.FusionCache.Health.CacheReadinessProbeNames
 const SharedKernel.Caching.FusionCache.Health.CacheReadinessProbeNames.Cache = "cache" -> string!
+SharedKernel.Caching.FusionCache.Diagnostics.CachingTagKeys
+SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues
+SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagKeys.EvictionReason = "caching.eviction_reason" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagKeys.KeyPrefix = "caching.key_prefix" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagKeys.Level = "caching.level" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagKeys.Operation = "caching.operation" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagKeys.Result = "caching.result" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.LevelDistributed = "l2" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.LevelMemory = "l1" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.OperationFactory = "factory" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.OperationGet = "get" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.OperationGetOrSet = "get_or_set" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.OperationSet = "set" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.ResultHit = "hit" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTagValues.ResultMiss = "miss" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry.ErrorsInstrument = "sharedkernel.caching.errors" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry.EvictionsInstrument = "sharedkernel.caching.evictions" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry.FactoryDurationInstrument = "sharedkernel.caching.factory.duration" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry.HitsInstrument = "sharedkernel.caching.hits" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry.MeterName = "SharedKernel.Caching" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry.MissesInstrument = "sharedkernel.caching.misses" -> string!
+const SharedKernel.Caching.FusionCache.Diagnostics.CachingTelemetry.SourceName = "SharedKernel.Caching" -> string!

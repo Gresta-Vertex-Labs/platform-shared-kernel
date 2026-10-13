@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using SharedKernel.Caching.Redis.Core.Diagnostics;
 using SharedKernel.Primitives.Health;
 using StackExchange.Redis;
 
@@ -13,7 +15,7 @@ namespace SharedKernel.Caching.Redis.Core.Health;
 /// pub/sub actually see, without opening a connection of its own. An unreachable server is reported as
 /// unhealthy, never thrown, and the description never contains the connection string or an exception message.
 /// </remarks>
-internal sealed class RedisConnectionProbe(IServiceProvider services) : IReadinessProbe
+internal sealed class RedisConnectionProbe(IServiceProvider services, ILogger<RedisConnectionProbe> logger) : IReadinessProbe
 {
     public string Name => RedisReadinessProbeNames.Connection;
 
@@ -36,6 +38,8 @@ internal sealed class RedisConnectionProbe(IServiceProvider services) : IReadine
         // disposed multiplexer, IOException from the transport. Each is "Redis did not answer", not a probe bug.
         catch (Exception ex) when (ex is RedisException or TimeoutException or InvalidOperationException or IOException)
         {
+            // Probes poll, so a failure is Debug: the report itself carries the status.
+            RedisCoreLog.ProbeFailed(logger, ex.GetType().FullName ?? ex.GetType().Name, ex);
             return ReadinessReport.Unhealthy(
                 $"Redis did not answer PING ({ex.GetType().Name}).");
         }

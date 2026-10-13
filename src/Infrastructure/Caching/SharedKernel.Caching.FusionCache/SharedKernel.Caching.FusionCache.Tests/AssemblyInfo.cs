@@ -1,8 +1,7 @@
 using Xunit;
 
-// Every test in this assembly writes to the same static "SharedKernel.Caching" Meter, and a
-// MeterListener only observes instruments it enabled. Running classes in parallel let cache
-// operations from one class land while another class's listener was being set up, so
-// OtelMetricsTests intermittently observed 0 measurements and failed under CI load while
-// passing in isolation. The assembly runs in ~2s, so serialising it is cheap.
+// The recorders listen to the "SharedKernel.Caching" meter and ActivitySource by name, so they also see the
+// measurements and spans of every other test running at the same time (the ActivitySource is static, and
+// every provider's IMeterFactory meter carries the same name). Serialising the assembly keeps each test's
+// view its own; the assembly runs in a few seconds, so this is cheap.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]

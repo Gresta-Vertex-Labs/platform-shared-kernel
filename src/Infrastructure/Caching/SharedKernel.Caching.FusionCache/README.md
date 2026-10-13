@@ -304,32 +304,37 @@ must be positive) and `Level` (default `CompressionLevel.Fastest`).
 
 ### Telemetry
 
-Instrumentation name `SharedKernel.Caching` for both the meter and the activity source.
-`builder.WithCachingTelemetry()` from `SharedKernel.ServiceDefaults` subscribes to it.
+Instrumentation name `SharedKernel.Caching` (public constants `CachingTelemetry.MeterName` and `CachingTelemetry.SourceName`)
+for both the meter and the activity source. `AddServiceDefaults` subscribes to the `SharedKernel.*` wildcard, so no
+extra call is needed.
 
-| Instrument | Type | Tags |
+| Instrument | Type, unit | Tags |
 | --- | --- | --- |
-| `cache.hits` | Counter | `cache.key_prefix`, `cache.level` (`l1` memory, `l2` distributed) |
-| `cache.misses` | Counter | `cache.key_prefix` — a `TryGet` miss or a `GetOrSet` factory run |
-| `cache.factory.duration` | Histogram (ms) | `cache.key_prefix` |
-| `cache.errors` | Counter | `cache.error_type` |
-| `cache.evictions` | Counter | `cache.eviction_reason` |
+| `sharedkernel.caching.hits` | Counter, `{hit}` | `caching.key_prefix`, `caching.level` (`l1` memory, `l2` distributed) |
+| `sharedkernel.caching.misses` | Counter, `{miss}` | `caching.key_prefix` (a `TryGet` miss or a `GetOrSet` factory run) |
+| `sharedkernel.caching.factory.duration` | Histogram, `s` | `caching.key_prefix`, `outcome` (`success`, `exception` or `canceled`) |
+| `sharedkernel.caching.errors` | Counter, `{error}` | `caching.operation` (`get`, `set`, `factory`), `error.type` (exception full name) |
+| `sharedkernel.caching.evictions` | Counter, `{eviction}` | `caching.eviction_reason` |
 
-Spans: `cache.get`, `cache.set` and `cache.get_or_set`, tagged `cache.key_prefix` and `cache.outcome` (`hit` or `miss`).
+Spans (kind Client): `caching get`, `caching get_or_set` and `caching set`, tagged `caching.key_prefix` and
+`caching.result` (`hit` or `miss`). A failure sets the span status to the exception full name, never its message, and
+adds the exception event; a cancelled call leaves the status unset.
 
-**No ids, no tenants.** `cache.key_prefix` is `{service}:{entity}`, including for tenant keys, whose tenant segment
+**No ids, no tenants.** `caching.key_prefix` is `{service}:{entity}`, including for tenant keys, whose tenant segment
 is dropped. Logs use the same prefix, and tenant tags appear as `@tenant:{tag}`.
 
 ### Logging
 
-Every event carries the `{service}:{entity}` prefix, never the full key.
+Categories are the kernel types (`FusionCacheService`, `EncryptedCacheService`, `CacheWarmupHostedService`, `CacheReadinessProbe`). Every event carries the `{service}:{entity}` prefix, never the full key; no event contains a tenant, an id or an exception message.
 
 | Event id | Level | Event |
 | --- | --- | --- |
 | 2000–2007 | Information–Error | Warmup lifecycle; 2006 is a failed strategy |
 | 2010–2014, 2016 | Debug | Miss, set, factory run, remove, tag removal, expire |
-| 2015 | Warning | An encrypted entry failed to decrypt and was evicted |
+| 2015 | Warning | An encrypted entry failed to decrypt (error code logged) and was evicted |
 | 2017 | Warning | The cache was cleared |
+| 2018 | Warning | The best-effort eviction after a decrypt failure failed (exception attached) |
+| 2019 | Debug | The `cache` readiness probe failed (exception attached) |
 
 ### Health
 
@@ -379,7 +384,7 @@ and level.
 later lets traffic and readiness arrive before the cache is warm.
 
 **Why keep our own instrumentation instead of FusionCache's OpenTelemetry package?** The platform's dashboards and
-`WithCachingTelemetry` already use `SharedKernel.Caching`. Owning the tags is what guarantees that no tenant or id
+the wildcard subscription already use `SharedKernel.Caching`. Owning the tags is what guarantees that no tenant or id
 reaches telemetry.
 
 ---

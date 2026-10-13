@@ -84,7 +84,7 @@ internal sealed class RedisDistributedCache(IConnectionMultiplexer multiplexer, 
         ArgumentNullException.ThrowIfNull(options);
 
         if (options.SlidingExpiration is not null)
-            throw new NotSupportedException("The Redis distributed layer does not support sliding expiration.");
+            throw new NotSupportedException("The Redis distributed layer does not support sliding expiration. Use an absolute expiration.");
 
         if (options.AbsoluteExpirationRelativeToNow is { } relative)
             return relative;

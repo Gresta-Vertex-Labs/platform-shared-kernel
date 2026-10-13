@@ -8,7 +8,7 @@ using SharedKernel.Caching.FusionCache.Serialization;
 using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Caching.FusionCache.Diagnostics;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Caching.FusionCache.Encryption;
@@ -45,7 +45,7 @@ namespace SharedKernel.Caching.FusionCache.Encryption;
 /// then recomputes it through the wrapped service, so the recomputation keeps stampede protection.
 /// </para>
 /// </remarks>
-internal sealed partial class EncryptedCacheService : ICacheService
+internal sealed class EncryptedCacheService : ICacheService
 {
     private readonly ICacheService _inner;
     private readonly ISymmetricEncryptionService _encryption;
@@ -231,7 +231,8 @@ internal sealed partial class EncryptedCacheService : ICacheService
 
     private async ValueTask HandleDecryptFailureAsync(string key, Error error, CancellationToken ct)
     {
-        Log.DecryptFailed(_logger, FusionCacheService.ExtractKeyPrefix(key), error.Code);
+        var keyPrefix = FusionCacheService.ExtractKeyPrefix(key);
+        FusionCacheLog.DecryptFailed(_logger, keyPrefix, error.Code);
 
         try
         {
@@ -240,14 +241,7 @@ internal sealed partial class EncryptedCacheService : ICacheService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Best-effort eviction: the entry is still treated as a miss, and a later read retries.
+            FusionCacheLog.EvictAfterDecryptFailureFailed(_logger, keyPrefix, ex.GetType().FullName ?? ex.GetType().Name, ex);
         }
-    }
-
-    // Source-generated log methods.
-    private static partial class Log
-    {
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 15, Level = LogLevel.Warning,
-            Message = "Cache entry for {KeyPrefix} failed to decrypt ({Reason}) — treating as a cache miss and evicting the corrupt entry.")]
-        internal static partial void DecryptFailed(ILogger logger, string keyPrefix, string reason);
     }
 }

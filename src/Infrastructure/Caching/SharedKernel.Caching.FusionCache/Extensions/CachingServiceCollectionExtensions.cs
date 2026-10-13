@@ -91,6 +91,9 @@ public static class CachingServiceCollectionExtensions
 
     private static CachingBuilder AddCore(IServiceCollection services)
     {
+        // The cache's meter is created through IMeterFactory, so a host without AddMetrics() still resolves it.
+        services.AddMetrics();
+
         // One JsonSerializerOptions instance, built from the validated options, serves both FusionCache's
         // distributed serializer and the plaintext step of EncryptedCacheService.
         services.TryAddSingleton(sp => new CacheSerializationOptions

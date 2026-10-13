@@ -258,13 +258,13 @@ handler is cancelled when its subscription is disposed.
 
 ### Logging
 
-Category `SharedKernel.Caching.Redis.PubSub.RedisChannelService`. Events carry the channel name and message type, never
+Category `RedisChannelService`. `{Channel}` is the caller-chosen channel name: never put a tenant id or personal data in it. Events carry the channel name and message type, never
 the message body.
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 2500 | Error | Handler for `{Channel}` failed; the subscription continues with the next message |
-| 2501 | Warning | Message on `{Channel}` is not a valid `{MessageType}`; it was skipped |
+| 2500 | Error | Handler for `{Channel}` failed, and the subscription continues with the next message |
+| 2501 | Warning | A message on `{Channel}` is not a valid `{MessageType}` and was skipped |
 | 2502 | Warning | Unsubscribing from `{Channel}` failed |
 
 The exception attached to 2500 is whatever your handler threw; keep message contents out of your own exception messages.

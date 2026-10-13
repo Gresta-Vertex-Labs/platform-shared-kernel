@@ -23,6 +23,8 @@
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <!-- IHostedLifecycleService for startup warmup -->
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <!-- AddMetrics(): the cache creates its Meter through IMeterFactory -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
     <PackageReference Include="ZiggyCreatures.FusionCache" />
     <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
