@@ -28,7 +28,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceConformance` (WO-087) |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
-| 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.ObservabilityConformance` (WO-087) |
+| 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ● | None |
 | 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ● | None |
@@ -312,7 +312,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-607 — Conform Search to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 09.Search
 **Depends on:** P-580, P-581, P-583, P-590
 **Phase key:** `SK.09.ObservabilityConformance`
