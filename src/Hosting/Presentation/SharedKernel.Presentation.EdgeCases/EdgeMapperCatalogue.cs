@@ -13,6 +13,7 @@ using SharedKernel.Messaging.MassTransit.Serialization;
 using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Reporting;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Exceptions;
 using SharedKernel.Storage;
@@ -58,15 +59,16 @@ public static class EdgeMapperCatalogue
         new("intelligence-stream-engine-fault", () => new IntelligenceStreamException(Error.Unexpected(IntelligenceErrorCodes.EngineFault, Message)), ErrorType.Unexpected, IntelligenceErrorCodes.EngineFault, 500, "Internal"),
         new("access-token-unavailable", () => new AccessTokenUnavailableException("inventory", Error.Unavailable(CommunicationErrorCodes.AccessTokenUnavailable, Message)), ErrorType.Unavailable, CommunicationErrorCodes.AccessTokenUnavailable, 503, "Unavailable"),
         new("idempotency-store-unavailable", () => new IdempotencyStoreUnavailableException(new TimeoutException()), ErrorType.Unavailable, ErrorCodes.Idempotency.StoreUnavailable, 503, "Unavailable"),
+        new("invalid-report-definition", () => new InvalidReportDefinitionException(Error.Validation(ReportingErrorCodes.InvalidDefinition, Message)), ErrorType.Validation, ReportingErrorCodes.InvalidDefinition, 400, "InvalidArgument"),
         new("field-encryption-failed", () => new FieldEncryptionException(Error.Unexpected(PersistenceErrorCodes.Encryption.DecryptionFailed, Message)), ErrorType.Unexpected, PersistenceErrorCodes.Encryption.DecryptionFailed, 500, "Internal"),
         new("persistence-statement-timeout", () => Error.Timeout(PersistenceErrorCodes.Postgresql.StatementTimeout, Message).ToException(), ErrorType.Timeout, PersistenceErrorCodes.Postgresql.StatementTimeout, 504, "DeadlineExceeded"),
         new("audit-record-not-found", () => Error.NotFound(PersistenceErrorCodes.Audit.RecordNotFound, Message).ToException(), ErrorType.NotFound, PersistenceErrorCodes.Audit.RecordNotFound, 404, "NotFound"),
         new("persistence-tenant-required", () => Error.Forbidden(PersistenceErrorCodes.Tenancy.TenantRequired, Message).ToException(), ErrorType.Forbidden, PersistenceErrorCodes.Tenancy.TenantRequired, 403, "PermissionDenied"),
-        // 17.Workflows owns these codes privately (WorkflowErrors, prefix "workflow"); the literals below are the expectation.
-        new("workflow-timed-out", () => WorkflowErrors.TimedOut().ToException(), ErrorType.Timeout, "workflow.timed_out", 504, "DeadlineExceeded"),
-        new("workflow-request-timed-out", () => WorkflowErrors.RequestTimedOut().ToException(), ErrorType.Timeout, "workflow.request_timed_out", 504, "DeadlineExceeded"),
-        new("workflow-service-unavailable", () => WorkflowErrors.ServiceUnavailable().ToException(), ErrorType.Unavailable, "workflow.service_unavailable", 503, "Unavailable"),
-        new("workflow-not-found", () => WorkflowErrors.NotFound().ToException(), ErrorType.NotFound, "workflow.not_found", 404, "NotFound"),
+        // 17.Workflows keeps its factory internal; the rows build the Error from the public WorkflowErrorCodes.
+        new("workflow-timed-out", () => Error.Timeout(WorkflowErrorCodes.TimedOut, Message).ToException(), ErrorType.Timeout, WorkflowErrorCodes.TimedOut, 504, "DeadlineExceeded"),
+        new("workflow-request-timed-out", () => Error.Timeout(WorkflowErrorCodes.RequestTimedOut, Message).ToException(), ErrorType.Timeout, WorkflowErrorCodes.RequestTimedOut, 504, "DeadlineExceeded"),
+        new("workflow-service-unavailable", () => Error.Unavailable(WorkflowErrorCodes.ServiceUnavailable, Message).ToException(), ErrorType.Unavailable, WorkflowErrorCodes.ServiceUnavailable, 503, "Unavailable"),
+        new("workflow-not-found", () => Error.NotFound(WorkflowErrorCodes.NotFound, Message).ToException(), ErrorType.NotFound, WorkflowErrorCodes.NotFound, 404, "NotFound"),
     ];
 
     /// <summary>Gets every case of the catalogue.</summary>
