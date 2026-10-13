@@ -118,7 +118,7 @@ internal sealed class EfAuditTrailWriter : IAuditTrailWriter
             }
 
             var record = await AppendAsync(ambient.Connection, ambient.Transaction, pending, cancellationToken).ConfigureAwait(false);
-            AuditingMeter.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+            AuditingInstruments.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
             return record;
         }
 
@@ -129,13 +129,13 @@ internal sealed class EfAuditTrailWriter : IAuditTrailWriter
             {
                 // One statement, autocommitted: its own transaction, no lock taken on any chain.
                 var record = await AppendAsync(connection, null, pending, cancellationToken).ConfigureAwait(false);
-                AuditingMeter.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+                AuditingInstruments.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
                 return record;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not InvalidOperationException)
         {
-            AuditingLog.FailureAuditWriteFailed(_logger, ex, entry.ResourceType);
+            AuditingLog.FailureAuditWriteFailed(_logger, entry.ResourceType, ex);
             throw;
         }
     }
@@ -166,7 +166,7 @@ internal sealed class EfAuditTrailWriter : IAuditTrailWriter
         }
 
         AuditingLog.IdempotentDuplicateReturned(_logger, fields.ResourceType);
-        AuditingMeter.RecordIdempotentDuplicate();
+        AuditingInstruments.RecordIdempotentDuplicate();
         return existing;
     }
 

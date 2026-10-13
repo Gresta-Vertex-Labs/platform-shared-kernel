@@ -10,7 +10,7 @@ namespace SharedKernel.Presentation.WebApi.Tests.TestSupport;
 /// <summary>Errors shared by the test endpoints.</summary>
 public static class TestErrors
 {
-    /// <summary>The code 06.Persistence gives every stale row version (<c>ConcurrencyVersion.ConflictErrorCode</c>).</summary>
+    /// <summary>The code 06.Persistence gives every stale row version (<c>PersistenceErrorCodes.Concurrency.Conflict</c>).</summary>
     public const string ConcurrencyConflictCode = "persistence.concurrency_conflict";
 
     public static readonly Error OrderNotFound = Error.NotFound("order.not_found", "Order 42 was not found.");

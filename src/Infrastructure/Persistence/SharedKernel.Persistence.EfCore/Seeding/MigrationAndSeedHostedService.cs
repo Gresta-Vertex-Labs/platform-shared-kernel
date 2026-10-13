@@ -54,14 +54,14 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
         IServiceProvider serviceProvider,
         StartupOptions options,
         IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> seedSteps,
-        ILogger<MigrationAndSeedHostedService<TContext>>? logger = null,
+        ILogger<MigrationAndSeedHostedService<TContext>> logger,
         PersistenceStartupSignal? startupSignal = null)
     {
         _startupSignal = startupSignal;
         _serviceProvider = serviceProvider;
         _options = options;
         _seedSteps = seedSteps;
-        _logger = (ILogger?)logger ?? NullLogger.Instance;
+        _logger = logger;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -72,18 +72,18 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
 
         IAsyncDisposable? lockHandle = null;
 
-        PersistenceLog.MigrationAndSeedStarted(_logger, contextTypeName);
+        EfCoreLog.MigrationAndSeedStarted(_logger, contextTypeName);
 
         try
         {
             if (migrationLock is not null)
             {
                 lockHandle = await migrationLock.AcquireAsync(lockKey, _options.LockTimeout, cancellationToken);
-                PersistenceLog.AdvisoryLockAcquired(_logger, contextTypeName);
+                EfCoreLog.AdvisoryLockAcquired(_logger, contextTypeName);
             }
             else
             {
-                PersistenceLog.NoMigrationLockRegistered(_logger, contextTypeName);
+                EfCoreLog.NoMigrationLockRegistered(_logger, contextTypeName);
             }
 
             if (_options.MigrateOnStartup)
@@ -130,10 +130,10 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
                     await invoke(scope.ServiceProvider, context, cancellationToken);
                 }
 
-                PersistenceLog.SeederApplied(_logger, seederTypeName, contextTypeName);
+                EfCoreLog.SeederApplied(_logger, seederTypeName, contextTypeName);
             }
 
-            PersistenceLog.MigrationAndSeedCompleted(_logger, contextTypeName);
+            EfCoreLog.MigrationAndSeedCompleted(_logger, contextTypeName);
             _startupSignal?.Complete(typeof(TContext));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -143,7 +143,7 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
         }
         catch (Exception ex)
         {
-            PersistenceLog.MigrationAndSeedFailed(_logger, contextTypeName, ex);
+            EfCoreLog.MigrationAndSeedFailed(_logger, contextTypeName, ex);
             _startupSignal?.Fail(typeof(TContext), ex);
             throw;
         }
@@ -152,7 +152,7 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
             if (lockHandle is not null)
             {
                 await lockHandle.DisposeAsync();
-                PersistenceLog.AdvisoryLockReleased(_logger, contextTypeName);
+                EfCoreLog.AdvisoryLockReleased(_logger, contextTypeName);
             }
         }
     }

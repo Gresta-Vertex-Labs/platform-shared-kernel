@@ -260,7 +260,7 @@ internal sealed class EncryptionInterceptor(FieldEncryptionRuntime runtime, ILog
             }
             catch (Exception exception) when (exception is not TenantKeyShreddedException)
             {
-                EncryptionMeter.RecordEncryptFailure("encrypt_failed");
+                EncryptionInstruments.RecordEncryptFailure(EncryptionTagValues.EncryptFailed);
                 throw;
             }
 

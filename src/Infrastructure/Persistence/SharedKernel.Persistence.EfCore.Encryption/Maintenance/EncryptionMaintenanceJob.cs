@@ -111,7 +111,7 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
         if (mode == 0 || (mode & ~all) != 0)
             throw new ArgumentException($"'{mode}' is not a valid maintenance mode.", nameof(request));
         if (mode.HasFlag(EncryptionMaintenanceMode.VerifyOnly) && mode != EncryptionMaintenanceMode.VerifyOnly)
-            throw new ArgumentException("'VerifyOnly' cannot be combined with a writing mode.", nameof(request));
+            throw new ArgumentException("'VerifyOnly' must not be combined with a writing mode.", nameof(request));
         if ((mode & (EncryptionMaintenanceMode.ReEncrypt | EncryptionMaintenanceMode.EncryptPlaintext)) != 0
             && string.IsNullOrWhiteSpace(request.ExpectedCurrentKeyId))
         {
@@ -214,13 +214,13 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
             }
 
             if (targetPlaintext > 0)
-                EncryptionLog.MaintenanceValuesSkipped(job.logger, target.Key, targetPlaintext, "plaintext");
+                EncryptionLog.MaintenanceValuesSkipped(job.logger, target.Key, targetPlaintext, EncryptionMaintenanceSkip.Plaintext);
             if (targetUndecryptable > 0)
-                EncryptionLog.MaintenanceValuesSkipped(job.logger, target.Key, targetUndecryptable, "undecryptable");
+                EncryptionLog.MaintenanceValuesSkipped(job.logger, target.Key, targetUndecryptable, EncryptionMaintenanceSkip.Undecryptable);
             if (_shreddedTenantNotErased > shreddedNotErasedBefore)
             {
                 EncryptionLog.MaintenanceValuesSkipped(
-                    job.logger, target.Key, _shreddedTenantNotErased - shreddedNotErasedBefore, "shredded tenant, not erased: delete the rows");
+                    job.logger, target.Key, _shreddedTenantNotErased - shreddedNotErasedBefore, EncryptionMaintenanceSkip.ShreddedTenantNotErased);
             }
 
             // Without the row-security bypass the scan may have been filtered; refuse an empty scan of a table the
@@ -230,7 +230,7 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
             {
                 throw new InvalidOperationException(
                     $"Encryption maintenance saw no rows in {target.Table}, but PostgreSQL estimates {estimate}. The " +
-                    "connecting role probably cannot see them (row-level security). Run maintenance as a role that sees " +
+                    "connecting role probably does not see them (row-level security). Run maintenance as a role that sees " +
                     "every row.");
             }
 
@@ -239,14 +239,14 @@ internal sealed class EncryptionMaintenanceJob<TContext> : IEncryptionRotationJo
 
         public EncryptionMaintenanceReport Report(bool completed, string? checkpointToken)
         {
-            EncryptionMeter.RecordMaintenanceRowsWritten("re_encrypt", _reEncrypted);
-            EncryptionMeter.RecordMaintenanceRowsWritten("encrypt_plaintext", _fromPlaintext);
-            EncryptionMeter.RecordMaintenanceRowsWritten("recompute_blind_index", _blindIndexes);
-            EncryptionMeter.RecordMaintenanceRowsSkipped("concurrent_write", _concurrent);
-            EncryptionMeter.RecordMaintenanceRowsSkipped("plaintext", _plaintext);
-            EncryptionMeter.RecordMaintenanceRowsSkipped("undecryptable", _undecryptable);
-            EncryptionMeter.RecordMaintenanceRowsSkipped("shredded", _shredded);
-            EncryptionMeter.RecordMaintenanceRowsSkipped("shredded_tenant_not_erased", _shreddedTenantNotErased);
+            EncryptionInstruments.RecordMaintenanceRowsWritten(EncryptionTagValues.ReEncrypt, _reEncrypted);
+            EncryptionInstruments.RecordMaintenanceRowsWritten(EncryptionTagValues.EncryptPlaintext, _fromPlaintext);
+            EncryptionInstruments.RecordMaintenanceRowsWritten(EncryptionTagValues.RecomputeBlindIndex, _blindIndexes);
+            EncryptionInstruments.RecordMaintenanceRowsSkipped(EncryptionTagValues.ConcurrentWrite, _concurrent);
+            EncryptionInstruments.RecordMaintenanceRowsSkipped(EncryptionTagValues.Plaintext, _plaintext);
+            EncryptionInstruments.RecordMaintenanceRowsSkipped(EncryptionTagValues.Undecryptable, _undecryptable);
+            EncryptionInstruments.RecordMaintenanceRowsSkipped(EncryptionTagValues.Shredded, _shredded);
+            EncryptionInstruments.RecordMaintenanceRowsSkipped(EncryptionTagValues.ShreddedTenantNotErased, _shreddedTenantNotErased);
             EncryptionLog.MaintenanceCompleted(
                 job.logger, Mode.ToString(), _scanned, _reEncrypted + _fromPlaintext + _blindIndexes, _concurrent, _plaintext, _undecryptable, _shredded);
 

@@ -241,7 +241,7 @@ public sealed class NpgsqlRegistrationTests : IAsyncLifetime
     private static ServiceProvider Build(Dictionary<string, string?> settings, string? connectionStringName = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         services.AddLogging();
 
         if (connectionStringName is null)

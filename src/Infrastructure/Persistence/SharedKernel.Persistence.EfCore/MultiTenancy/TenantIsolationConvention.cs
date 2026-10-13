@@ -67,7 +67,7 @@ internal sealed class TenantIsolationConvention(TenantedDbContext context) : IMo
             throw new InvalidOperationException(
                 $"'{context.GetType().Name}' is a TenantedDbContext, but these entity types are not tenant-scoped: "
                 + $"{string.Join(", ", violations.Select(v => $"'{v}'"))}. Every entity type of a multi-tenant model "
-                + "must implement IHasTenant — child entities of an aggregate included, so their rows are filtered, "
+                + "must implement IHasTenant, child entities of an aggregate included, so their rows are filtered, "
                 + "guarded and covered by row-level security like the root's (an added child with no TenantId gets the "
                 + "caller's). A type that is global reference data shared by every tenant is declared with "
                 + "[TenantShared] on the class or '.IsTenantShared()' in its configuration.");

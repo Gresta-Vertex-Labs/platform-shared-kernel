@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Execution.Context;
+using SharedKernel.Persistence.Abstractions.Diagnostics;
 
 namespace SharedKernel.Persistence.Abstractions.Context;
 
@@ -23,9 +23,9 @@ namespace SharedKernel.Persistence.Abstractions.Context;
 /// <c>ICallerDbContextFactory</c> already carries its own (<c>SharedKernelDbContext.CrossTenantScope</c>).
 /// </para>
 /// <para>
-/// Each <see cref="Enter(string)"/> is logged at Information level (EventId 6150) with the actor's kind and
-/// the reason (never the actor's id or tenant: the audit ledger records who acted), and counted on the <c>"SharedKernel.Persistence"</c>
-/// meter (<c>persistence.cross_tenant_scope_entries</c>, tagged with the actor kind only, which keeps the
+/// Each <see cref="Enter(string)"/> is logged at Information level (EventId 6150) with the actor's kind only
+/// (never the actor's id or tenant or the caller's reason: the audit ledger records who acted), and counted on the <c>"SharedKernel.Persistence"</c>
+/// meter (<c>sharedkernel.persistence.cross_tenant_scope_entries</c>, tagged with the actor kind only, which keeps the
 /// cardinality bounded). Thread-safe.
 /// </para>
 /// </remarks>
@@ -37,15 +37,16 @@ public sealed class CrossTenantScope : ICrossTenantScope
 
     /// <summary>Initialises a new, inactive <see cref="CrossTenantScope"/>.</summary>
     /// <param name="requestContext">The caller that enters the bypass.</param>
-    /// <param name="logger">Optional logger for the entry record.</param>
+    /// <param name="logger">The logger of the entry record.</param>
     /// <remarks>The container creates one per scope (<c>AddSharedKernelCrossTenantScope</c>); construct one yourself only in tests.</remarks>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public CrossTenantScope(IRequestContext requestContext, ILogger<CrossTenantScope>? logger = null)
+    public CrossTenantScope(IRequestContext requestContext, ILogger<CrossTenantScope> logger)
     {
         ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _requestContext = requestContext;
-        _logger = logger ?? (ILogger)NullLogger.Instance;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -60,7 +61,7 @@ public sealed class CrossTenantScope : ICrossTenantScope
 
         Interlocked.Increment(ref _depth);
 
-        CrossTenantScopeLog.Entered(_logger, actorKind, reason);
+        AbstractionsLog.CrossTenantScopeEntered(_logger, actorKind);
         CrossTenantScopeDiagnostics.ScopeEntries.Add(
             1, new KeyValuePair<string, object?>(CrossTenantScopeDiagnostics.ActorKindTag, actorKind.ToString()));
 

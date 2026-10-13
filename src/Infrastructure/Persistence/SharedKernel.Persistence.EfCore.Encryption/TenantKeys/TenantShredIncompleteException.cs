@@ -1,6 +1,5 @@
 using System.Globalization;
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 
@@ -16,16 +15,11 @@ namespace SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 /// </remarks>
 public sealed class TenantShredIncompleteException : SharedKernelException
 {
-    /// <summary>The error code carried by this exception.</summary>
-    public const string ErrorCode = "Persistence.Encryption.TenantShredIncomplete";
-
     /// <summary>Initialises a new <see cref="TenantShredIncompleteException"/>.</summary>
     /// <param name="rootKeyValues">The tenant's values under a root key.</param>
     /// <param name="plaintextValues">The tenant's values of encrypted columns stored as plaintext.</param>
     public TenantShredIncompleteException(long rootKeyValues, long plaintextValues)
-        : base(
-            Describe(rootKeyValues, plaintextValues),
-            Error.Conflict(ErrorCode, "The tenant's data cannot be fully erased yet: some of it is not under the tenant's key."))
+        : base(Describe(rootKeyValues, plaintextValues), EncryptionErrors.TenantShredIncomplete())
     {
         RootKeyValues = rootKeyValues;
         PlaintextValues = plaintextValues;

@@ -71,7 +71,7 @@ internal sealed class DbSession(
         {
             // A broken connection cannot roll back; the server discards the transaction anyway. Never let
             // this replace the exception that is probably unwinding the caller.
-            logger.SessionRollbackFailed(exception);
+            DapperLog.SessionRollbackFailed(logger, exception);
         }
         finally
         {

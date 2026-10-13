@@ -416,7 +416,7 @@ public sealed class R1RemediationPostgresTests(PostgreSqlContainerFixture fixtur
                 await scope.ServiceProvider.GetRequiredService<IRepository<R1BThing, Guid>>().AddAsync(new R1BThing(bId, Clock), ct);
             });
 
-            (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*R1BContext*cannot join*");
+            (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*R1BContext*does not join*");
         }
 
         (await ExistsAsync(provider, aId, bId)).Should().Be((false, false));
@@ -689,7 +689,7 @@ public sealed class R1RemediationPostgresTests(PostgreSqlContainerFixture fixtur
         var findings = await RowLevelSecurityCoverageCheck<R1RlsContext>.FindUnprotectedTablesAsync(provider, CancellationToken.None);
         findings.Should().HaveCount(2).And.Contain(f => f.Contains("r1rls_line", StringComparison.OrdinalIgnoreCase) || f.Contains("line", StringComparison.OrdinalIgnoreCase));
 
-        var check = new RowLevelSecurityCoverageCheck<R1RlsContext>(provider, RowLevelSecurityCheckMode.Fail);
+        var check = new RowLevelSecurityCoverageCheck<R1RlsContext>(provider, RowLevelSecurityCheckMode.Fail, Microsoft.Extensions.Logging.Abstractions.NullLogger<RowLevelSecurityCoverageCheck<R1RlsContext>>.Instance);
         await FluentActions.Awaiting(() => check.StartedAsync(CancellationToken.None)).Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*not protected*");
 

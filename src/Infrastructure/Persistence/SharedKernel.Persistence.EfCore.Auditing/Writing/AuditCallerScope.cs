@@ -66,6 +66,6 @@ internal sealed class AuditCallerScope(IRequestContext requestContext, ICrossTen
     public void RequireAccess(TenantId? tenantId)
     {
         if (!CanAccess(tenantId))
-            throw new ForbiddenException(AuditErrors.OtherTenantChain());
+            throw new ForbiddenException(AuditingErrors.OtherTenantChain());
     }
 }

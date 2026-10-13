@@ -63,10 +63,10 @@ internal sealed class EfUnitOfWork<TContext> : IUnitOfWork<TContext>
 
     public EfUnitOfWork(
         TContext dbContext,
-        ILogger<EfUnitOfWork<TContext>>? logger = null,
+        ILogger<EfUnitOfWork<TContext>> logger,
         IAmbientDbTransaction? ambientTransaction = null,
         UnitOfWorkCoordinator? coordinator = null)
-        : this(dbContext, (ILogger?)logger ?? NullLogger.Instance, ambientTransaction, coordinator)
+        : this(dbContext, (ILogger)logger, ambientTransaction, coordinator)
     {
     }
 
@@ -76,7 +76,8 @@ internal sealed class EfUnitOfWork<TContext> : IUnitOfWork<TContext>
 
         _dbContext = dbContext;
         _logger = logger;
-        _coordinator = coordinator ?? new UnitOfWorkCoordinator(ambientTransaction as AmbientDbTransactionAccessor);
+        _coordinator = coordinator ?? new UnitOfWorkCoordinator(
+            ambientTransaction as AmbientDbTransactionAccessor, NullLogger<UnitOfWorkCoordinator>.Instance);
         _coordinator.Track(dbContext);
     }
 
@@ -147,7 +148,7 @@ internal sealed class EfUnitOfWork<TContext> : IUnitOfWork<TContext>
         }
         catch (RetryLimitExceededException ex)
         {
-            PersistenceLog.TransientRetryExhausted(_logger, ex, attemptCount());
+            EfCoreLog.TransientRetryExhausted(_logger, attemptCount(), ex);
             throw;
         }
     }

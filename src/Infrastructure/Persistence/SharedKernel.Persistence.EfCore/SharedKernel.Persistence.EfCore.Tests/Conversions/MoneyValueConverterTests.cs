@@ -395,10 +395,11 @@ public sealed class MoneyValueConverterTests
 
         // Assert — a clear, loud exception on read; the corrupted row must never be silently
         // materialized with a re-rounded amount.
-        (await act.Should().ThrowAsync<Exception>())
-            .Where(ex => ex.Message.Contains("decimal places", StringComparison.OrdinalIgnoreCase)
-                         || (ex.InnerException != null
-                             && ex.InnerException.Message.Contains("decimal places", StringComparison.OrdinalIgnoreCase)));
+        var thrown = (await act.Should().ThrowAsync<Exception>()).Which;
+        var domain = thrown as SharedKernel.Core.Exceptions.DomainException ?? thrown.InnerException as SharedKernel.Core.Exceptions.DomainException;
+        domain.Should().NotBeNull("the stored amount is corrupt data, reported as a classified domain exception");
+        domain!.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Unexpected);
+        domain.Error.Code.Should().Be("money.stored_precision_exceeded");
     }
 
     // -----------------------------------------------------------------------

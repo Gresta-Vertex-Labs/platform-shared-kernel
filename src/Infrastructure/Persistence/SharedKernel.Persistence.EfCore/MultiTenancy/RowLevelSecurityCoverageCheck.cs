@@ -3,9 +3,9 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
@@ -20,10 +20,10 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 internal sealed class RowLevelSecurityCoverageCheck<TContext>(
     IServiceProvider services,
     RowLevelSecurityCheckMode? configuredMode,
-    ILogger<RowLevelSecurityCoverageCheck<TContext>>? logger = null) : IHostedLifecycleService
+    ILogger<RowLevelSecurityCoverageCheck<TContext>> logger) : IHostedLifecycleService
     where TContext : SharedKernelDbContext
 {
-    private readonly ILogger _logger = (ILogger?)logger ?? NullLogger.Instance;
+    private readonly ILogger _logger = logger;
 
     public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -39,18 +39,18 @@ internal sealed class RowLevelSecurityCoverageCheck<TContext>(
         if (services.GetService<IPersistenceStartup>() is { } startup)
             await startup.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var findings = await FindUnprotectedTablesAsync(services, cancellationToken).ConfigureAwait(false);
-        if (findings.Count == 0)
+        var gaps = await FindGapsAsync(services, cancellationToken).ConfigureAwait(false);
+        if (gaps.Count == 0)
             return;
 
-        foreach (var finding in findings)
-            RowLevelSecurityLog.TenantTableNotProtected(_logger, typeof(TContext).Name, finding);
+        foreach (var (table, gap) in gaps)
+            EfCoreLog.TenantTableNotProtected(_logger, typeof(TContext).Name, table, gap);
 
         if (mode == RowLevelSecurityCheckMode.Fail)
         {
             throw new InvalidOperationException(
                 $"Row-level security is enabled for '{typeof(TContext).Name}', but these tenant tables are not protected: "
-                + string.Join("; ", findings) + ". Add 'migrationBuilder.EnableTenantRowLevelSecurityForModel(TargetModel)' "
+                + string.Join("; ", gaps.Select(g => Describe(g.Table, g.Gap))) + ". Add 'migrationBuilder.EnableTenantRowLevelSecurityForModel(TargetModel)' "
                 + "(or EnableTenantRowLevelSecurity per table) to a migration.");
         }
     }
@@ -61,15 +61,20 @@ internal sealed class RowLevelSecurityCoverageCheck<TContext>(
 
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>Returns one finding per tenant table that is missing, unprotected or without the tenant policy.</summary>
-    internal static async Task<IReadOnlyList<string>> FindUnprotectedTablesAsync(IServiceProvider services, CancellationToken cancellationToken)
+    /// <summary>Returns one finding per tenant table that is missing, unprotected or without the tenant policy, as readable text.</summary>
+    internal static async Task<IReadOnlyList<string>> FindUnprotectedTablesAsync(IServiceProvider services, CancellationToken cancellationToken) =>
+        [.. (await FindGapsAsync(services, cancellationToken).ConfigureAwait(false)).Select(g => Describe(g.Table, g.Gap))];
+
+    /// <summary>Returns one gap per tenant table that is missing, unprotected or without the tenant policy.</summary>
+    internal static async Task<IReadOnlyList<(string Table, RowLevelSecurityGap Gap)>> FindGapsAsync(
+        IServiceProvider services, CancellationToken cancellationToken)
     {
         var factory = services.GetRequiredService<ICallerDbContextFactory<TContext>>();
         var context = await factory.CreateDbContextAsync(AnonymousRequestContext.Instance, cancellationToken: cancellationToken).ConfigureAwait(false);
         await using (context.ConfigureAwait(false))
         {
             var tables = RowLevelSecurityMigrationBuilderExtensions.TenantTables(DesignTimeModel(context));
-            var findings = new List<string>();
+            var findings = new List<(string Table, RowLevelSecurityGap Gap)>();
             if (tables.Count == 0)
                 return findings;
 
@@ -84,8 +89,8 @@ internal sealed class RowLevelSecurityCoverageCheck<TContext>(
                     .ConfigureAwait(false);
                 foreach (var status in statuses)
                 {
-                    if (Describe(status) is { } problem)
-                        findings.Add($"'{status.Table}' {problem}");
+                    if (GapOf(status) is { } gap)
+                        findings.Add((status.Table, gap));
                 }
             }
             finally
@@ -110,13 +115,23 @@ internal sealed class RowLevelSecurityCoverageCheck<TContext>(
         }
     }
 
-    private static string? Describe(RowLevelSecurityTableStatus status) =>
+    private static RowLevelSecurityGap? GapOf(RowLevelSecurityTableStatus status) =>
         status switch
         {
-            { Exists: false } => "does not exist",
-            { RowSecurityEnabled: false } => "does not have row-level security enabled",
-            { RowSecurityForced: false } => "does not force row-level security (the table owner bypasses it)",
-            { HasTenantPolicy: false } => "has no policy that reads the tenant setting",
+            { Exists: false } => RowLevelSecurityGap.TableMissing,
+            { RowSecurityEnabled: false } => RowLevelSecurityGap.RowSecurityDisabled,
+            { RowSecurityForced: false } => RowLevelSecurityGap.RowSecurityNotForced,
+            { HasTenantPolicy: false } => RowLevelSecurityGap.TenantPolicyMissing,
             _ => null,
+        };
+
+    private static string Describe(string table, RowLevelSecurityGap gap) =>
+        $"'{table}' " + gap switch
+        {
+            RowLevelSecurityGap.TableMissing => "does not exist",
+            RowLevelSecurityGap.RowSecurityDisabled => "does not have row-level security enabled",
+            RowLevelSecurityGap.RowSecurityNotForced => "does not force row-level security (the table owner bypasses it)",
+            RowLevelSecurityGap.TenantPolicyMissing => "has no policy that reads the tenant setting",
+            _ => throw new System.Diagnostics.UnreachableException(),
         };
 }

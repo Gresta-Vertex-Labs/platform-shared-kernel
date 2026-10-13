@@ -111,7 +111,7 @@ public sealed class PersistenceContextDependencies
             modelConventionFactories: null,
             modelConfigurators: null,
             optionsExtensions: null,
-            exceptionClassifiers: [new PostgresDbUpdateExceptionClassifier()],
+            exceptionClassifiers: [new PostgresDbUpdateExceptionClassifier((loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<PostgresDbUpdateExceptionClassifier>())],
             keyGenerator: null,
             loggerFactory,
             entityVersionKeys is null ? null : new EntityVersionCodec(EntityVersionKeyRing.For(entityVersionKeys, loggerFactory)));

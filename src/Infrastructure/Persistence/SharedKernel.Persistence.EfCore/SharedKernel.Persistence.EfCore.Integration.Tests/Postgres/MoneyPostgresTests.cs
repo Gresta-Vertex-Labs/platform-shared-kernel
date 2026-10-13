@@ -199,9 +199,11 @@ public sealed class MoneyPostgresTests
         await using var readCtx = CreateContext(tenantId);
         var act = async () => await readCtx.Orders.FirstAsync(o => o.Id == orderId);
 
-        var thrown = await act.Should().ThrowAsync<Exception>();
-        thrown.Which.Message.Contains("decimal places", StringComparison.OrdinalIgnoreCase)
-            .Should().BeTrue("the failure must name the reason (too many decimal places), never silently re-round");
+        var thrown = (await act.Should().ThrowAsync<Exception>()).Which;
+        var domain = thrown as SharedKernel.Core.Exceptions.DomainException ?? thrown.InnerException as SharedKernel.Core.Exceptions.DomainException;
+        domain.Should().NotBeNull("the stored amount is corrupt data, reported as a classified domain exception, never silently re-rounded");
+        domain!.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Unexpected);
+        domain.Error.Code.Should().Be("money.stored_precision_exceeded");
     }
 
     [Fact]

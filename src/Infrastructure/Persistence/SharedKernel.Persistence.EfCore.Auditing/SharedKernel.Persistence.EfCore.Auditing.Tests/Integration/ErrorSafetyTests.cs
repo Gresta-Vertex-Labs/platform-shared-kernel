@@ -94,7 +94,7 @@ public sealed partial class ErrorSafetyTests(PostgreSqlContainerFixture fixture)
             .CreateCheckpointForChainAsync(TestRequestContext.TenantA, "Order"));
 
         var thrown = (await act.Should().ThrowAsync<ForbiddenException>()).Which;
-        thrown.Error.Code.Should().Be(PersistenceErrorCodes.TenantIsolationViolation);
+        thrown.Error.Code.Should().Be(PersistenceErrorCodes.Tenancy.TenantIsolationViolation);
         thrown.Error.Type.Should().Be(ErrorType.Forbidden);
         thrown.Message.Should().NotContain(TestRequestContext.TenantA.ToString()).And.NotContain(TestRequestContext.TenantB.ToString());
         thrown.Error.Message.Should().NotContain(TestRequestContext.TenantA.ToString());

@@ -14,6 +14,7 @@ using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Containers;
+using SharedKernel.Testing.Telemetry;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.Postgres;
 
@@ -131,12 +132,31 @@ public sealed class EntityVersionPostgresTests(PostgreSqlContainerFixture fixtur
         var conflict = (await FluentActions.Awaiting(() => RenameAsync(provider, id, etag, "lost update"))
             .Should().ThrowAsync<ConflictException>()).Which;
 
-        conflict.Error.Code.Should().Be(ConcurrencyVersion.ConflictErrorCode);
+        conflict.Error.Code.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict);
         ConcurrencyVersion.TryGetCurrentVersion(conflict, out var current).Should().BeTrue();
         $"\"{current}\"".Should().Be(await ETagAsync(provider, id), "the conflict reports the version a re-read returns");
 
         await RenameAsync(provider, id, $"\"{current}\"", "v3");
         (await NameAsync(provider, id)).Should().Be("v3");
+    }
+
+    [Fact]
+    public async Task X4_AStaleETag_CountsOneConcurrencyConflict_TaggedWithTheAggregateType()
+    {
+        await using var provider = await OrdersAsync();
+        var id = (await InsertAsync(provider, "v1"))[0];
+        var etag = await ETagAsync(provider, id);
+        await RenameAsync(provider, id, etag, "v2 by someone else");
+        using var metrics = SharedKernel.Testing.Telemetry.MetricRecorder.StartRecording(SharedKernel.Persistence.Abstractions.Diagnostics.PersistenceTelemetry.Name);
+
+        await FluentActions.Awaiting(() => RenameAsync(provider, id, etag, "lost update")).Should().ThrowAsync<ConflictException>();
+
+        const string instrument = "sharedkernel.persistence.concurrency_conflicts";
+        SharedKernel.Testing.Telemetry.MetricAssertions
+            .ShouldHaveInstrument(metrics, instrument, unit: "{conflict}", kind: SharedKernel.Testing.Telemetry.InstrumentKind.Counter)
+            .ShouldHaveMeasurement(instrument, 1, new KeyValuePair<string, object?>("persistence.aggregate_type", nameof(EntryOrder)))
+            .ShouldHaveTagSet(instrument, "persistence.aggregate_type")
+            .ShouldFollowMetricConvention();
     }
 
     [Fact]
@@ -200,7 +220,7 @@ public sealed class EntityVersionPostgresTests(PostgreSqlContainerFixture fixtur
 
         // Tracked: refused before anything is written.
         (await FluentActions.Awaiting(() => RenameAsync(provider, ids[1], etagOfA, "hijacked"))
-            .Should().ThrowAsync<ConflictException>()).Which.Error.Code.Should().Be(ConcurrencyVersion.ConflictErrorCode);
+            .Should().ThrowAsync<ConflictException>()).Which.Error.Code.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict);
 
         // Detached: refused before the aggregate is attached.
         EntityVersion.TryParse(etagOfA, out var versionOfA).Should().BeTrue();
@@ -232,7 +252,7 @@ public sealed class EntityVersionPostgresTests(PostgreSqlContainerFixture fixtur
         EntityVersion.TryParse(tampered, out _).Should().BeTrue("it still looks like a version");
 
         (await FluentActions.Awaiting(() => RenameAsync(provider, id, tampered, "tampered"))
-            .Should().ThrowAsync<ConflictException>()).Which.Error.Code.Should().Be(ConcurrencyVersion.ConflictErrorCode);
+            .Should().ThrowAsync<ConflictException>()).Which.Error.Code.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict);
         (await NameAsync(provider, id)).Should().Be("v1");
     }
 

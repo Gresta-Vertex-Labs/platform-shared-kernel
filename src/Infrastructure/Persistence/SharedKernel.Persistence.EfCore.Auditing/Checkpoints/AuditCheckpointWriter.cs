@@ -66,7 +66,22 @@ internal sealed class AuditCheckpointWriter
                 $"and a registered {nameof(IAsymmetricSignatureService)} (AddSharedKernelCryptography(...).AddAsymmetricSigning()).");
         }
 
-        using var activity = AuditingMeter.ActivitySource.StartActivity("audit.checkpoint");
+        using var activity = AuditTracing.Start(AuditTracing.CheckpointSpan);
+        try
+        {
+            var checkpoint = await CreateCoreAsync(chain, skipIfUnchanged, cancellationToken).ConfigureAwait(false);
+            AuditTracing.Succeed(activity);
+            return checkpoint;
+        }
+        catch (Exception ex)
+        {
+            AuditTracing.Fail(activity, ex);
+            throw;
+        }
+    }
+
+    private async Task<AuditChainCheckpoint?> CreateCoreAsync(ChainId chain, bool skipIfUnchanged, CancellationToken cancellationToken)
+    {
         var latest = await _sink.GetLatestAsync(chain.TenantId, chain.ResourceType, cancellationToken).ConfigureAwait(false);
 
         // A stored checkpoint is only used as a starting point when its own signature is valid under a
@@ -108,7 +123,7 @@ internal sealed class AuditCheckpointWriter
         };
 
         await _sink.AppendAsync(checkpoint, cancellationToken).ConfigureAwait(false);
-        AuditingMeter.RecordCheckpointEmitted();
+        AuditingInstruments.RecordCheckpointEmitted();
         AuditingLog.CheckpointEmitted(_logger, chain.ResourceType, headSequence, _signingKeyId!);
         return checkpoint;
     }
@@ -173,7 +188,7 @@ internal sealed class AuditCheckpointWriter
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         // A broken chain is already logged by the verifier; nothing is signed for it.
-                        AuditingLog.CheckpointEmissionFailed(_logger, ex, chain.ResourceType);
+                        AuditingLog.CheckpointEmissionFailed(_logger, chain.ResourceType, ex);
                         Activity.Current?.SetStatus(ActivityStatusCode.Error);
                     }
                 }

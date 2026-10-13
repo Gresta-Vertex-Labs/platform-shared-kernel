@@ -155,24 +155,21 @@ internal sealed class PersistenceStartupCheck<TContext>
 /// so a mapping error fails the deployment instead of the first request, and warns when no
 /// <see cref="IDomainEventDispatcher"/> is registered.
 /// </summary>
-internal sealed class PersistenceStartupValidator<TContext>(IServiceProvider services, ILoggerFactory? loggerFactory = null)
+internal sealed class PersistenceStartupValidator<TContext>(IServiceProvider services, ILogger<PersistenceStartupValidator<TContext>> logger)
     : IValidateOptions<PersistenceStartupCheck<TContext>>
     where TContext : SharedKernelDbContext
 {
     public ValidateOptionsResult Validate(string? name, PersistenceStartupCheck<TContext> options)
     {
-        var logger = (loggerFactory ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance)
-            .CreateLogger(typeof(TContext));
-
         if (services.GetService<IServiceProviderIsService>() is { } isService && !isService.IsService(typeof(IDomainEventDispatcher)))
-            PersistenceContextLog.NoDomainEventDispatcherRegistered(logger, typeof(TContext).Name);
+            EfCoreLog.NoDomainEventDispatcherRegistered(logger, typeof(TContext).Name);
 
         try
         {
             var factory = services.GetRequiredService<ICallerDbContextFactory<TContext>>();
             using var context = factory.CreateDbContextAsync(Execution.Context.AnonymousRequestContext.Instance).GetAwaiter().GetResult();
             var entityTypeCount = context.Model.GetEntityTypes().Count();
-            PersistenceContextLog.ModelValidated(logger, typeof(TContext).Name, entityTypeCount);
+            EfCoreLog.ModelValidated(logger, typeof(TContext).Name, entityTypeCount);
             return ValidateOptionsResult.Success;
         }
         catch (OptionsValidationException)
@@ -183,7 +180,9 @@ internal sealed class PersistenceStartupValidator<TContext>(IServiceProvider ser
         }
         catch (Exception ex)
         {
-            return ValidateOptionsResult.Fail($"The EF Core model of '{typeof(TContext).Name}' is invalid: {ex.Message}");
+            EfCoreLog.ModelValidationFailed(logger, typeof(TContext).Name, ex);
+            return ValidateOptionsResult.Fail(
+                $"The EF Core model of '{typeof(TContext).Name}' is invalid. The logged exception names the cause; fix the mapping and restart.");
         }
     }
 }

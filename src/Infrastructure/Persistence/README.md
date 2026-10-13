@@ -317,6 +317,7 @@ samples/Shop/build.sh --e2e   # pack, build, run the end-to-end flows (ciphertex
 | **Encrypted values are bound to row, column and tenant**, and erasable per tenant | `CipherAndBlindIndexTests`, `KeyRingTests`, `ErasureAndMaintenanceTests` |
 | **The audit trail is append-only and tamper-evident**, in a [specified format](SharedKernel.Persistence.EfCore.Auditing/AUDIT-FORMAT.md) | `TamperDetectionTests`, `AuditFormatVectorTests`, `AuditImmutabilityMigrationBuilderExtensionsIntegrationTests` |
 | **Domain projects never take the persistence stack** | Architecture rule `DomainAssembliesNeverReferencePersistenceStack` |
+| **One telemetry identity and one error-code registry** — every source and meter is `SharedKernel.Persistence`, every instrument `sharedkernel.persistence.*` with a unit, every code in `PersistenceErrorCodes` | `RepositoryTracingTests`, `AuditTelemetryTests`, `EncryptionTelemetryTests`, `PersistenceErrorCodesTests`, `LoggingConformanceTests`, the composed scenario of `ConsumerVerify` |
 
 **Out of scope:** databases other than PostgreSQL, two-phase commit across databases, read-replica routing inside one
 context, lazy loading, and the messaging outbox (owned by [Messaging](../Messaging/README.md)).

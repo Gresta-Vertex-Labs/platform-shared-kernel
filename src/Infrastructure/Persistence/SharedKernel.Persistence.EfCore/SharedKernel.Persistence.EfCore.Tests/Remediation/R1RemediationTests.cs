@@ -375,7 +375,7 @@ public sealed class R1RemediationTests : IDisposable
         other.Orders.Add(new R1Order { Id = Guid.NewGuid(), TenantId = new TenantId(Guid.NewGuid()), Name = "x" });
         var otherEx = (await FluentActions.Awaiting(() => other.SaveChangesAsync()).Should().ThrowAsync<ForbiddenException>()).Which;
         otherEx.Error.Message.Should().Contain("not the caller's tenant");
-        otherEx.Error.Code.Should().Be(TenantIsolationErrors.Code);
+        otherEx.Error.Code.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Tenancy.TenantIsolationViolation);
     }
 
     // ---- F1: the startup signal ----

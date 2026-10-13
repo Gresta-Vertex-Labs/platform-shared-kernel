@@ -26,7 +26,7 @@ internal sealed class TenantIdTypeHandler : SqlMapper.TypeHandler<TenantId>
         {
             Guid g => g,
             string s => Guid.Parse(s),
-            _ => throw new DataException($"Cannot convert a value of type '{value.GetType().Name}' to a TenantId."),
+            _ => throw new DataException($"A value of type '{value.GetType().Name}' is not convertible to a TenantId."),
         };
 
         return guid == Guid.Empty ? default : new TenantId(guid);

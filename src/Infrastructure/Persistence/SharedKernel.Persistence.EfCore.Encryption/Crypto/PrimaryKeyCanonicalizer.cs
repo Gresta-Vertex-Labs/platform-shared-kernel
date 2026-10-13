@@ -27,7 +27,7 @@ internal static class PrimaryKeyCanonicalizer
     {
         var key = entityType.FindPrimaryKey()
             ?? throw new InvalidOperationException(
-                $"'{entityType.ShortName()}' has no primary key — an encrypted property needs one to bind its " +
+                $"'{entityType.ShortName()}' has no primary key, and an encrypted property needs one to bind its " +
                 "associated data to the owning row.");
 
         using var buffer = new MemoryStream();
@@ -39,8 +39,8 @@ internal static class PrimaryKeyCanonicalizer
 
             var component = CanonicalizeValue(providerValue)
                 ?? throw new InvalidOperationException(
-                    $"'{entityType.ShortName()}.{keyProperty.Name}' resolved to a null primary key value — " +
-                    "an entity must have its key assigned before an encrypted property on it can be saved.");
+                    $"'{entityType.ShortName()}.{keyProperty.Name}' resolved to a null primary key value, and " +
+                    "an entity must have its key assigned before an encrypted property on it is saved.");
 
             WriteLengthPrefixed(buffer, component);
         }

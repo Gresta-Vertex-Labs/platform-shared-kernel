@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using SharedKernel.Persistence.Npgsql.Coordination;
 using SharedKernel.Testing.Containers;
@@ -31,8 +32,8 @@ public sealed class NpgsqlAdvisoryMigrationLockTests : IAsyncLifetime
     [Fact]
     public async Task AcquireAsync_ThenDispose_ReleasesTheLock_SoASecondAcquireSucceeds()
     {
-        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!);
-        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!);
+        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
+        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
 
         await using (var handle = await lockA.AcquireAsync("test-lock-release", TimeSpan.FromSeconds(5)))
         {
@@ -47,8 +48,8 @@ public sealed class NpgsqlAdvisoryMigrationLockTests : IAsyncLifetime
     [Fact]
     public async Task AcquireAsync_TwoConcurrentRunners_SecondWaitsThenAcquiresAfterFirstReleases()
     {
-        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!);
-        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!);
+        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
+        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
 
         var firstHandle = await lockA.AcquireAsync("test-lock-contention", TimeSpan.FromSeconds(5));
 
@@ -67,8 +68,8 @@ public sealed class NpgsqlAdvisoryMigrationLockTests : IAsyncLifetime
     [Fact]
     public async Task AcquireAsync_ContendedBeyondTimeout_ThrowsTimeoutException()
     {
-        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!);
-        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!);
+        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
+        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
 
         await using var firstHandle = await lockA.AcquireAsync("test-lock-timeout", TimeSpan.FromSeconds(5));
 
@@ -80,8 +81,8 @@ public sealed class NpgsqlAdvisoryMigrationLockTests : IAsyncLifetime
     [Fact]
     public async Task AcquireAsync_DistinctLockKeys_DoNotContend()
     {
-        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!);
-        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!);
+        var lockA = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
+        var lockB = new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance);
 
         await using var handleA = await lockA.AcquireAsync("test-lock-key-a", TimeSpan.FromSeconds(5));
         await using var handleB = await lockB.AcquireAsync("test-lock-key-b", TimeSpan.FromSeconds(5));
@@ -93,7 +94,7 @@ public sealed class NpgsqlAdvisoryMigrationLockTests : IAsyncLifetime
     [Fact]
     public async Task AcquireAsync_HoldsTheMigrationNamespacedKey_NotTheBareName()
     {
-        await using var handle = await new NpgsqlAdvisoryMigrationLock(_dataSource!)
+        await using var handle = await new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance)
             .AcquireAsync("orders-context", TimeSpan.FromSeconds(5));
 
         await using var connection = await _dataSource!.OpenConnectionAsync();
@@ -109,10 +110,10 @@ public sealed class NpgsqlAdvisoryMigrationLockTests : IAsyncLifetime
     [Fact]
     public async Task AcquireAsync_BareAndNamespacedNames_ContendForTheSameLock()
     {
-        await using var handle = await new NpgsqlAdvisoryMigrationLock(_dataSource!)
+        await using var handle = await new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance)
             .AcquireAsync("orders-context", TimeSpan.FromSeconds(5));
 
-        var act = async () => await new NpgsqlAdvisoryMigrationLock(_dataSource!)
+        var act = async () => await new NpgsqlAdvisoryMigrationLock(_dataSource!, NullLogger<NpgsqlAdvisoryMigrationLock>.Instance)
             .AcquireAsync(AdvisoryLockKeys.Migration("orders-context"), TimeSpan.FromMilliseconds(300));
 
         await act.Should().ThrowAsync<TimeoutException>();

@@ -42,7 +42,7 @@ internal sealed class FieldEncryptionSettings
         if (_keySource is not null && !string.Equals(_keySource, description, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"Field encryption already uses key source '{_keySource}'; it cannot also use '{description}'. " +
+                $"Field encryption already uses key source '{_keySource}'; it must not also use '{description}'. " +
                 "Every DbContext in a service shares one key source.");
         }
 

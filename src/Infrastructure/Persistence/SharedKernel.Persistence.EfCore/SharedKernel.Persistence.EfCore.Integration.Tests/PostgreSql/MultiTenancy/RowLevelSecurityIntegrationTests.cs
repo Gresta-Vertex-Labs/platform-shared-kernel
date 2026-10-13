@@ -517,7 +517,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
     {
         var services = new ServiceCollection();
         var tenant = new MutableTenantContext();
-        var crossTenantScope = new CrossTenantScope(tenant);
+        var crossTenantScope = new CrossTenantScope(tenant, Microsoft.Extensions.Logging.Abstractions.NullLogger<CrossTenantScope>.Instance);
         var commands = new ConcurrentQueue<string>();
 
         services.AddLogging();

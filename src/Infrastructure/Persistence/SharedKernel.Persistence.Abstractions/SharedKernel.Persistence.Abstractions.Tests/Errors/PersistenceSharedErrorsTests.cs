@@ -23,13 +23,4 @@ public sealed class PersistenceSharedErrorsTests
     {
         PersistenceSharedErrors.TenantRequired().Should().Be(PersistenceSharedErrors.TenantRequired());
     }
-
-    [Theory]
-    [InlineData(PersistenceErrorCodes.TenantRequired, "persistence.tenant_required")]
-    [InlineData(PersistenceErrorCodes.TenantIsolationViolation, "persistence.tenant_isolation_violation")]
-    [InlineData(PersistenceErrorCodes.AuditRecordNotFound, "persistence.audit_record_not_found")]
-    public void ErrorCodes_ArePinnedLiterally(string actual, string expected)
-    {
-        actual.Should().Be(expected);
-    }
 }

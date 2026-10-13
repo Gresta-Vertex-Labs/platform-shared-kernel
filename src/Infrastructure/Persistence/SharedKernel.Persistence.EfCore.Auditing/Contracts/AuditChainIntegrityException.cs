@@ -1,5 +1,6 @@
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Auditing;
@@ -10,19 +11,17 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// </summary>
 /// <remarks>
 /// <see cref="Exception.Message"/> and <c>Error.Message</c> name the resource type, status, failure kind and sequence only;
-/// the chain's tenant is available through <see cref="TenantId"/> and is never part of the text.
+/// the chain's tenant is available through <see cref="TenantId"/> and the reason through <see cref="Verification"/>,
+/// and neither is part of the text. The error code is <see cref="PersistenceErrorCodes.Audit.ChainNotIntact"/>.
 /// </remarks>
 public sealed class AuditChainIntegrityException : SharedKernelException
 {
-    /// <summary>The error code carried by <see cref="SharedKernelException.Error"/>.</summary>
-    public const string ErrorCode = "persistence.audit_chain_not_intact";
-
     /// <summary>Initialises a new <see cref="AuditChainIntegrityException"/>.</summary>
     /// <param name="tenantId">The chain's tenant.</param>
     /// <param name="resourceType">The chain's resource type.</param>
     /// <param name="verification">The verification that failed.</param>
     public AuditChainIntegrityException(TenantId? tenantId, string resourceType, AuditChainVerificationResult verification)
-        : base(BuildMessage(resourceType, verification), Error.Conflict(ErrorCode, BuildMessage(resourceType, verification)))
+        : base(Error.Conflict(PersistenceErrorCodes.Audit.ChainNotIntact, BuildMessage(resourceType, verification)))
     {
         ArgumentNullException.ThrowIfNull(verification);
         TenantId = tenantId;
@@ -39,8 +38,8 @@ public sealed class AuditChainIntegrityException : SharedKernelException
     /// <summary>Gets the verification that failed.</summary>
     public AuditChainVerificationResult Verification { get; }
 
-    // The tenant is a property for programmatic use, never part of the text: the message reaches ProblemDetails.
+    // The tenant and the reason are properties for programmatic use, never part of the text: the message reaches ProblemDetails.
     private static string BuildMessage(string resourceType, AuditChainVerificationResult verification) =>
         $"The audit chain of resource type '{resourceType}' is {verification?.Status} " +
-        $"({verification?.FailureKind} at sequence {verification?.FailedAtSequence}): {verification?.Reason}";
+        $"({verification?.FailureKind} at sequence {verification?.FailedAtSequence}). Verify the chain and restore it from a backup before checkpointing.";
 }

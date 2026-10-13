@@ -4,9 +4,11 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Exceptions;
 
 namespace SharedKernel.Persistence.EfCore.Concurrency;
 
@@ -34,7 +36,7 @@ namespace SharedKernel.Persistence.EfCore.Concurrency;
 /// <c>IEncryptionKeyProvider</c> the service registers. The same version of the same aggregate always gives the same
 /// token. A version of another aggregate, an altered one, or one sealed with a key this process does not know (for
 /// example before a restart that rotated the key) is treated as stale: <see cref="ConflictException"/>
-/// (<see cref="ConflictErrorCode"/>), which <c>14.Presentation</c> answers with 412 when the request carries
+/// (<see cref="PersistenceErrorCodes.Concurrency.Conflict"/>), which <c>14.Presentation</c> answers with 412 when the request carries
 /// <c>If-Match</c> — never a server error. Keys the
 /// process used before stay usable after a rotation. Without a registered key provider, reading or checking a version
 /// throws <see cref="InvalidOperationException"/> saying what to register.
@@ -49,9 +51,6 @@ public static class ConcurrencyVersion
 {
     /// <summary>The <see cref="Exception.Data"/> key the current version is stored under on a conflict.</summary>
     internal const string CurrentVersionDataKey = "SharedKernel.Persistence.CurrentVersion";
-
-    /// <summary>The error code of every concurrency conflict raised by a SharedKernel context.</summary>
-    public const string ConflictErrorCode = "persistence.concurrency_conflict";
 
     /// <summary>The <c>xmin</c> column every concurrency token of the platform maps to.</summary>
     internal const string XminColumn = "xmin";
@@ -83,8 +82,8 @@ public static class ConcurrencyVersion
         {
             throw new InvalidOperationException(
                 $"'{entry.Metadata.DisplayName()}' is not tracked by this context, so its version is unknown: PostgreSQL's "
-                + "'xmin' is kept by the change tracker, not by the entity. Load it tracked — IRepository.GetByIdAsync "
-                + "(IReadRepository never tracks) or a query on this context — and read the version from that instance.");
+                + "'xmin' is kept by the change tracker, not by the entity. Load it tracked, with IRepository.GetByIdAsync "
+                + "(IReadRepository never tracks) or a query on this context, and read the version from that instance.");
         }
 
         var rowVersion = ToVersion(property.OriginalValue);
@@ -159,12 +158,7 @@ public static class ConcurrencyVersion
             return rowVersion;
 
         var entityTypeName = entry.Metadata.ClrType.Name;
-        PersistenceLog.EntityVersionRejected(
-            LoggerOf(context),
-            entityTypeName,
-            outcome == EntityVersionOpenResult.UnknownKey
-                ? "it was sealed with a key this service does not know (for example before a key rotation)"
-                : "it is not a version of this aggregate (another aggregate's, or altered)");
+        EfCoreLog.EntityVersionRejected(LoggerOf(context), entityTypeName, outcome);
 
         // Stale, like any version that is not the current one: the client re-reads and retries. When the context tracks
         // the aggregate, the conflict carries the version it was loaded with — what a re-read would return.
@@ -209,7 +203,7 @@ public static class ConcurrencyVersion
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            PersistenceLog.EntityVersionNotSealed(LoggerOf(context), exception, entry.Metadata.ClrType.Name);
+            EfCoreLog.EntityVersionNotSealed(LoggerOf(context), entry.Metadata.ClrType.Name, exception);
             return null;
         }
     }
@@ -217,9 +211,7 @@ public static class ConcurrencyVersion
     /// <summary>Builds the conflict exception, attaching the current version when known.</summary>
     internal static ConflictException Conflict(string entityTypeName, EntityVersion? currentVersion, Exception? innerException)
     {
-        var error = SharedKernel.Primitives.Errors.Error.Conflict(
-            ConflictErrorCode,
-            $"'{entityTypeName}' was changed or deleted by someone else. Reload it and retry.");
+        var error = EfCoreErrors.ConcurrencyConflict(entityTypeName);
 
         var exception = innerException is null ? new ConflictException(error) : new ConflictException(error, innerException);
         if (currentVersion is { } version)
@@ -270,7 +262,7 @@ public static class ConcurrencyVersion
 
     private static ILogger LoggerOf(DbContext context) =>
         context is SharedKernelDbContext shared
-            ? shared.Dependencies.LoggerFactory.CreateLogger(typeof(ConcurrencyVersion))
+            ? shared.Dependencies.LoggerFactory.CreateLogger<SharedKernelDbContext>()
             : Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
     private static PropertyEntry RequireToken(EntityEntry entry)

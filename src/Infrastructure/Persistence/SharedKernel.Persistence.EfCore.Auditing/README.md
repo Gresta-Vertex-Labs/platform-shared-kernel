@@ -273,6 +273,8 @@ have the highest `Order`, every key must decode to at least 32 bytes, orders mus
 | `ErasePayloadAsync` of a record that does not exist, or belongs to another tenant (one answer for both) | `NotFoundException` | `persistence.audit_record_not_found` (NotFound) |
 | A checkpoint over a broken or unverifiable chain | `AuditChainIntegrityException` | `persistence.audit_chain_not_intact` (Conflict) |
 
+The codes are declared once in `PersistenceErrorCodes` (`Tenancy`, `Audit`); this package keeps no code constants of its own.
+
 `VerifyRecordAsync` answers `null` for a missing or foreign record. No message carries a tenant id, record id or
 idempotency key; `AuditChainIntegrityException.TenantId` keeps the chain's tenant for programmatic use.
 
@@ -284,24 +286,49 @@ ledger cannot be read. `AddSharedKernelReadiness()` exposes it on `/health/ready
 
 ### Logging
 
+Sub-block 6700-6799 (`AuditingLoggingEventIds`, `AuditingLog`, internal). A chain is named by its resource type only; a verification names
+its status, failure kind and sequence, never the reason text; the self-check names a closed problem, never a role.
+
 | Event id | Level | Event |
 | --- | --- | --- |
-| 6700 | Information | An idempotent duplicate returned the stored record |
+| 6700 | Debug | An idempotent duplicate returned the stored record |
 | 6701 | Error | Writing a failed-outcome record failed; the failure is not in the ledger |
 | 6702 | Error | A chain verified as broken or unverifiable |
 | 6703 | Debug | Sealing pass completed |
 | 6704 | Error | Sealing round failed; retried after the interval |
 | 6705 | Debug | Another instance holds the sealer lock |
-| 6706 / 6707 | Information / Error | Checkpoint signed / checkpoint emission failed |
-| 6708 | Warning | Self-check finding |
+| 6706 / 6707 | Debug / Error | Checkpoint signed / checkpoint emission failed |
+| 6708 | Warning | Self-check finding (a closed problem such as superuser, owns a table, UPDATE or DELETE grant, missing trigger) |
 | 6709 | Critical | Self-check failed with `SelfCheck: Fail`; the host will not start |
 | 6710 | Information | Self-check passed |
 | 6711 | Information | Payloads erased |
 | 6712 | Warning | Chains resealed under a new key |
 | 6713 | Information | Sealer started |
 
-Telemetry: meter and `ActivitySource` `SharedKernel.Persistence.EfCore.Auditing` — append duration, idempotent
-duplicates, sealed records, seal duration and lag, verification failures by kind, checkpoints, erased payloads.
+### Telemetry
+
+The spans and instruments use the one persistence source and meter, `SharedKernel.Persistence` (`PersistenceTelemetry.Name`); there is
+no auditing-specific name to subscribe to. Durations are in seconds. No tag carries a tenant, an actor, a record id or a key.
+
+| Span | Kind | Tags |
+| --- | --- | --- |
+| `persistence audit.seal` | Internal | `persistence.audit.sealed_records`, `outcome` |
+| `persistence audit.verify` | Internal | `persistence.audit.resource_type`, `persistence.audit.failure_kind` (when broken), `outcome` |
+| `persistence audit.checkpoint` | Internal | `outcome` |
+
+A failed seal, verification or checkpoint sets status Error, `error.type`, `error.code` (for a classified exception) and the
+exception event.
+
+| Instrument | Unit | Tags |
+| --- | --- | --- |
+| `sharedkernel.persistence.audit.append.duration` | `s` | |
+| `sharedkernel.persistence.audit.append.idempotent_duplicates` | `{append}` | |
+| `sharedkernel.persistence.audit.seal.records` | `{record}` | |
+| `sharedkernel.persistence.audit.seal.duration` | `s` | |
+| `sharedkernel.persistence.audit.seal.lag` | `s` | |
+| `sharedkernel.persistence.audit.chain.verification_failures` | `{verification}` | `persistence.audit.failure_kind` |
+| `sharedkernel.persistence.audit.checkpoint.emitted` | `{checkpoint}` | |
+| `sharedkernel.persistence.audit.payload.erased` | `{payload}` | |
 
 ## Testing
 

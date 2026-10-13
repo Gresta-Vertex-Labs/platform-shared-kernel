@@ -265,7 +265,7 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
         {
             // The real repository fails the save of a missing row with this exact error (a stale or deleted row are one answer).
             throw new ConflictException(SharedKernel.Primitives.Errors.Error.Conflict(
-                SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.ConflictErrorCode,
+                SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict,
                 $"'{typeof(TAggregate).Name}' was changed or deleted by someone else. Reload it and retry."));
         }
 

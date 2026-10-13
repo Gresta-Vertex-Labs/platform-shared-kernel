@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Execution.Tenancy;
-using SharedKernel.Persistence.EfCore.Encryption.Diagnostics;
+using SharedKernel.Persistence.Abstractions.Diagnostics;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 using SharedKernel.Primitives.Errors;
@@ -99,7 +99,7 @@ public sealed partial class FieldEncryptionFailureTests(PostgreSqlContainerFixtu
     {
         var cs = await SeedAsync("enc_f_malformed");
         await EncryptionHost.ExecuteAsync(cs, "UPDATE customers SET note = 'planted'");
-        using var metrics = MetricRecorder.StartRecording(EncryptionMeter.Name);
+        using var metrics = MetricRecorder.StartRecording(PersistenceTelemetry.Name);
 
         var thrown = await ReadFailureAsync(cs);
 
@@ -107,7 +107,7 @@ public sealed partial class FieldEncryptionFailureTests(PostgreSqlContainerFixtu
         thrown.Error.Type.Should().Be(ErrorType.Unexpected);
         thrown.Error.Message.Should().Be("A stored encrypted value is not a valid encrypted payload.");
         thrown.Message.Should().Contain("Customer.Note").And.Contain("EncryptPlaintext").And.NotContain("planted");
-        metrics.Count("persistence.encryption.decrypt_failures", new KeyValuePair<string, object?>("reason", "malformed_payload"))
+        metrics.Count("sharedkernel.persistence.encryption.decrypt_failures", new KeyValuePair<string, object?>("persistence.encryption.reason", "malformed_payload"))
             .Should().BeGreaterThan(0);
     }
 
@@ -117,7 +117,7 @@ public sealed partial class FieldEncryptionFailureTests(PostgreSqlContainerFixtu
         var cs = await SeedAsync("enc_f_copied");
         await EncryptionHost.ExecuteAsync(cs,
             "UPDATE customers SET email = (SELECT email FROM customers ORDER BY id LIMIT 1) WHERE id = (SELECT id FROM customers ORDER BY id DESC LIMIT 1)");
-        using var metrics = MetricRecorder.StartRecording(EncryptionMeter.Name);
+        using var metrics = MetricRecorder.StartRecording(PersistenceTelemetry.Name);
 
         var thrown = await ReadFailureAsync(cs);
 
@@ -126,7 +126,7 @@ public sealed partial class FieldEncryptionFailureTests(PostgreSqlContainerFixtu
         thrown.Error.Message.Should().Be("A stored encrypted value could not be decrypted.");
         thrown.Message.Should().Contain("Customer.Email").And.NotContain("'v1'");
         thrown.Should().NotBeAssignableTo<System.Security.Cryptography.CryptographicException>();
-        metrics.Count("persistence.encryption.decrypt_failures", new KeyValuePair<string, object?>("reason", "decryption_failed"))
+        metrics.Count("sharedkernel.persistence.encryption.decrypt_failures", new KeyValuePair<string, object?>("persistence.encryption.reason", "decryption_failed"))
             .Should().BeGreaterThan(0);
     }
 

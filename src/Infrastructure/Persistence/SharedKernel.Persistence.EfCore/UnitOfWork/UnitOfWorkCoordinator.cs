@@ -45,10 +45,10 @@ internal sealed class UnitOfWorkCoordinator
     private ActiveTransaction? _active;
     private IReadOnlyList<SharedKernelDbContext> _lastEnlisted = [];
 
-    public UnitOfWorkCoordinator(AmbientDbTransactionAccessor? ambient = null, ILogger<UnitOfWorkCoordinator>? logger = null)
+    public UnitOfWorkCoordinator(AmbientDbTransactionAccessor? ambient, ILogger<UnitOfWorkCoordinator> logger)
     {
         _ambient = ambient;
-        _logger = (ILogger?)logger ?? NullLogger.Instance;
+        _logger = logger;
     }
 
     /// <summary>Gets whether a transaction is running in this scope.</summary>
@@ -213,7 +213,7 @@ internal sealed class UnitOfWorkCoordinator
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     ClearTrackers();
-                    PersistenceLog.RolledBackAfterJoinedFailure(_logger, owner.GetType().Name);
+                    EfCoreLog.RolledBackAfterJoinedFailure(_logger, owner.GetType().Name);
                     throw new TransactionRolledBackException();
                 }
 
@@ -357,21 +357,21 @@ internal sealed class UnitOfWorkCoordinator
         }
     }
 
-    // Why a context cannot share <paramref name="connection"/> (and its transaction), or null when it can.
-    private static string? CannotJoinReason(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database, DbConnection connection)
+    // Why a context cannot share the connection (and its transaction), or null when it can.
+    private static ContextJoinBlock? CannotJoinReason(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database, DbConnection connection)
     {
         if (database.CurrentTransaction is not null)
-            return "it runs a transaction of its own";
+            return ContextJoinBlock.OwnTransaction;
 
         var own = database.GetDbConnection();
         if (ReferenceEquals(own, connection))
             return null;
 
         if (!SameDatabase(own, connection))
-            return "it connects to another database or as another role";
+            return ContextJoinBlock.OtherDatabaseOrRole;
 
         if (own.State != ConnectionState.Closed)
-            return "its own connection is open";
+            return ContextJoinBlock.OpenConnection;
 
         return null;
     }
@@ -426,11 +426,11 @@ internal sealed class UnitOfWorkCoordinator
                 return;
 
             var database = context.Database;
-            var reason = CannotJoinReason(database, connection);
-            if (reason is not null)
+            var cause = CannotJoinReason(database, connection);
+            if (cause is { } blocked)
             {
                 _uncoordinated.Add(context);
-                PersistenceLog.ContextCannotJoinTransaction(coordinator._logger, context.GetType().Name, owner.GetType().Name, reason);
+                EfCoreLog.ContextCannotJoinTransaction(coordinator._logger, context.GetType().Name, owner.GetType().Name, blocked);
                 return;
             }
 
@@ -472,7 +472,7 @@ internal sealed class UnitOfWorkCoordinator
                 if (context.ChangeTracker.HasChanges())
                 {
                     throw new InvalidOperationException(
-                        $"'{context.GetType().Name}' has unsaved changes but cannot join the transaction of "
+                        $"'{context.GetType().Name}' has unsaved changes but does not join the transaction of "
                         + $"'{owner.GetType().Name}' (it connects to another database or role, or runs its own "
                         + "connection or transaction). The transaction was rolled back instead of committing without "
                         + "them. Save that context through its own IUnitOfWork<TContext> outside this transaction.");

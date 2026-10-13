@@ -191,10 +191,17 @@ is `ErrorType.Timeout`.
 
 ### Logging
 
+Sub-block 6400-6499 (`DapperLoggingEventIds`, `DapperLog`). No statement text, parameter or tenant reaches a log.
+
 | Event id | Level | Event |
 | --- | --- | --- |
 | 6400 | Warning | Rolling back an uncommitted session failed (never masks the original error) |
 | 6401 | Information | Session opened on the cross-tenant role for an active cross-tenant scope |
+
+### Telemetry
+
+This package emits no span or instrument of its own: Npgsql traces the commands (its `Npgsql` source, subscribed by
+`WithPersistenceTelemetry()`), and the persistence telemetry is named `SharedKernel.Persistence` (see the EF Core README).
 
 ## Testing
 

@@ -52,7 +52,7 @@ internal sealed class CurrencyValueConverter : ValueConverter<Currency, string>
             ? result.Value
             : throw new InvalidOperationException(
                 $"Stored currency code '{code}' could not be reconstructed as a valid " +
-                $"{nameof(Currency)}: {string.Join(" ", result.Errors.Select(e => e.Message))}. This indicates data corruption " +
+                $"{nameof(Currency)} (error codes: {string.Join(", ", result.Errors.Select(e => e.Code))}). This indicates data corruption " +
                 "or a write performed outside of Currency.Create's validation.");
     }
 }

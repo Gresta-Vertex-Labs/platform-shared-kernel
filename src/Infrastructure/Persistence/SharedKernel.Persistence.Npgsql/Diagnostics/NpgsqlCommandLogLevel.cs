@@ -37,8 +37,12 @@ internal sealed class NpgsqlCommandLogLevel(ILoggerFactory inner) : ILoggerFacto
 
         public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(Map(logLevel));
 
+        // A forwarding decorator has to call ILogger.Log on the wrapped logger: it re-levels Npgsql's own entry and
+        // authors no log statement of its own. This is the one suppression of SK0020 in the domain.
+#pragma warning disable SK0020
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
             inner.Log(Map(logLevel), eventId, state, exception, formatter);
+#pragma warning restore SK0020
 
         private static LogLevel Map(LogLevel level) => level == LogLevel.Information ? LogLevel.Debug : level;
     }

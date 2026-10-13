@@ -203,8 +203,8 @@ internal static class ValueObjectOwnershipBuilder
             {
                 throw new InvalidOperationException(
                     $"'{valueObjectType.Name}.{member.Name}' is itself a value object ('{memberType.Name}'). " +
-                    "EF Core cannot bind a nested value object through a constructor parameter, so " +
-                    $"'{ownerType.Name}.{navName}' cannot be auto-configured by {nameof(ValueObjectOwnershipBuilder)}. " +
+                    "EF Core does not bind a nested value object through a constructor parameter, so " +
+                    $"'{ownerType.Name}.{navName}' is not auto-configured by {nameof(ValueObjectOwnershipBuilder)}. " +
                     $"Flatten '{valueObjectType.Name}' so '{memberType.Name}'’s fields are declared directly on " +
                     $"it, or configure '{ownerType.Name}.{navName}' explicitly instead of relying on the generic scan.");
             }

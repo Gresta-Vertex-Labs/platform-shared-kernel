@@ -2,7 +2,6 @@ using System.Data.Common;
 using Dapper;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
@@ -37,9 +36,9 @@ internal sealed class DbSessionFactory : IDbSessionFactory
         IRequestContext requestContext,
         ICrossTenantScope crossTenantScope,
         IOptions<DapperPersistenceOptions> options,
+        ILogger<DbSessionFactory> logger,
         IAmbientDbTransaction? ambientTransaction = null,
-        IOptionsMonitor<NpgsqlPersistenceOptions>? npgsqlOptions = null,
-        ILogger<DbSessionFactory>? logger = null)
+        IOptionsMonitor<NpgsqlPersistenceOptions>? npgsqlOptions = null)
     {
         _services = services;
         _requestContext = requestContext;
@@ -47,7 +46,7 @@ internal sealed class DbSessionFactory : IDbSessionFactory
         _ambientTransaction = ambientTransaction;
         _commandTimeoutSeconds = options.Value.DefaultCommandTimeoutSeconds;
         _rowLevelSecurity = npgsqlOptions?.Get(Microsoft.Extensions.Options.Options.DefaultName).RowLevelSecurity.Enabled == true;
-        _logger = logger ?? NullLogger<DbSessionFactory>.Instance;
+        _logger = logger;
     }
 
     public Task<IDbSession> OpenAsync(CancellationToken cancellationToken = default) =>
@@ -93,7 +92,7 @@ internal sealed class DbSessionFactory : IDbSessionFactory
             }
 
             if (crossTenant)
-                _logger.CrossTenantSessionOpened();
+                DapperLog.CrossTenantSessionOpened(_logger);
             else if (_rowLevelSecurity)
                 await BindTenantAsync(connection, transaction, tenantId, cancellationToken).ConfigureAwait(false);
 

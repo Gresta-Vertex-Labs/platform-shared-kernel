@@ -211,7 +211,6 @@ SharedKernel.Persistence.EfCore.Auditing.AuditVerificationStatus
 SharedKernel.Persistence.EfCore.Auditing.AuditVerificationStatus.Broken = 1 -> SharedKernel.Persistence.EfCore.Auditing.AuditVerificationStatus
 SharedKernel.Persistence.EfCore.Auditing.AuditVerificationStatus.Intact = 0 -> SharedKernel.Persistence.EfCore.Auditing.AuditVerificationStatus
 SharedKernel.Persistence.EfCore.Auditing.AuditVerificationStatus.Unverifiable = 2 -> SharedKernel.Persistence.EfCore.Auditing.AuditVerificationStatus
-SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter
 SharedKernel.Persistence.AuditLedgerServiceCollectionExtensions
 SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions
 SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointService
@@ -237,7 +236,6 @@ SharedKernel.Persistence.EfCore.Auditing.IAuditRecordAuthenticator.FindKeyAsync(
 SharedKernel.Persistence.EfCore.Auditing.IAuditRecordAuthenticator.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Persistence.EfCore.Auditing.AuditKeyDescriptor>
 SharedKernel.Persistence.EfCore.Auditing.IAuditRecordAuthenticator.VerifyMacAsync(string! keyId, System.ReadOnlyMemory<byte> message, System.ReadOnlyMemory<byte> mac, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
 SharedKernel.Persistence.EfCore.AuditImmutabilityMigrationBuilderExtensions
-const SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.ErrorCode = "persistence.audit_chain_not_intact" -> string!
 const SharedKernel.Persistence.EfCore.Auditing.AuditFieldLimits.Action = 200 -> int
 const SharedKernel.Persistence.EfCore.Auditing.AuditFieldLimits.ErrorCode = 500 -> int
 const SharedKernel.Persistence.EfCore.Auditing.AuditFieldLimits.Identifier = 256 -> int
@@ -253,8 +251,6 @@ const SharedKernel.Persistence.EfCore.Auditing.AuditLedgerSchema.LinksTable = "a
 const SharedKernel.Persistence.EfCore.Auditing.AuditLedgerSchema.PayloadsTable = "audit_record_payloads" -> string!
 const SharedKernel.Persistence.EfCore.Auditing.AuditLedgerSchema.RecordsTable = "audit_records" -> string!
 const SharedKernel.Persistence.EfCore.Auditing.AuditQueryLimits.MaxPageSize = 1000 -> int
-const SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.ActivitySourceName = "SharedKernel.Persistence.EfCore.Auditing" -> string!
-const SharedKernel.Persistence.EfCore.Auditing.Diagnostics.AuditingMeter.MeterName = "SharedKernel.Persistence.EfCore.Auditing" -> string!
 override SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.Equals(object? obj) -> bool
 override SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.GetHashCode() -> int
 override SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.ToString() -> string!

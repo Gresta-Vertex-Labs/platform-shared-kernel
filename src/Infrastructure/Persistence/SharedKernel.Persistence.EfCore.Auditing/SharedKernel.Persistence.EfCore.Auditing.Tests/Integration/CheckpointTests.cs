@@ -212,7 +212,7 @@ public sealed class CheckpointTests(PostgreSqlContainerFixture fixture)
         thrown.TenantId.Should().Be(tenant);
         thrown.Message.Should().NotContain(tenant.ToString()).And.NotContain(tenant.Value.ToString("D")).And.Contain("'Order'");
         thrown.Error.Message.Should().NotContain(tenant.ToString()).And.NotContain(tenant.Value.ToString("D"));
-        thrown.Error.Code.Should().Be(AuditChainIntegrityException.ErrorCode);
+        thrown.Error.Code.Should().Be(PersistenceErrorCodes.Audit.ChainNotIntact);
     }
 
     [Fact]
@@ -247,7 +247,7 @@ public sealed class CheckpointTests(PostgreSqlContainerFixture fixture)
         host.Context.TenantId = TestRequestContext.TenantB;
 
         var act = () => host.InScopeAsync(sp => sp.GetRequiredService<IAuditCheckpointService>().CreateCheckpointForChainAsync(TestRequestContext.TenantA, "Order"));
-        (await act.Should().ThrowAsync<ForbiddenException>()).Which.Error.Code.Should().Be(PersistenceErrorCodes.TenantIsolationViolation);
+        (await act.Should().ThrowAsync<ForbiddenException>()).Which.Error.Code.Should().Be(PersistenceErrorCodes.Tenancy.TenantIsolationViolation);
 
         using (host.Scope.Enter("audit test"))
             (await act()).Sequence.Should().Be(1);

@@ -122,7 +122,7 @@ internal sealed class MaintenanceSession : IAsyncDisposable
         exception is PostgresException { SqlState: PostgresErrorCodes.InsufficientPrivilege } postgres
         && postgres.MessageText.Contains("row-level security", StringComparison.OrdinalIgnoreCase)
             ? new InvalidOperationException(
-                $"Encryption maintenance cannot see every row of {table}: a row-level security policy applies to the " +
+                $"Encryption maintenance does not see every row of {table}, because a row-level security policy applies to the " +
                 "connecting role. Run maintenance as a role that bypasses row-level security (the table owner without " +
                 "FORCE ROW LEVEL SECURITY, or a BYPASSRLS role): configure the cross-tenant connection string of the data " +
                 "source (RowLevelSecurity:CrossTenantConnectionString), or 'UseFieldEncryption(k => k.UseMaintenanceDataSource(...))'. " +

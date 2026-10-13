@@ -13,6 +13,7 @@ using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.Dapper.Sessions;
 using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Context;
@@ -333,7 +334,7 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Conflict);
-        result.Error.Code.Should().Be(PostgresClassifiedErrorCodes.UniqueViolation);
+        result.Error.Code.Should().Be(PersistenceErrorCodes.Postgresql.UniqueViolation);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -370,7 +371,7 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
 
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var tenant = new MutableTenantContext();
-        var scope = new CrossTenantScope(tenant);
+        var scope = new CrossTenantScope(tenant, Microsoft.Extensions.Logging.Abstractions.NullLogger<CrossTenantScope>.Instance);
         var services = new ServiceCollection();
 
         services.AddLogging();

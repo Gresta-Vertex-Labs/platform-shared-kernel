@@ -94,7 +94,7 @@ internal sealed class AuditLedgerMaintenance(
                     }
                     catch (Exception ex) when (ex is AuditChainIntegrityException or InvalidOperationException)
                     {
-                        AuditingLog.CheckpointEmissionFailed(logger, ex, chain.ResourceType);
+                        AuditingLog.CheckpointEmissionFailed(logger, chain.ResourceType, ex);
                     }
                 }
             }
@@ -117,7 +117,7 @@ internal sealed class AuditLedgerMaintenance(
             {
                 var record = await LedgerDb.ReadByIdAsync(connection, transaction, recordId, cancellationToken).ConfigureAwait(false);
                 if (record is null || !Scope.CanAccess(record.TenantId))
-                    throw new NotFoundException(AuditErrors.RecordNotFound());
+                    throw new NotFoundException(AuditingErrors.RecordNotFound());
 
                 await using var command = LedgerDb.CreateCommand(connection, transaction,
                     $"DELETE FROM {AuditLedgerSchema.PayloadsTable} WHERE record_id = @id");
@@ -141,7 +141,7 @@ internal sealed class AuditLedgerMaintenance(
 
                 if (erased)
                 {
-                    AuditingMeter.RecordPayloadsErased(1);
+                    AuditingInstruments.RecordPayloadsErased(1);
                     AuditingLog.PayloadsErased(logger, 1, record.ResourceType);
                 }
 
@@ -194,7 +194,7 @@ internal sealed class AuditLedgerMaintenance(
 
                 if (erased > 0)
                 {
-                    AuditingMeter.RecordPayloadsErased(erased);
+                    AuditingInstruments.RecordPayloadsErased(erased);
                     AuditingLog.PayloadsErased(logger, erased, resourceType);
                 }
 

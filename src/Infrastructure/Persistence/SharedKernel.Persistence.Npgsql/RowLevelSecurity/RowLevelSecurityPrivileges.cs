@@ -1,4 +1,5 @@
 using System.Data.Common;
+using SharedKernel.Persistence.Npgsql.Diagnostics;
 
 namespace SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
@@ -120,6 +121,23 @@ internal sealed class RowLevelSecurityPrivilegeReport
     /// <summary>Whether the role is subject to tenant row-level security and cannot switch it off or widen it.</summary>
     public bool IsSubjectToRowLevelSecurity =>
         !IsSuperuser && !BypassesRowLevelSecurity && OwnedRowLevelSecurityTables.Count == 0 && NonTenantPermissivePolicies.Count == 0;
+
+    /// <summary>One closed-set cause per finding, in the order of <see cref="Problems"/>; what the startup check logs.</summary>
+    public IReadOnlyList<RowLevelSecurityPrivilegeProblem> Causes
+    {
+        get
+        {
+            List<RowLevelSecurityPrivilegeProblem> causes = [];
+            if (IsSuperuser)
+                causes.Add(RowLevelSecurityPrivilegeProblem.Superuser);
+            if (BypassesRowLevelSecurity)
+                causes.Add(RowLevelSecurityPrivilegeProblem.BypassRls);
+            if (OwnedRowLevelSecurityTables.Count > 0)
+                causes.Add(RowLevelSecurityPrivilegeProblem.OwnsProtectedTable);
+            causes.AddRange(Enumerable.Repeat(RowLevelSecurityPrivilegeProblem.NonTenantPermissivePolicy, NonTenantPermissivePolicies.Count));
+            return causes;
+        }
+    }
 
     /// <summary>One sentence per finding, empty when <see cref="IsSubjectToRowLevelSecurity"/>.</summary>
     public IReadOnlyList<string> Problems

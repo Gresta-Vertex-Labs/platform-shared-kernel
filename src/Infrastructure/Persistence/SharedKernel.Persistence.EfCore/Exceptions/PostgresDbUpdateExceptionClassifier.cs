@@ -45,10 +45,11 @@ internal sealed class PostgresDbUpdateExceptionClassifier : IDbUpdateExceptionCl
     private readonly ILogger<PostgresDbUpdateExceptionClassifier> _logger;
 
     /// <summary>Initialises the classifier.</summary>
-    /// <param name="logger">Logger for the classified constraint; <see cref="NullLogger{T}"/> when omitted.</param>
-    public PostgresDbUpdateExceptionClassifier(ILogger<PostgresDbUpdateExceptionClassifier>? logger = null)
+    /// <param name="logger">Logger for the classified constraint.</param>
+    public PostgresDbUpdateExceptionClassifier(ILogger<PostgresDbUpdateExceptionClassifier> logger)
     {
-        _logger = logger ?? NullLogger<PostgresDbUpdateExceptionClassifier>.Instance;
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -66,7 +67,7 @@ internal sealed class PostgresDbUpdateExceptionClassifier : IDbUpdateExceptionCl
         if (PostgresExceptionClassifier.Classify(postgresException, foreignKeyKind) is not { } classification)
             return null;
 
-        PersistenceLog.DatabaseErrorClassified(
+        EfCoreLog.DatabaseErrorClassified(
             _logger,
             classification.SqlState,
             classification.Error.Code,

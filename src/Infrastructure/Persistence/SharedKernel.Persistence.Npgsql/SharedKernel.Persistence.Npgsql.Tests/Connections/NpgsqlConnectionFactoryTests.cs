@@ -74,7 +74,7 @@ public sealed class NpgsqlConnectionFactoryTests : IAsyncLifetime
     [Fact]
     public void AddSharedKernelNpgsql_RegistersDataSourceAndConnectionFactory()
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
 
         services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(_fixture.ConnectionString));
 
@@ -92,7 +92,7 @@ public sealed class NpgsqlConnectionFactoryTests : IAsyncLifetime
     [Fact]
     public async Task AddSharedKernelNpgsql_RegisteredConnectionFactory_OpensGenuineConnection()
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         services.AddSharedKernelNpgsql(TestNpgsqlConfiguration.Create(_fixture.ConnectionString));
         var provider = services.BuildServiceProvider();
 

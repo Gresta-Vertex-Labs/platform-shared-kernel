@@ -49,7 +49,7 @@ public sealed class NpgsqlPersistenceExtensionsConfigurationTests : IAsyncLifeti
     [Fact]
     public void AddSharedKernelNpgsql_Configuration_MissingConnectionString_ThrowsAtValidateOnStart()
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -98,7 +98,7 @@ public sealed class NpgsqlPersistenceExtensionsConfigurationTests : IAsyncLifeti
     {
         // Deliberately request Persist Security Info=true in the raw connection string — the
         // registered data source must override it to false regardless.
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -124,7 +124,7 @@ public sealed class NpgsqlPersistenceExtensionsConfigurationTests : IAsyncLifeti
 
     private ServiceProvider BuildProvider(int? statementTimeoutMs, int? lockTimeoutMs = null)
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
 
         var settings = new Dictionary<string, string?>
         {
@@ -148,7 +148,7 @@ public sealed class NpgsqlPersistenceExtensionsConfigurationTests : IAsyncLifeti
 
     private ServiceProvider BuildProviderWithVerifyFull()
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {

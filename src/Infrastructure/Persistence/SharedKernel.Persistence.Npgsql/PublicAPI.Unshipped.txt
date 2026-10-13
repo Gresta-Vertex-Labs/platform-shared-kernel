@@ -5,7 +5,6 @@ SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.MissingReference = 1 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.ReferencedByDependent = 2 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
 SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind.Unknown = 0 -> SharedKernel.Persistence.Npgsql.Errors.ForeignKeyViolationKind
-SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes
 SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification
 SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.ConstraintName.get -> string?
 SharedKernel.Persistence.Npgsql.Errors.PostgresErrorClassification.Error.get -> SharedKernel.Primitives.Errors.Error!
@@ -58,18 +57,6 @@ const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.Migration
 const SharedKernel.Persistence.Npgsql.Connections.NpgsqlDataSourceKeys.ReadOnly = "SharedKernel.Persistence.Npgsql.ReadOnly" -> string!
 const SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.AuditNamespace = "sk:audit:" -> string!
 const SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.MigrationNamespace = "sk:migration:" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.CheckViolation = "persistence.postgresql.check_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ExclusionViolation = "persistence.postgresql.exclusion_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyDependentExists = "persistence.postgresql.foreign_key_dependent_exists" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyReferenceMissing = "persistence.postgresql.foreign_key_reference_missing" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ForeignKeyViolation = "persistence.postgresql.foreign_key_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.InsufficientPrivilege = "persistence.postgresql.insufficient_privilege" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.LockTimeout = "persistence.postgresql.lock_timeout" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.NotNullViolation = "persistence.postgresql.not_null_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.StatementTimeout = "persistence.postgresql.statement_timeout" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.TransientConflict = "persistence.postgresql.transient_conflict" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.UniqueViolation = "persistence.postgresql.unique_violation" -> string!
-const SharedKernel.Persistence.Npgsql.Errors.PostgresClassifiedErrorCodes.ValueTooLong = "persistence.postgresql.value_too_long" -> string!
 static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.Audit(string! name) -> string!
 static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.Migration(string! name) -> string!
 static SharedKernel.Persistence.Npgsql.Coordination.AdvisoryLockKeys.ToKey(string! lockName) -> long

@@ -101,7 +101,7 @@ public sealed class ListCustomersHandler(IReadRepository<Customer, CustomerId> c
   encrypted column. `ExecuteDeleteAsync` soft-deletes `ISoftDeletable` aggregates; `ExecutePurgeAsync` deletes
   physically.
 - **The cross-tenant scope** lasts for the DI scope while the returned `IDisposable` is held; the reason is mandatory
-  and logged (6150) with the actor kind (never the actor or its tenant: the audit ledger records who acted).
+  and logged (6150) with the actor kind (never the actor, its tenant or the reason text: the audit ledger records who acted).
 
 ## Recipes
 
@@ -166,16 +166,39 @@ seams between the persistence packages, hidden from IntelliSense; application co
 ### Errors
 
 `PersistenceSharedErrors.TenantRequired()` is the one error every persistence package raises when an operation needs a
-tenant and the request has none: code `persistence.tenant_required` (`PersistenceErrorCodes.TenantRequired`),
+tenant and the request has none: code `persistence.tenant_required` (`PersistenceErrorCodes.Tenancy.TenantRequired`),
 `ErrorType.Forbidden`, thrown as `ForbiddenException` by the Dapper sessions, the audit services and the EF Core write
-guard. `PersistenceErrorCodes` also names `persistence.tenant_isolation_violation` (a row or chain of another tenant)
-and `persistence.audit_record_not_found`.
+guard.
+
+`PersistenceErrorCodes` is the registry of every code the persistence packages raise: lowercase
+`persistence.{reason}` or `persistence.{area}.{reason}`, each declared once and read by the package that raises it.
+
+| Group | Codes (`ErrorType`) |
+| --- | --- |
+| `Tenancy` | `persistence.tenant_required` (Forbidden), `persistence.tenant_isolation_violation` (Forbidden) |
+| `Concurrency` | `persistence.concurrency_conflict` (Conflict) |
+| `Postgresql` | `persistence.postgresql.{unique_violation, foreign_key_reference_missing, foreign_key_dependent_exists, foreign_key_violation, not_null_violation, check_violation, exclusion_violation, value_too_long, transient_conflict, lock_timeout, statement_timeout, insufficient_privilege}` |
+| `Audit` | `persistence.audit_record_not_found` (NotFound), `persistence.audit_chain_not_intact` (Conflict) |
+| `Encryption` | `persistence.encryption.{malformed_payload, decryption_failed, data_key_invalid, data_key_unwrap_failed, key_not_found}` (Unexpected, `data_key_unwrap_failed` Unavailable or Timeout when the key service said so), `persistence.encryption.tenant_key_shredded` (NotFound), `persistence.encryption.tenant_shred_incomplete` (Conflict) |
+| `BulkMutation` | `persistence.bulk_mutation.specification_not_supported` (Validation) |
 
 ### Logging
 
+Sub-block 6100-6199 (`AbstractionsLoggingEventIds`, `AbstractionsLog`).
+
 | Event id | Level | Event |
 | --- | --- | --- |
-| 6150 | Information | Cross-tenant scope entered, with the actor kind and the reason (no actor id, no tenant) |
+| 6150 | Information | Cross-tenant scope entered, with the actor kind (no actor id, no tenant, no reason text) |
+
+### Telemetry
+
+`PersistenceTelemetry.Name` (`SharedKernel.Persistence`) is the name of the one `ActivitySource` and `Meter` of the persistence
+packages; `AddServiceDefaults` subscribes to `SharedKernel.*`, and a host built without it adds `AddSource`/`AddMeter` with this name. This
+package emits one instrument.
+
+| Instrument | Unit | Tags |
+| --- | --- | --- |
+| `sharedkernel.persistence.cross_tenant_scope_entries` | `{entry}` | `persistence.actor_kind` (the kind of the entering actor) |
 
 ## Testing
 

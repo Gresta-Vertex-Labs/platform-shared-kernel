@@ -94,19 +94,19 @@ internal sealed class EntityVersionKeyRing
             // PublicationOnly: a provider whose resolution throws is asked again next time, as the container itself would.
             new Lazy<Source>(() => Resolve(services), LazyThreadSafetyMode.PublicationOnly),
             services.GetService<TimeProvider>() ?? TimeProvider.System,
-            services.GetService<ILoggerFactory>()?.CreateLogger<EntityVersionKeyRing>())
+            services.GetRequiredService<ILogger<EntityVersionKeyRing>>())
     {
     }
 
-    private EntityVersionKeyRing(Lazy<Source> source, TimeProvider time, ILogger? logger)
+    private EntityVersionKeyRing(Lazy<Source> source, TimeProvider time, ILogger logger)
     {
         _source = source;
         _time = time;
-        _logger = logger ?? NullLogger.Instance;
+        _logger = logger;
     }
 
     /// <summary>A ring without keys, for contexts built by hand (<c>PersistenceContextDependencies.Create</c>).</summary>
-    public static EntityVersionKeyRing Unconfigured { get; } = new(new Lazy<Source>(Source.None), TimeProvider.System, logger: null);
+    public static EntityVersionKeyRing Unconfigured { get; } = new(new Lazy<Source>(Source.None), TimeProvider.System, NullLogger.Instance);
 
     /// <summary>Whether a key provider is registered.</summary>
     public bool IsConfigured => _source.Value.Kind != SourceKind.None;
@@ -129,16 +129,19 @@ internal sealed class EntityVersionKeyRing
         ArgumentNullException.ThrowIfNull(provider);
 
         var source = provider is ISynchronousEncryptionKeyProvider inMemory ? Source.Synchronous(inMemory) : Source.Asynchronous(provider);
-        return new EntityVersionKeyRing(new Lazy<Source>(source), TimeProvider.System, loggerFactory?.CreateLogger<EntityVersionKeyRing>());
+        return new EntityVersionKeyRing(
+            new Lazy<Source>(source),
+            TimeProvider.System,
+            loggerFactory is null ? NullLogger.Instance : loggerFactory.CreateLogger<EntityVersionKeyRing>());
     }
 
     /// <summary>A ring over an explicit synchronous provider (tests).</summary>
     internal static EntityVersionKeyRing ForProvider(ISynchronousEncryptionKeyProvider provider, TimeProvider? time = null) =>
-        new(new Lazy<Source>(() => Source.Synchronous(provider)), time ?? TimeProvider.System, logger: null);
+        new(new Lazy<Source>(() => Source.Synchronous(provider)), time ?? TimeProvider.System, NullLogger.Instance);
 
     /// <summary>A ring over an explicit asynchronous-only provider (tests).</summary>
     internal static EntityVersionKeyRing ForProvider(IEncryptionKeyProvider provider, TimeProvider? time = null, ILogger? logger = null) =>
-        new(new Lazy<Source>(() => Source.Asynchronous(provider)), time ?? TimeProvider.System, logger);
+        new(new Lazy<Source>(() => Source.Asynchronous(provider)), time ?? TimeProvider.System, logger ?? NullLogger.Instance);
 
     /// <summary>Returns the key new versions are sealed with, and makes sure versions sealed with it can be opened.</summary>
     /// <exception cref="InvalidOperationException">No key provider is registered, or its key is shorter than 32 bytes.</exception>
@@ -178,7 +181,7 @@ internal sealed class EntityVersionKeyRing
         catch (Exception exception)
         {
             // The provider could not even be resolved; the first version tries again.
-            PersistenceLog.EntityVersionKeyWarmUpFailed(_logger, exception);
+            EfCoreLog.EntityVersionKeyWarmUpFailed(_logger, exception);
             return;
         }
 
@@ -192,14 +195,14 @@ internal sealed class EntityVersionKeyRing
         }
         catch (TimeoutException)
         {
-            PersistenceLog.EntityVersionKeyWarmUpTimedOut(_logger, WarmUpTimeout);
+            EfCoreLog.EntityVersionKeyWarmUpTimedOut(_logger, WarmUpTimeout);
         }
     }
 
     /// <summary>The error for a service that issues versions without a key provider.</summary>
     internal static InvalidOperationException NotConfigured() => new(
         "Entity versions (ETags) are sealed with a key derived from the service's own key, and no key provider is " +
-        "registered. Register an ISynchronousEncryptionKeyProvider or an IEncryptionKeyProvider (SharedKernel.Cryptography) — " +
+        "registered. Register an ISynchronousEncryptionKeyProvider or an IEncryptionKeyProvider (SharedKernel.Cryptography), " +
         "for example a StaticEncryptionKeyProvider over keys from your secret store, or SharedKernel.Cryptography.KeyVault.Azure's " +
         "AddAzureKeyVaultEncryption(configuration); a context built by hand passes one to PersistenceContextDependencies.Create(..., " +
         "entityVersionKeys:). Versions use its subkey for the purpose '" + KeyPurpose + "', so the root key can be shared with " +
@@ -259,7 +262,7 @@ internal sealed class EntityVersionKeyRing
         }
         catch (Exception exception)
         {
-            PersistenceLog.EntityVersionKeyWarmUpFailed(_logger, exception);
+            EfCoreLog.EntityVersionKeyWarmUpFailed(_logger, exception);
         }
     }
 
@@ -273,7 +276,7 @@ internal sealed class EntityVersionKeyRing
         catch (Exception exception)
         {
             // Keep sealing and opening with the key already loaded; ask again after another interval.
-            PersistenceLog.EntityVersionKeyRefreshFailed(_logger, exception);
+            EfCoreLog.EntityVersionKeyRefreshFailed(_logger, exception);
             _asyncCurrent = stale with { LoadedAt = _time.GetUtcNow() };
         }
         finally

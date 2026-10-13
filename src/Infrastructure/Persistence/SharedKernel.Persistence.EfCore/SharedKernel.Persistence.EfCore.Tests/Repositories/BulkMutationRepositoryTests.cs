@@ -352,6 +352,9 @@ public sealed class BulkSpecificationGuardTests
 
         var exception = await act.Should().ThrowAsync<UnsupportedSpecificationException>();
         exception.Which.Message.Should().Contain("Includes");
+        exception.Which.Error.Code.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.BulkMutation.SpecificationNotSupported);
+        exception.Which.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Validation);
+        exception.Which.Error.Message.Should().EndWith(".");
     }
 
     [Fact]

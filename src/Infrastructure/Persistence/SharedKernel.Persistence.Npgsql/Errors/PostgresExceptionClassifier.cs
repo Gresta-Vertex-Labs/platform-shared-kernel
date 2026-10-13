@@ -1,4 +1,5 @@
 using Npgsql;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.Npgsql.Errors;
@@ -47,41 +48,41 @@ public static class PostgresExceptionClassifier
         Error? error = sqlState switch
         {
             PostgresErrorCodes.UniqueViolation => Error.Conflict(
-                PostgresClassifiedErrorCodes.UniqueViolation,
+                PersistenceErrorCodes.Postgresql.UniqueViolation,
                 "A row with the same unique key already exists."),
 
             PostgresErrorCodes.ForeignKeyViolation => ForeignKeyError(foreignKeyViolationKind),
 
             PostgresErrorCodes.NotNullViolation => Error.Validation(
-                PostgresClassifiedErrorCodes.NotNullViolation,
+                PersistenceErrorCodes.Postgresql.NotNullViolation,
                 "A required value is missing."),
 
             PostgresErrorCodes.CheckViolation => Error.Validation(
-                PostgresClassifiedErrorCodes.CheckViolation,
+                PersistenceErrorCodes.Postgresql.CheckViolation,
                 "A value does not satisfy a rule of the stored data."),
 
             PostgresErrorCodes.ExclusionViolation => Error.Validation(
-                PostgresClassifiedErrorCodes.ExclusionViolation,
+                PersistenceErrorCodes.Postgresql.ExclusionViolation,
                 "The row overlaps an existing row that it may not overlap."),
 
             PostgresErrorCodes.StringDataRightTruncation => Error.Validation(
-                PostgresClassifiedErrorCodes.ValueTooLong,
+                PersistenceErrorCodes.Postgresql.ValueTooLong,
                 "A value is longer than allowed."),
 
             PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected => Error.Conflict(
-                PostgresClassifiedErrorCodes.TransientConflict,
+                PersistenceErrorCodes.Postgresql.TransientConflict,
                 "The operation could not complete due to a transient transaction conflict. Retry it."),
 
             PostgresErrorCodes.LockNotAvailable => Error.Conflict(
-                PostgresClassifiedErrorCodes.LockTimeout,
+                PersistenceErrorCodes.Postgresql.LockTimeout,
                 "The data is locked by another operation. Retry it."),
 
             PostgresErrorCodes.QueryCanceled => Error.Timeout(
-                PostgresClassifiedErrorCodes.StatementTimeout,
+                PersistenceErrorCodes.Postgresql.StatementTimeout,
                 "The operation took too long and was cancelled. Retry it."),
 
             PostgresErrorCodes.InsufficientPrivilege => Error.Forbidden(
-                PostgresClassifiedErrorCodes.InsufficientPrivilege,
+                PersistenceErrorCodes.Postgresql.InsufficientPrivilege,
                 "The operation is not permitted."),
 
             _ => null,
@@ -107,15 +108,15 @@ public static class PostgresExceptionClassifier
     private static Error ForeignKeyError(ForeignKeyViolationKind kind) => kind switch
     {
         ForeignKeyViolationKind.MissingReference => Error.Validation(
-            PostgresClassifiedErrorCodes.ForeignKeyReferenceMissing,
+            PersistenceErrorCodes.Postgresql.ForeignKeyReferenceMissing,
             "The operation references a row that does not exist."),
 
         ForeignKeyViolationKind.ReferencedByDependent => Error.Conflict(
-            PostgresClassifiedErrorCodes.ForeignKeyDependentExists,
-            "The row cannot be deleted because another row still references it."),
+            PersistenceErrorCodes.Postgresql.ForeignKeyDependentExists,
+            "The row was not deleted because another row still references it."),
 
         _ => Error.Validation(
-            PostgresClassifiedErrorCodes.ForeignKeyViolation,
+            PersistenceErrorCodes.Postgresql.ForeignKeyViolation,
             "The operation violates a reference between rows."),
     };
 }

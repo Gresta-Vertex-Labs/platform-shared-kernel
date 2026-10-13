@@ -1,4 +1,5 @@
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Encryption;
@@ -16,28 +17,16 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// </para>
 /// <list type="table">
 /// <listheader><term>Code</term><description>Meaning (<see cref="ErrorType"/>)</description></listheader>
-/// <item><term><see cref="MalformedPayloadCode"/></term><description>The stored value is not an encrypted payload: written unencrypted, truncated or altered (<see cref="ErrorType.Unexpected"/>).</description></item>
-/// <item><term><see cref="DecryptionFailedCode"/></term><description>The payload is well-formed but does not authenticate (<see cref="ErrorType.Unexpected"/>).</description></item>
-/// <item><term><see cref="DataKeyInvalidCode"/></term><description>The envelope provider generated a data key that is too short (<see cref="ErrorType.Unexpected"/>).</description></item>
-/// <item><term><see cref="DataKeyUnwrapFailedCode"/></term><description>The provider could not unwrap the stored data key: <see cref="ErrorType.Unavailable"/> or <see cref="ErrorType.Timeout"/> when the provider said so, else <see cref="ErrorType.Unexpected"/>.</description></item>
+/// <item><term><see cref="PersistenceErrorCodes.Encryption.MalformedPayload"/></term><description>The stored value is not an encrypted payload: written unencrypted, truncated or altered (<see cref="ErrorType.Unexpected"/>).</description></item>
+/// <item><term><see cref="PersistenceErrorCodes.Encryption.DecryptionFailed"/></term><description>The payload is well-formed but does not authenticate (<see cref="ErrorType.Unexpected"/>).</description></item>
+/// <item><term><see cref="PersistenceErrorCodes.Encryption.DataKeyInvalid"/></term><description>The envelope provider generated a data key that is too short (<see cref="ErrorType.Unexpected"/>).</description></item>
+/// <item><term><see cref="PersistenceErrorCodes.Encryption.DataKeyUnwrapFailed"/></term><description>The provider could not unwrap the stored data key: <see cref="ErrorType.Unavailable"/> or <see cref="ErrorType.Timeout"/> when the provider said so, else <see cref="ErrorType.Unexpected"/>.</description></item>
 /// </list>
 /// A key that is merely not available is <see cref="EncryptionKeyNotFoundException"/>; a shredded tenant is
 /// <see cref="TenantKeys.TenantKeyShreddedException"/>.
 /// </remarks>
 public sealed class FieldEncryptionException : SharedKernelException
 {
-    /// <summary>The error code of a stored value that is not an encrypted payload.</summary>
-    public const string MalformedPayloadCode = "persistence.encryption.malformed_payload";
-
-    /// <summary>The error code of a payload that does not authenticate.</summary>
-    public const string DecryptionFailedCode = "persistence.encryption.decryption_failed";
-
-    /// <summary>The error code of a data key the envelope provider generated with an invalid length.</summary>
-    public const string DataKeyInvalidCode = "persistence.encryption.data_key_invalid";
-
-    /// <summary>The error code of a stored data key the envelope provider could not unwrap.</summary>
-    public const string DataKeyUnwrapFailedCode = "persistence.encryption.data_key_unwrap_failed";
-
     /// <summary>Initialises a new <see cref="FieldEncryptionException"/>.</summary>
     /// <param name="error">The classified error.</param>
     public FieldEncryptionException(Error error)

@@ -20,7 +20,7 @@ public sealed class NpgsqlConfigurationShapeTests
     private static NpgsqlPersistenceOptions Bind(Dictionary<string, string?> settings, Action<IServiceCollection, IConfiguration> register)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         services.AddLogging();
         register(services, configuration);
         using var provider = services.BuildServiceProvider();
@@ -74,7 +74,7 @@ public sealed class NpgsqlConfigurationShapeTests
     public void MissingConnectionString_NamesBothPlacesItIsReadFrom()
     {
         var configuration = new ConfigurationBuilder().Build();
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         services.AddLogging();
         services.AddSharedKernelNpgsql(configuration, "orders");
         using var provider = services.BuildServiceProvider();
@@ -93,7 +93,7 @@ public sealed class NpgsqlCommandLoggingTests(PostgreSqlContainerFixture fixture
     public async Task ExecutedCommands_AreNotLoggedAtInformation_ButStillAtDebug()
     {
         var recorder = new RecordingLoggerProvider();
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         services.AddLogging(b => b.ClearProviders().SetMinimumLevel(LogLevel.Trace).AddProvider(recorder));
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {

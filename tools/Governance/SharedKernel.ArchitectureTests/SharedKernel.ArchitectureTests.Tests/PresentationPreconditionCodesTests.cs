@@ -1,5 +1,5 @@
 using FluentAssertions;
-using SharedKernel.Persistence.EfCore.Concurrency;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 using Xunit;
@@ -11,7 +11,7 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// recognizing it by error code (<c>Problems:PreconditionFailedErrorCodes</c>).
 /// </summary>
 /// <remarks>
-/// The codes are owned by 06.Persistence (<see cref="ConcurrencyVersion.ConflictErrorCode"/>) and 08.Storage
+/// The codes are owned by 06.Persistence (<see cref="PersistenceErrorCodes.Concurrency.Conflict"/>) and 08.Storage
 /// (<see cref="StorageErrorCodes"/>), which 14.Presentation may not reference, so the WebApi defaults are literals.
 /// This test pins them to the owning constants: renaming a code in either domain fails here instead of silently
 /// turning every stale-version 412 back into a 409.
@@ -25,7 +25,7 @@ public sealed class PresentationPreconditionCodesTests
 
         defaults.Should().BeEquivalentTo(
             [
-                ConcurrencyVersion.ConflictErrorCode,
+                PersistenceErrorCodes.Concurrency.Conflict,
                 StorageErrorCodes.PreconditionFailed,
                 StorageErrorCodes.AlreadyExists,
             ],

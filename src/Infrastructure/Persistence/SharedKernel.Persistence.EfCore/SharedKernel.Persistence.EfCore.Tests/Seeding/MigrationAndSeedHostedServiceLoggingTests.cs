@@ -59,7 +59,7 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
     }
 
     [Fact]
-    public async Task StartAsync_SeederThrows_LogsFailureWarning_NeverLogsCompleted()
+    public async Task StartAsync_SeederThrows_LogsFailureAsAnError_NeverLogsCompleted()
     {
         // Arrange
         var inMemoryLogger = new InMemoryLogger<MigrationAndSeedHostedService<SeedTestDbContext>>();
@@ -89,7 +89,7 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         var records = inMemoryLogger.Records;
-        records.ShouldHaveLogged(new EventId(6004), LogLevel.Warning);
+        records.ShouldHaveLogged(new EventId(6004), LogLevel.Error);
         // The exception object is logged (last parameter), not its type name as a string.
         records.ShouldHaveLoggedWithException(new EventId(6004), typeof(InvalidOperationException));
         records.ShouldNotHaveLogged(new EventId(6003));
@@ -131,11 +131,11 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         var records = inMemoryLogger.Records;
-        records.ShouldHaveLogged(new EventId(6005), LogLevel.Information); // AdvisoryLockAcquired
-        records.ShouldHaveLogged(new EventId(6006), LogLevel.Information); // AdvisoryLockReleased — proves the
+        records.ShouldHaveLogged(new EventId(6005), LogLevel.Debug); // AdvisoryLockAcquired
+        records.ShouldHaveLogged(new EventId(6006), LogLevel.Debug); // AdvisoryLockReleased — proves the
                                                                             // new logging does not disturb the
                                                                             // existing finally-block release ordering.
-        records.ShouldHaveLogged(new EventId(6004), LogLevel.Warning);
+        records.ShouldHaveLogged(new EventId(6004), LogLevel.Error);
         records.ShouldNotHaveLogged(new EventId(6013)); // NoMigrationLockRegistered — a lock WAS registered.
 
         // Each fires exactly once per StartAsync call — never duplicated across the

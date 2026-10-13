@@ -221,7 +221,7 @@ builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedK
 
 ```csharp
 Result<int> result = await PostgresErrorMapping.TryAsync(() => connection.ExecuteAsync(sql, args));
-if (result.IsFailure && result.Error.Code == PostgresClassifiedErrorCodes.UniqueViolation) { /* … */ }
+if (result.IsFailure && result.Error.Code == PersistenceErrorCodes.Postgresql.UniqueViolation) { /* … */ }
 ```
 
 ## Configuration
@@ -261,7 +261,9 @@ Settings of a named database, `SharedKernel:Persistence:{name}` (`NpgsqlPersiste
 
 ### Errors
 
-| PostgreSQL | Type | Code (`PostgresClassifiedErrorCodes`) |
+The codes are declared once in `PersistenceErrorCodes.Postgresql` (`SharedKernel.Persistence.Abstractions`); this package keeps no code constants of its own.
+
+| PostgreSQL | Type | Code (`PersistenceErrorCodes.Postgresql`) |
 | --- | --- | --- |
 | `23505` unique violation | Conflict | `persistence.postgresql.unique_violation` |
 | `23503` foreign key violation | Validation or Conflict | `…foreign_key_reference_missing`, `…foreign_key_dependent_exists`, `…foreign_key_violation` |
@@ -272,15 +274,23 @@ Settings of a named database, `SharedKernel:Persistence:{name}` (`NpgsqlPersiste
 
 ### Logging
 
+Sub-block 6300-6399 (`NpgsqlLoggingEventIds`, `NpgsqlLog`). A log names data sources, roles and lock names, never a host, a connection string,
+a tenant or a statement. Npgsql's own per-command Information log is lowered to Debug.
+
 | Event id | Level | Event |
 | --- | --- | --- |
 | 6300 | Warning | A data source uses an SSL mode below `VerifyFull` |
-| 6301 | Information | Advisory migration lock acquired |
+| 6301 | Debug | Advisory migration lock acquired |
 | 6302 | Warning | Advisory migration lock not acquired within the timeout |
-| 6303 | Information | Advisory migration lock released |
-| 6304 | Warning | Row-level security privilege check failed |
+| 6303 | Debug | Advisory migration lock released |
+| 6304 | Warning | Row-level security privilege check failed (cause: superuser, `BYPASSRLS`, owns a protected table, non-tenant permissive policy) |
 | 6305 | Warning | Row-level security privilege check could not run |
-| 6306 | Information | Row-level security privilege check passed |
+| 6306 | Debug | Row-level security privilege check passed |
+
+### Telemetry
+
+This package creates no `ActivitySource` or `Meter` of its own. The database calls are traced by Npgsql's `Npgsql` source, which
+`WithPersistenceTelemetry()` subscribes to; the persistence spans and instruments are named `SharedKernel.Persistence` (see the EF Core README).
 
 ## Testing
 

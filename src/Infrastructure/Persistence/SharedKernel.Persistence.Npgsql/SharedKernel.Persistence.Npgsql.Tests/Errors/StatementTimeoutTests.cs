@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Npgsql;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.Npgsql.Errors;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Testing.Containers;
@@ -45,7 +46,7 @@ public sealed class StatementTimeoutTests : IAsyncLifetime
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Timeout);
-        result.Error.Code.Should().Be(PostgresClassifiedErrorCodes.StatementTimeout);
+        result.Error.Code.Should().Be(PersistenceErrorCodes.Postgresql.StatementTimeout);
         result.Error.Code.Should().Be("persistence.postgresql.statement_timeout");
     }
 
@@ -82,7 +83,7 @@ public sealed class StatementTimeoutTests : IAsyncLifetime
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Conflict);
-        result.Error.Code.Should().Be(PostgresClassifiedErrorCodes.LockTimeout);
+        result.Error.Code.Should().Be(PersistenceErrorCodes.Postgresql.LockTimeout);
     }
 
     [Fact]

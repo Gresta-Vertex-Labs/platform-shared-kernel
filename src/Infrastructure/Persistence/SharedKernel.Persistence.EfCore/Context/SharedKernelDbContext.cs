@@ -62,7 +62,7 @@ public abstract class SharedKernelDbContext : DbContext
 
         _dependencies = dependencies;
         _options = options;
-        _logger = dependencies.LoggerFactory.CreateLogger(GetType());
+        _logger = dependencies.LoggerFactory.CreateLogger<SharedKernelDbContext>();
         RequestContext = dependencies.InitialRequestContext;
         DomainEventDispatcher = dependencies.DefaultDomainEventDispatcher;
         CrossTenantScope = NewCrossTenantScope(RequestContext);

@@ -1,25 +1,23 @@
 using System.Diagnostics;
+using SharedKernel.Persistence.Abstractions.Diagnostics;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Persistence.EfCore.Diagnostics;
 
 /// <summary>
-/// The shared <see cref="ActivitySource"/> for distributed-tracing spans emitted by
-/// <c>EfRepository{TAggregate,TId}</c>/<c>EfReadRepository{TAggregate,TId}</c> repository operations.
+/// The one <see cref="ActivitySource"/> of the persistence packages, named <see cref="PersistenceTelemetry.Name"/>:
+/// repository spans (<c>persistence {operation}</c>) and, through <c>InternalsVisibleTo</c>, the audit spans of
+/// <c>SharedKernel.Persistence.EfCore.Auditing</c> (<c>persistence audit.{operation}</c>).
 /// </summary>
 /// <remarks>
-/// <para>
-/// Mirrors <c>02.Caching</c>'s <c>SharedKernel.Caching</c>/<c>"1.0"</c> <see cref="ActivitySource"/>
-/// precedent exactly (<c>SharedKernel.Caching.FusionCache/Implementations/FusionCacheService.cs</c>).
-/// BCL <see cref="System.Diagnostics.ActivitySource"/> — zero new NuGet dependency, AOT-safe.
-/// </para>
-/// <para>
-/// <strong>THIS EXACT NAME/VERSION IS THE COORDINATION POINT for <c>13.ServiceDefaults</c>'
-/// <c>WithPersistenceTelemetry</c> wiring</strong> — do not rename without
-/// updating that consumer.
-/// </para>
+/// Spans are <see cref="ActivityKind.Internal"/>: the <c>Client</c> span for the database call is the one Npgsql emits,
+/// and a repository or ledger call is in-process work around it. Failures are recorded through the shared Primitives
+/// recorder (<c>RecordException</c>/<c>RecordResult</c>). A tag never carries a tenant, an actor, a key or a value.
 /// </remarks>
 internal static class PersistenceActivitySource
 {
-    /// <summary>The shared <see cref="ActivitySource"/> instance for this domain.</summary>
-    public static readonly ActivitySource Source = new("SharedKernel.Persistence", "1.0");
+    /// <summary>The shared <see cref="ActivitySource"/> instance for the domain.</summary>
+    public static readonly ActivitySource Source = new(
+        PersistenceTelemetry.Name,
+        TelemetryVersion.Of(typeof(PersistenceActivitySource).Assembly));
 }

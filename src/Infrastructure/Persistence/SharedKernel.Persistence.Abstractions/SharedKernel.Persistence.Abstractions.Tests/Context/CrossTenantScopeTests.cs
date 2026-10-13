@@ -1,8 +1,9 @@
-using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.Abstractions.Diagnostics;
+using SharedKernel.Testing.Telemetry;
 using SharedKernel.Testing.Logging;
 using SharedKernel.Testing.Persistence;
 
@@ -22,7 +23,7 @@ public sealed class CrossTenantScopeTests
     }
 
     private static CrossTenantScope NewScope(string actor = "admin-1", InMemoryLogger<CrossTenantScope>? logger = null) =>
-        new(new FakeAuditActorContext(actor), logger);
+        new(new FakeAuditActorContext(actor), logger ?? new InMemoryLogger<CrossTenantScope>());
 
     [Fact]
     public void IsActive_Initially_False()
@@ -62,7 +63,7 @@ public sealed class CrossTenantScopeTests
     [Fact]
     public async Task Enter_InOneDependencyInjectionScope_IsSharedByThatScope_AndNotLeakedToAConcurrentScope()
     {
-        using var provider = new ServiceCollection()
+        using var provider = new ServiceCollection().AddLogging()
             .AddSingleton<IRequestContext>(new FakeAuditActorContext("svc"))
             .AddSharedKernelCrossTenantScope()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
@@ -152,7 +153,7 @@ public sealed class CrossTenantScopeTests
     }
 
     [Fact]
-    public void Enter_LogsActorKindAndReason_NeverTheActorOrItsTenant()
+    public void Enter_LogsTheActorKindOnly_NeverTheActorItsTenantOrTheReason()
     {
         var logger = new InMemoryLogger<CrossTenantScope>();
         var tenant = new SharedKernel.Execution.Tenancy.TenantId(Guid.Parse("abcdef01-2345-6789-abcd-ef0123456789"));
@@ -163,15 +164,14 @@ public sealed class CrossTenantScopeTests
 
         var record = logger.Records.Should().ContainSingle().Subject;
         record.EventId.Id.Should().Be(6150);
-        record.Message.Should().Contain("User").And.Contain("backfill invoices");
-        logger.Records.ShouldNotLeak("data-migration-job-7f3a", tenant.ToString(), "abcdef01-2345-6789-abcd-ef0123456789");
+        record.Message.Should().Be("A cross-tenant scope was entered by a User actor.");
+        logger.Records.ShouldNotLeak("data-migration-job-7f3a", tenant.ToString(), "abcdef01-2345-6789-abcd-ef0123456789", "backfill invoices");
     }
 
     [Fact]
     public void Enter_CalledTwice_RecordsTwoEntriesTaggedWithActorKind()
     {
-        var recorded = new System.Collections.Concurrent.ConcurrentQueue<(long Value, string? ActorKind)>();
-        using var listener = CreateListener(recorded);
+        using var metrics = MetricRecorder.StartRecording(PersistenceTelemetry.Name);
 
         var scope = NewScope("meter-actor-unique");
         using (scope.Enter("a"))
@@ -179,14 +179,17 @@ public sealed class CrossTenantScopeTests
         {
         }
 
-        lock (recorded)
-            recorded.Count(m => m.ActorKind == nameof(ActorKind.User)).Should().BeGreaterThanOrEqualTo(2);
+        metrics
+            .ShouldHaveInstrument("sharedkernel.persistence.cross_tenant_scope_entries", unit: "{entry}", kind: InstrumentKind.Counter)
+            .ShouldHaveTagSet("sharedkernel.persistence.cross_tenant_scope_entries", "persistence.actor_kind")
+            .ShouldHaveSum("sharedkernel.persistence.cross_tenant_scope_entries", 2, new KeyValuePair<string, object?>("persistence.actor_kind", nameof(ActorKind.User)))
+            .ShouldFollowMetricConvention();
     }
 
     [Fact]
     public void AddSharedKernelCrossTenantScope_RegistersScopedScopeAndAnonymousDefault()
     {
-        var services = new ServiceCollection().AddSharedKernelCrossTenantScope();
+        var services = new ServiceCollection().AddLogging().AddSharedKernelCrossTenantScope();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         using var scope = provider.CreateScope();
@@ -199,43 +202,11 @@ public sealed class CrossTenantScopeTests
     public void AddSharedKernelCrossTenantScope_KeepsAnExistingRequestContext()
     {
         var existing = new FakeAuditActorContext("svc");
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         services.AddSingleton<IRequestContext>(existing);
         services.AddSharedKernelCrossTenantScope();
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IRequestContext>().Should().BeSameAs(existing);
-    }
-
-    private static MeterListener CreateListener(System.Collections.Concurrent.ConcurrentQueue<(long Value, string? ActorKind)> into)
-    {
-        var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, l) =>
-            {
-                if (instrument.Meter.Name == "SharedKernel.Persistence"
-                    && instrument.Name == "persistence.cross_tenant_scope_entries")
-                {
-                    l.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-
-        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
-        {
-            string? actorKind = null;
-            foreach (var tag in tags)
-            {
-                if (tag.Key == "persistence.actor_kind")
-                    actorKind = tag.Value as string;
-            }
-
-            // A concurrent queue, not a locked List: the meter is process-wide, so other tests add while
-            // the assertions enumerate without the lock.
-            into.Enqueue((measurement, actorKind));
-        });
-
-        listener.Start();
-        return listener;
     }
 }

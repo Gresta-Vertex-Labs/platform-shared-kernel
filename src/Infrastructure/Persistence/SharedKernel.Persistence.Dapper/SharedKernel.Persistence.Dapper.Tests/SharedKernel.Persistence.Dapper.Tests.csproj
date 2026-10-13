@@ -32,4 +32,7 @@
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\SharedTestSupport\LoggingConformance.cs" Link="SharedTestSupport\LoggingConformance.cs" />
+  </ItemGroup>
 </Project>
