@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.ServiceDefaults.Logging;
+using SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.ServiceDefaults.Security;
@@ -84,7 +84,7 @@ public sealed class MtlsForwardedHeaderMiddleware(
         if (trustedNetworks.Count > 0
             && !IsTrustedRemoteAddress(context.Connection.RemoteIpAddress, trustedNetworks))
         {
-            MtlsLog.ForwardedCertificateSourceUntrusted(logger);
+            ServiceDefaultsSecurityMtlsLog.ForwardedCertificateRefused(logger);
 
             await next(context).ConfigureAwait(false);
             return;
@@ -107,11 +107,11 @@ public sealed class MtlsForwardedHeaderMiddleware(
                     certificate!.Dispose();
                     return Task.CompletedTask;
                 });
-                MtlsLog.MtlsCertificateAccepted(logger, certificate!.Thumbprint);
+                ServiceDefaultsSecurityMtlsLog.CertificateAccepted(logger, certificate!.Thumbprint);
             }
             else
             {
-                MtlsLog.MtlsCertificateRejected(logger, certificate!.Thumbprint);
+                ServiceDefaultsSecurityMtlsLog.CertificateRejected(logger, certificate!.Thumbprint);
                 certificate.Dispose();
             }
         }

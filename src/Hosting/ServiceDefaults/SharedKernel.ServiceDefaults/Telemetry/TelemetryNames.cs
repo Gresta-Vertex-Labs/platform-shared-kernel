@@ -36,4 +36,10 @@ internal static class TelemetryNames
 
     /// <summary>The ASP.NET Core SignalR server <c>ActivitySource</c> (.NET 10 shared framework).</summary>
     internal const string SignalRServerSource = "Microsoft.AspNetCore.SignalR.Server";
+
+    /// <summary>
+    /// The logger category of Polly's resilience telemetry (<c>Polly</c>). Its records carry the outcome's exception message
+    /// (hosts, URLs, keys), so <c>AddSharedKernelTelemetry()</c> switches the category off.
+    /// </summary>
+    internal const string PollyLogCategory = "Polly";
 }

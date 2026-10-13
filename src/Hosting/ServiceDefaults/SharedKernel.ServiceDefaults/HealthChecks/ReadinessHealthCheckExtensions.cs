@@ -4,7 +4,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
-using SharedKernel.ServiceDefaults.Logging;
+using SharedKernel.ServiceDefaults.Diagnostics;
 
 namespace SharedKernel.ServiceDefaults.HealthChecks;
 
@@ -74,12 +74,11 @@ public static class ReadinessHealthCheckExtensions
         IServiceProvider services,
         IOptions<ReadinessHealthCheckOptions> readinessOptions) : IConfigureOptions<HealthCheckServiceOptions>
     {
-        private const string LoggerCategory = "SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckExtensions";
-
         public void Configure(HealthCheckServiceOptions options)
         {
             var settings = readinessOptions.Value;
-            var logger = services.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory);
+            var loggerFactory = services.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger<ServiceDefaultsLogCategory>();
             var existing = options.Registrations.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             foreach (var probe in services.GetServices<IReadinessProbe>())
@@ -88,7 +87,7 @@ public static class ReadinessHealthCheckExtensions
                 if (string.IsNullOrWhiteSpace(name))
                 {
                     throw new InvalidOperationException(
-                        $"The readiness probe {probe.GetType().FullName} has no name.");
+                        $"The readiness probe '{probe.GetType().FullName}' has no name. Return a non-empty value from IReadinessProbe.Name.");
                 }
 
                 if (settings.ExcludedProbes.Contains(name))
@@ -97,19 +96,18 @@ public static class ReadinessHealthCheckExtensions
                 if (!existing.Add(name))
                 {
                     throw new InvalidOperationException(
-                        $"More than one health check is named '{name}'. Readiness probe names must be unique; exclude one with AddSharedKernelReadiness(o => o.Exclude(\"{name}\")) or rename the other check.");
+                        $"More than one health check is named '{name}'. Exclude one with AddSharedKernelReadiness(o => o.Exclude(\"{name}\")) or rename the other check.");
                 }
 
                 string[] tags = [HealthCheckTags.Ready];
                 options.Registrations.Add(new HealthCheckRegistration(
                     name,
-                    sp => new ReadinessProbeHealthCheck(probe, sp.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory)),
+                    sp => new ReadinessProbeHealthCheck(probe, sp.GetRequiredService<ILogger<ReadinessProbeHealthCheck>>()),
                     failureStatus: null,
                     tags: tags,
                     timeout: settings.Timeout));
 
-                if (logger is not null)
-                    ServiceDefaultsLog.HealthCheckRegistered(logger, name, string.Join(", ", tags));
+                ServiceDefaultsLog.HealthCheckRegistered(logger, name, string.Join(", ", tags));
             }
         }
     }

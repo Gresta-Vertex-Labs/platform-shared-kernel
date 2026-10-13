@@ -5,23 +5,18 @@ using SharedKernel.Primitives.Logging;
 namespace SharedKernel.ServiceDefaults.Tests.Logging;
 
 /// <summary>
-/// Every <c>[LoggerMessage]</c> of the domain's seven production assemblies has a distinct EventId inside the domain
-/// block. Reflection over the attribute is test-side only; production stays reflection-free.
+/// Every <c>[LoggerMessage]</c> of the domain's five logging assemblies has a distinct EventId, inside the sub-block of its
+/// own package. The ownership table is the one in the domain <c>CLAUDE.md</c> (<c>## Logging</c>), so this test and the
+/// platform report share one source. Reflection over the attribute is test-side only; production stays reflection-free.
 /// </summary>
 public sealed class EventIdUniquenessTests
 {
-    private static readonly string[] Assemblies =
-    [
-        "SharedKernel.ServiceDefaults",
-        "SharedKernel.ServiceDefaults.Security",
-        "SharedKernel.ServiceDefaults.Security.Mtls",
-        "SharedKernel.ServiceDefaults.Localization",
-        "SharedKernel.MultiTenancy",
-    ];
+    /// <summary>The domain base, named explicitly: <c>Security.Mtls</c> is 12300 in 12.Security and 13300 here.</summary>
+    private const int DomainBase = LoggingEventIdRanges.ServiceDefaults;
 
     private static List<(string Assembly, string Method, int Id)> Messages() =>
     [
-        .. Assemblies.SelectMany(name => Assembly.Load(name).GetTypes()
+        .. OwnershipTable.Read().Keys.SelectMany(name => Assembly.Load(name).GetTypes()
             .SelectMany(type => type.GetMethods(BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
             .Select(method => (Method: method, Attribute: method.GetCustomAttribute<LoggerMessageAttribute>()))
             .Where(pair => pair.Attribute is not null)
@@ -29,10 +24,22 @@ public sealed class EventIdUniquenessTests
     ];
 
     [Fact]
+    public void TheOwnershipTable_NamesTheFiveLoggingPackages_OneSubBlockEach()
+    {
+        var table = OwnershipTable.Read();
+
+        Assert.Equal(5, table.Count);
+        Assert.Equal(5, table.Values.Distinct().Count());
+        Assert.Equal(1, table["SharedKernel.MultiTenancy"]);
+        Assert.Equal(0, table["SharedKernel.ServiceDefaults"]);
+        Assert.Equal(3, table["SharedKernel.ServiceDefaults.Security.Mtls"]);
+    }
+
+    [Fact]
     public void EveryLoggerMessage_IsFound()
     {
-        // 13000, 13001, 13003, 13004, 13005, 13006, 13007, 13008, 13100, 13101 and 13002.
-        Assert.True(Messages().Count >= 11, "Expected the domain's [LoggerMessage] methods to be discoverable.");
+        // 13000, 13001, 13100, 13101, 13200, 13201, 13300, 13301, 13302, 13303 and 13400.
+        Assert.True(Messages().Count == 11, "Expected the domain's 11 [LoggerMessage] methods to be discoverable.");
     }
 
     [Fact]
@@ -48,24 +55,31 @@ public sealed class EventIdUniquenessTests
     }
 
     [Fact]
-    public void EveryEventId_LiesInTheServiceDefaultsBlock()
+    public void EveryEventId_LiesInTheSubBlockOfItsPackage()
     {
+        var table = OwnershipTable.Read();
+
         var outside = Messages()
-            .Where(message => message.Id < LoggingEventIdRanges.ServiceDefaults || message.Id >= LoggingEventIdRanges.ServiceDefaults + 1000)
-            .Select(message => $"{message.Method} = {message.Id}")
+            .Where(message => !LoggingEventIdRanges.IsInSubBlock(message.Id, DomainBase, table[message.Assembly]))
+            .Select(message => $"{message.Assembly} {message.Method} = {message.Id}")
             .ToList();
 
-        Assert.True(outside.Count == 0, "EventIds outside 13000-13999: " + string.Join("; ", outside));
+        Assert.True(outside.Count == 0, "EventIds outside their package's sub-block: " + string.Join("; ", outside));
     }
 
     [Fact]
-    public void MultiTenancy_KeepsItsOwnSubBlock()
+    public void MultiTenancy_KeepsItsSubBlock()
     {
-        var tenancy = Messages().Where(message => message.Assembly == "SharedKernel.MultiTenancy").ToList();
+        var tenancy = Messages().Where(message => message.Assembly == "SharedKernel.MultiTenancy").Select(m => m.Id).Order().ToList();
 
-        Assert.All(tenancy, message => Assert.InRange(message.Id, 13100, 13199));
-        Assert.All(
-            Messages().Where(message => message.Assembly != "SharedKernel.MultiTenancy"),
-            message => Assert.InRange(message.Id, 13000, 13099));
+        Assert.Equal([13100, 13101], tenancy);
+    }
+
+    [Fact]
+    public void ASecurityDomainMtlsId_FailsTheDomainBaseCheck()
+    {
+        // SharedKernel.Security.Mtls logs in 12300-12399 (12.Security): index 3 of a different domain base.
+        Assert.False(LoggingEventIdRanges.IsInSubBlock(12300, DomainBase, 3));
+        Assert.True(LoggingEventIdRanges.IsInSubBlock(13300, DomainBase, 3));
     }
 }

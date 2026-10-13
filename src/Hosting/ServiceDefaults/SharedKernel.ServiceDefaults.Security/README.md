@@ -100,9 +100,9 @@ public sealed class PlaceOrderHandler(IRequestContext caller) : ICommandHandler<
 
   | Inbound `X-Correlation-Id` | Result |
   | --- | --- |
-  | Absent or whitespace | A new id, `CorrelationIds.New()` (EventId 13006) |
+  | Absent or whitespace | A new id, `CorrelationIds.New()` (EventId 13200) |
   | Accepted by `CorrelationIds.IsValid` (≤ 128 characters of `[A-Za-z0-9-_:.]`) | Kept unchanged |
-  | Anything else | A new id; only the rejected value's **length** is logged (EventId 13007), never its content |
+  | Anything else | A new id; only the rejected value's **length** is logged (EventId 13201), never its content |
 
   The id is set as `Activity` baggage (`WellKnownBaggageKeys.CorrelationId`) for log enrichment and forwarded by every
   outbound adapter through `RequestContextPropagation` (REST, gRPC, the message bus, Temporal).
@@ -166,8 +166,10 @@ whatever this setting says.
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13006 | Debug | Created a correlation id for an inbound request that carried none |
-| 13007 | Warning | Rejected a caller-supplied correlation id of length `{CorrelationIdLength}`; created a new one |
+| 13200 | Debug | Created a correlation id for a request that carried none |
+| 13201 | Warning | Replaced an inbound correlation id of length `{CorrelationIdLength}` that failed validation |
+
+Event ids before this release: 13006 → 13200, 13007 → 13201. The package owns the sub-block 13200-13299 of the ServiceDefaults EventId block (13000-13999).
 
 ## Testing
 

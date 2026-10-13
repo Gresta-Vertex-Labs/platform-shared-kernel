@@ -14,6 +14,7 @@ public sealed class PersistenceReadinessChecksTests
     public void EfCoreAndDapperDatabaseChecks_CanBeRegisteredTogether()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddHealthChecks()
             .AddDatabaseReadinessCheck<DatabaseReadinessHealthCheckTests.TestDbContext>()
             .AddDapperDatabaseReadinessCheck()

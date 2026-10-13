@@ -9,7 +9,7 @@ using SharedKernel.Testing.Logging;
 namespace SharedKernel.ServiceDefaults.Tests.HealthChecks;
 
 /// <summary>
-/// 13005: a readiness probe that throws logs its exception object (type and stack for the sink), while the
+/// 13001: a readiness probe that throws logs its exception object (type and stack for the sink), while the
 /// network-visible health report shows the type name only.
 /// </summary>
 public sealed class ReadinessProbeLoggingTests
@@ -36,11 +36,14 @@ public sealed class ReadinessProbeLoggingTests
     {
         var (report, records) = await RunAsync(new Probe("throwing", () => throw new InvalidOperationException(Canary)));
 
-        var record = records.ShouldHaveLoggedWithException(13005, typeof(InvalidOperationException));
-        record.LogLevel.Should().Be(LogLevel.Warning);
+        var record = records.ShouldHaveLoggedWithException(13001, typeof(InvalidOperationException));
+        record.LogLevel.Should().Be(LogLevel.Error);
         record.TryGetProperty("ProbeName", out var probeName).Should().BeTrue();
         probeName.Should().Be("throwing");
         record.Message.Should().NotContain(Canary, "the message is the template; the exception object carries the detail");
+        var own = records.Where(r => r.EventId.Id >= 13000 && r.EventId.Id < 13100).ToList();
+        own.ShouldFollowLogConvention();
+        own.ShouldOnlyLogEventIdsInSubBlock(SharedKernel.Primitives.Logging.LoggingEventIdRanges.ServiceDefaults, 0);
 
         var entry = report.Entries["throwing"];
         entry.Description.Should().Contain(nameof(InvalidOperationException)).And.NotContain(Canary);
@@ -53,7 +56,7 @@ public sealed class ReadinessProbeLoggingTests
         var (report, records) = await RunAsync(new Probe("down", () => ReadinessReport.Unhealthy("down")));
 
         report.Entries["down"].Status.Should().Be(HealthStatus.Unhealthy);
-        records.ShouldNotHaveLogged(13005);
+        records.ShouldNotHaveLogged(13001);
     }
 
     [Fact]
@@ -79,7 +82,7 @@ public sealed class ReadinessProbeLoggingTests
         }
 
         var factory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
-        factory.Loggers.Values.SelectMany(logger => logger.Records).ToList().ShouldNotHaveLogged(13005);
+        factory.Loggers.Values.SelectMany(logger => logger.Records).ToList().ShouldNotHaveLogged(13001);
     }
 
     private sealed class Probe(string name, Func<ReadinessReport> probe) : IReadinessProbe

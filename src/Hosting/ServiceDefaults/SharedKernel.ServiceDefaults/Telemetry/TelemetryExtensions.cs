@@ -60,6 +60,13 @@ public static class TelemetryExtensions
     /// attributes; the supplied <paramref name="serviceName"/> wins over <c>OTEL_SERVICE_NAME</c>.
     /// </para>
     /// <para>
+    /// <b>Polly logs are off.</b> The standard resilience handler logs each failed attempt's exception message — a host, a
+    /// URL, a key — under the <c>Polly</c> logger category, outside every kernel logger. A <c>Polly</c> category filter at
+    /// <see cref="LogLevel.None"/> is added here (the <c>Polly</c> meter and its metrics are not affected). A service that
+    /// wants those records adds <c>builder.Logging.AddFilter("Polly", …)</c> after this call and accepts what they carry;
+    /// a host composed without this method needs the same filter.
+    /// </para>
+    /// <para>
     /// <b>Duration buckets.</b> A <c>Histogram&lt;double&gt;</c> with unit <c>s</c> in a <c>SharedKernel.*</c> meter
     /// gets the semantic-convention second-scale boundaries; any other histogram keeps the SDK defaults.
     /// </para>
@@ -110,6 +117,12 @@ public static class TelemetryExtensions
                     options.IncludeScopes = true;
                     options.IncludeFormattedMessage = true;
                 });
+
+        // The standard resilience handler logs a failed attempt's exception message (a host, a URL, a key) under the "Polly"
+        // category, outside every kernel logger, and offers no switch to format exceptions. The category is therefore off by
+        // default; the Polly meter (WithCommunicationTelemetry) is unaffected. A service that wants those records back adds
+        // its own filter after this call, knowing what they carry.
+        builder.Logging.AddFilter(TelemetryNames.PollyLogCategory, LogLevel.None);
 
         // AddMeter and AddSource de-duplicate by name, but a second AddView for the same instruments produces a second
         // metric stream, so the duration view is registered once per service collection.

@@ -67,6 +67,8 @@
     -->
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="Polly.Extensions" />
+    <!-- SK.13.ServiceDefaultsConformance C-08, test-only: a faulting typed HttpClient through the standard resilience handler. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <!--
       T-43 (WO-056/P-365) gating proof only. In-memory metric exporter — the metrics-signal
       analogue of this file's existing BaseProcessor&lt;Activity&gt; tracing-capture idiom

@@ -936,7 +936,7 @@ public class SecureDefaultsAssertionTests
     /// T-318: Re-points <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the
     /// real, shipped <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c>
     /// registration method and confirms it still calls
-    /// <c>MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured</c>.
+    /// <c>ServiceDefaultsSecurityMtlsLog.ForwardedHeaderTrustNotConfigured</c>.
     /// </summary>
     /// <remarks>
     /// Originally tracked as a Cross-Domain Dependency pending <c>13.ServiceDefaults</c>
@@ -971,9 +971,9 @@ public class SecureDefaultsAssertionTests
         // Type's FullName against Mono.Cecil's TypeReference.FullName, never invokes a member
         // through it, so no accessibility violation occurs at runtime either.
         var calleeDeclaringType =
-            declaringType.Assembly.GetType("SharedKernel.ServiceDefaults.Logging.MtlsLog")
+            declaringType.Assembly.GetType("SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics.ServiceDefaultsSecurityMtlsLog")
             ?? throw new InvalidOperationException(
-                "Could not resolve SharedKernel.ServiceDefaults.Logging.MtlsLog via " +
+                "Could not resolve ServiceDefaultsSecurityMtlsLog via " +
                 "Assembly.GetType — has it been renamed or moved?");
 
         var act = () =>
@@ -981,11 +981,11 @@ public class SecureDefaultsAssertionTests
                 declaringType,
                 "AddMtlsForwardedHeaderCertificate",
                 calleeDeclaringType,
-                "ForwardedHeaderTrustBoundaryUnconfigured");
+                "ForwardedHeaderTrustNotConfigured");
 
         act.Should().NotThrow(
             because: "the real, shipped AddMtlsForwardedHeaderCertificate's PostConfigure lambda " +
-                     "still calls MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured " +
+                     "still calls ServiceDefaultsSecurityMtlsLog.ForwardedHeaderTrustNotConfigured " +
                      "when TrustedNetworks is left unconfigured (WO-061, C-50/C-53)");
     }
 

@@ -59,8 +59,7 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
         if (duplicates.Length > 0)
         {
             return ValidateOptionsResult.Fail(
-                $"{nameof(TenantResolutionOptions)}.{nameof(TenantResolutionOptions.StrategyOrder)} lists " +
-                $"strategy name(s) more than once: {string.Join(", ", duplicates)}.");
+                $"{nameof(TenantResolutionOptions)}.{nameof(TenantResolutionOptions.StrategyOrder)} lists the strategy names more than once: {string.Join(", ", duplicates.Select(d => $"'{d}'"))}. List each strategy name once.");
         }
 
         using var scope = serviceProvider.CreateScope();
@@ -88,9 +87,7 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
                 : string.Join(", ", registeredNames);
 
             return ValidateOptionsResult.Fail(
-                $"{nameof(TenantResolutionOptions)}.{nameof(TenantResolutionOptions.StrategyOrder)} references " +
-                $"unregistered strategy name(s): {string.Join(", ", unmatched)}. Currently registered " +
-                $"ITenantResolutionStrategy.StrategyName value(s): {registeredNamesDisplay}.");
+                $"{nameof(TenantResolutionOptions)}.{nameof(TenantResolutionOptions.StrategyOrder)} references strategy names that are not registered: {string.Join(", ", unmatched.Select(u => $"'{u}'"))}. The registered strategy names are: {registeredNamesDisplay}. Register the strategy or remove the name from the order.");
         }
 
         return ValidateOptionsResult.Success;

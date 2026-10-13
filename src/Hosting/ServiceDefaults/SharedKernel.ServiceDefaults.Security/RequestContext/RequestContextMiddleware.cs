@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Propagation;
+using SharedKernel.ServiceDefaults.Security.Diagnostics;
 
 namespace SharedKernel.ServiceDefaults.Security;
 
@@ -50,7 +51,7 @@ namespace SharedKernel.ServiceDefaults.Security;
 /// is intentional: this middleware owns the request's scope and correlation id, tenant resolution owns the tenant.
 /// </para>
 /// </remarks>
-internal sealed partial class RequestContextMiddleware(
+internal sealed class RequestContextMiddleware(
     RequestDelegate next,
     ILogger<RequestContextMiddleware> logger,
     IOptions<RequestContextOptions>? options = null)
@@ -128,25 +129,13 @@ internal sealed partial class RequestContextMiddleware(
         {
             // Never log the rejected value itself: an unvalidated caller-controlled string is exactly the
             // log-injection vector this check exists for. Its length is enough to investigate.
-            LogCorrelationIdRejected(logger, supplied.Length);
+            ServiceDefaultsSecurityLog.CorrelationIdRejected(logger, supplied.Length);
         }
         else
         {
-            LogCorrelationIdGenerated(logger);
+            ServiceDefaultsSecurityLog.CorrelationIdCreated(logger);
         }
 
         return CorrelationIds.New();
     }
-
-    [LoggerMessage(
-        EventId = 13006,
-        Level = LogLevel.Debug,
-        Message = "Created a correlation id for an inbound request that carried none.")]
-    private static partial void LogCorrelationIdGenerated(ILogger logger);
-
-    [LoggerMessage(
-        EventId = 13007,
-        Level = LogLevel.Warning,
-        Message = "Rejected a caller-supplied correlation id of length {CorrelationIdLength} that failed validation; created a new one.")]
-    private static partial void LogCorrelationIdRejected(ILogger logger, int correlationIdLength);
 }

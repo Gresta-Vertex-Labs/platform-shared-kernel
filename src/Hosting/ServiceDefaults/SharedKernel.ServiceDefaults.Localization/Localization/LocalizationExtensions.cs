@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharedKernel.MultiTenancy.Catalog;
-using SharedKernel.ServiceDefaults.Logging;
+using SharedKernel.ServiceDefaults.Localization.Diagnostics;
 
 namespace SharedKernel.ServiceDefaults.Localization;
 
@@ -53,7 +53,7 @@ public static class LocalizationExtensions
     /// <para>
     /// <b>Startup warning:</b> when <see cref="LocalizationResolutionOptions.UserPreferenceClaimType"/>
     /// is left unconfigured <i>and</i> no <see cref="ITenantCatalog"/> is registered in DI at all,
-    /// a one-time <see cref="LocalizationLog.LocalizationNoDynamicStrategyCanResolve"/> warning
+    /// a one-time <see cref="ServiceDefaultsLocalizationLog.NoDynamicCultureStepCanResolve"/> warning
     /// fires at startup (forced by <c>ValidateOnStart()</c>, never deferred to first request) —
     /// mirroring this platform's "misconfiguration surfaces at startup, not silently" convention.
     /// This check is deliberately independent of whether
@@ -100,9 +100,8 @@ public static class LocalizationExtensions
                 var tenantCatalogRegistered = services.Any(d => d.ServiceType == typeof(ITenantCatalog));
                 if (options.UserPreferenceClaimType is null && !tenantCatalogRegistered)
                 {
-                    var logger = loggerFactory.CreateLogger(
-                        "SharedKernel.ServiceDefaults.Localization.RequestCultureResolution");
-                    LocalizationLog.LocalizationNoDynamicStrategyCanResolve(logger);
+                    var logger = loggerFactory.CreateLogger<ServiceDefaultsLocalizationLogCategory>();
+                    ServiceDefaultsLocalizationLog.NoDynamicCultureStepCanResolve(logger);
                 }
             })
             .ValidateOnStart();
@@ -126,7 +125,7 @@ public static class LocalizationExtensions
                 LocalizationResolutionStrategy.AcceptLanguageHeader =>
                     new AcceptLanguageHeaderRequestCultureProvider(),
                 _ => throw new InvalidOperationException(
-                    $"Unknown {nameof(LocalizationResolutionStrategy)} value '{strategy}'."),
+                    $"The {nameof(LocalizationResolutionStrategy)} value '{strategy}' is not supported. Use UserPreference, TenantDefault or AcceptLanguageHeader."),
             };
 
             providers.Add(provider);

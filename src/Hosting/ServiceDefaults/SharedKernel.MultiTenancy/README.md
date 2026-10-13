@@ -190,6 +190,8 @@ When a tenant resolves (and is active), `TenantResolutionMiddleware` tags the AS
 | 13100 | Debug | Resolved the tenant with the strategy `{StrategyName}` (no tenant id in the message; the exported record carries it as the ambient `TenantId` attribute) |
 | 13101 | Trace | No tenant resolved, or the resolved tenant is inactive |
 
+The package owns the sub-block 13100-13199 of the ServiceDefaults EventId block (13000-13999); its ids are unchanged.
+
 ## Testing
 
 Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md)

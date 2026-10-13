@@ -68,7 +68,7 @@ public sealed class MtlsLogHygieneTests
     {
         var log = await RunForwardedAsync(accept: true, outsideTrustedNetworks: false);
 
-        var record = log.Records.ShouldHaveLogged(13000, LogLevel.Information);
+        var record = log.Records.ShouldHaveLogged(13300, LogLevel.Debug);
         record.State!.Select(p => p.Key).Should().BeEquivalentTo("Thumbprint", "{OriginalFormat}");
         log.Records.ShouldNotLeak(SubjectCanary, RemoteAddressCanary);
     }
@@ -78,26 +78,26 @@ public sealed class MtlsLogHygieneTests
     {
         var log = await RunForwardedAsync(accept: false, outsideTrustedNetworks: false);
 
-        var record = log.Records.ShouldHaveLogged(13001, LogLevel.Warning);
+        var record = log.Records.ShouldHaveLogged(13301, LogLevel.Warning);
         record.State!.Select(p => p.Key).Should().BeEquivalentTo("Thumbprint", "{OriginalFormat}");
         log.Records.ShouldNotLeak(SubjectCanary, RemoteAddressCanary);
     }
 
     [Fact]
-    public async Task ForwardedFromAnUntrustedSource_Logs13008WithoutParameters_And13001NeverFires()
+    public async Task ForwardedFromAnUntrustedSource_Logs13302WithoutParameters_And13001NeverFires()
     {
         var log = await RunForwardedAsync(accept: true, outsideTrustedNetworks: true);
 
-        log.Records.ShouldHaveLogged(13008, LogLevel.Warning)
+        log.Records.ShouldHaveLogged(13302, LogLevel.Warning)
             .State!.Select(p => p.Key).Should().BeEquivalentTo("{OriginalFormat}");
-        log.Records.ShouldNotHaveLogged(13001);
-        log.Records.ShouldNotHaveLogged(13000);
+        log.Records.ShouldNotHaveLogged(13301);
+        log.Records.ShouldNotHaveLogged(13300);
         log.Records.ShouldNotLeak(SubjectCanary, RemoteAddressCanary);
     }
 
     [Theory]
-    [InlineData(true, 13000)]
-    [InlineData(false, 13001)]
+    [InlineData(true, 13300)]
+    [InlineData(false, 13301)]
     public void KestrelCallback_LogsTheThumbprintOnly(bool accept, int expectedEventId)
     {
         var builder = Host.CreateApplicationBuilder();
@@ -118,7 +118,7 @@ public sealed class MtlsLogHygieneTests
         httpsOptions.ClientCertificateValidation!(certificate, null, SslPolicyErrors.None);
 
         var factory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
-        var log = factory.GetLogger("SharedKernel.ServiceDefaults.Security.MtlsClientCertificateExtensions");
+        var log = factory.GetLogger("SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics.ServiceDefaultsSecurityMtlsLogCategory");
         var record = log.Records.ShouldHaveLogged(expectedEventId);
         record.State!.Select(p => p.Key).Should().BeEquivalentTo("Thumbprint", "{OriginalFormat}");
         log.Records.ShouldNotLeak(SubjectCanary);

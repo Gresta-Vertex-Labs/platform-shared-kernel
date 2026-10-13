@@ -42,7 +42,7 @@ public sealed class TenantResolutionOptionsValidatorTests
         var result = validator.Validate(null, options);
 
         Assert.True(result.Failed);
-        Assert.Contains("more than once: Header", result.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("more than once: 'Header'", result.FailureMessage, StringComparison.Ordinal);
     }
 
     [Fact]

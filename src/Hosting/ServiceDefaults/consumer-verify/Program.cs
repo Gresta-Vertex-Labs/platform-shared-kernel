@@ -13,6 +13,7 @@ using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.ServiceDefaults.Extensions;
+using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
 using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Execution.Context;
@@ -41,6 +42,11 @@ builder
     .WithCommunicationTelemetry()
     .WithWorkflowTelemetry();
 Console.WriteLine("Surface 2b PASS: WithMessagingTelemetry(), WithPersistenceTelemetry(), WithCommunicationTelemetry(), WithWorkflowTelemetry()");
+
+// ── Surface 2c: a service's own check logs its registration (no category argument) ──
+HealthCheckRegistrationLogging.LogRegistration(builder.Services, "ledger", [HealthCheckTags.Ready]);
+builder.Services.AddHealthChecks().AddCheck("ledger", () => HealthCheckResult.Healthy(), [HealthCheckTags.Ready]);
+Console.WriteLine("Surface 2c PASS: HealthCheckRegistrationLogging.LogRegistration(services, name, tags)");
 
 var app = builder.Build();
 

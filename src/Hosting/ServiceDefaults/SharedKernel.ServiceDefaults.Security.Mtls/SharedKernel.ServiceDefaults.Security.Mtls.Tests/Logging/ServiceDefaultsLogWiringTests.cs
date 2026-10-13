@@ -55,7 +55,7 @@ public sealed class ServiceDefaultsLogWiringTests
         await middleware.InvokeAsync(context, validator);
 
         var inMemoryLogger = loggerFactory.GetLogger(typeof(MtlsForwardedHeaderMiddleware).FullName!);
-        var record = inMemoryLogger.Records.ShouldHaveLogged(13000, LogLevel.Information);
+        var record = inMemoryLogger.Records.ShouldHaveLogged(13300, LogLevel.Debug);
         record.TryGetProperty("Thumbprint", out var thumbprint).Should().BeTrue();
         thumbprint.Should().Be(certificate.Thumbprint);
     }
@@ -83,7 +83,7 @@ public sealed class ServiceDefaultsLogWiringTests
         await middleware.InvokeAsync(context, validator);
 
         var inMemoryLogger = loggerFactory.GetLogger(typeof(MtlsForwardedHeaderMiddleware).FullName!);
-        inMemoryLogger.Records.ShouldHaveLogged(13001, LogLevel.Warning);
+        inMemoryLogger.Records.ShouldHaveLogged(13301, LogLevel.Warning);
     }
 
     [Fact]
@@ -109,9 +109,9 @@ public sealed class ServiceDefaultsLogWiringTests
         await middleware.InvokeAsync(context, validator);
 
         var inMemoryLogger = loggerFactory.GetLogger(typeof(MtlsForwardedHeaderMiddleware).FullName!);
-        var record = inMemoryLogger.Records.ShouldHaveLogged(13008, LogLevel.Warning);
+        var record = inMemoryLogger.Records.ShouldHaveLogged(13302, LogLevel.Warning);
         record.State!.Where(p => p.Key != "{OriginalFormat}").Should().BeEmpty("the refusal carries no parameters");
-        inMemoryLogger.Records.ShouldNotHaveLogged(13001);
+        inMemoryLogger.Records.ShouldNotHaveLogged(13301);
         inMemoryLogger.Records.ShouldNotLeak("203.0.113.7");
     }
 
@@ -139,8 +139,8 @@ public sealed class ServiceDefaultsLogWiringTests
         httpsOptions.ClientCertificateValidation!(certificate, null, SslPolicyErrors.None);
 
         var loggerFactory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
-        var inMemoryLogger = loggerFactory.GetLogger("SharedKernel.ServiceDefaults.Security.MtlsClientCertificateExtensions");
-        var record = inMemoryLogger.Records.ShouldHaveLogged(13000, LogLevel.Information);
+        var inMemoryLogger = loggerFactory.GetLogger("SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics.ServiceDefaultsSecurityMtlsLogCategory");
+        var record = inMemoryLogger.Records.ShouldHaveLogged(13300, LogLevel.Debug);
         record.TryGetProperty("Thumbprint", out var thumbprint).Should().BeTrue();
         thumbprint.Should().Be(certificate.Thumbprint);
     }
@@ -169,8 +169,8 @@ public sealed class ServiceDefaultsLogWiringTests
         httpsOptions.ClientCertificateValidation!(certificate, null, SslPolicyErrors.None);
 
         var loggerFactory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
-        var inMemoryLogger = loggerFactory.GetLogger("SharedKernel.ServiceDefaults.Security.MtlsClientCertificateExtensions");
-        inMemoryLogger.Records.ShouldHaveLogged(13001, LogLevel.Warning);
+        var inMemoryLogger = loggerFactory.GetLogger("SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics.ServiceDefaultsSecurityMtlsLogCategory");
+        inMemoryLogger.Records.ShouldHaveLogged(13301, LogLevel.Warning);
     }
 
     [Fact]
@@ -200,7 +200,7 @@ public sealed class ServiceDefaultsLogWiringTests
         await middleware.InvokeAsync(context, validator);
 
         var inMemoryLogger = loggerFactory.GetLogger(typeof(MtlsForwardedHeaderMiddleware).FullName!);
-        var record = inMemoryLogger.Records.ShouldHaveLogged(13000, LogLevel.Information);
+        var record = inMemoryLogger.Records.ShouldHaveLogged(13300, LogLevel.Debug);
 
         record.TryGetProperty("Thumbprint", out var thumbprint).Should().BeTrue();
         thumbprint.Should().Be(certificate.Thumbprint);
@@ -230,7 +230,7 @@ public sealed class ServiceDefaultsLogWiringTests
         {
             var loggerFactory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
             var inMemoryLogger = loggerFactory.GetLogger("SharedKernel.ServiceDefaults.Security.MtlsForwardedHeaderMiddleware");
-            var record = inMemoryLogger.Records.ShouldHaveLogged(13003, LogLevel.Warning);
+            var record = inMemoryLogger.Records.ShouldHaveLogged(13303, LogLevel.Warning);
             record.TryGetProperty("HeaderName", out var headerName).Should().BeTrue();
             headerName.Should().Be("ssl-client-cert");
         }
@@ -257,7 +257,7 @@ public sealed class ServiceDefaultsLogWiringTests
         {
             var loggerFactory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
             var inMemoryLogger = loggerFactory.GetLogger("SharedKernel.ServiceDefaults.Security.MtlsForwardedHeaderMiddleware");
-            inMemoryLogger.Records.ShouldNotHaveLogged(13003);
+            inMemoryLogger.Records.ShouldNotHaveLogged(13303);
         }
         finally
         {
@@ -286,6 +286,6 @@ public sealed class ServiceDefaultsLogWiringTests
 
         var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
         var inMemoryLogger = loggerFactory.GetLogger("SharedKernel.ServiceDefaults.Security.MtlsForwardedHeaderMiddleware");
-        inMemoryLogger.Records.ShouldHaveLoggedCount(13003, 1);
+        inMemoryLogger.Records.ShouldHaveLoggedCount(13303, 1);
     }
 }

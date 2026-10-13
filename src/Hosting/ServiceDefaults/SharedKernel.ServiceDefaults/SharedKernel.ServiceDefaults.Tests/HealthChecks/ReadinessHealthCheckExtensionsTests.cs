@@ -13,6 +13,7 @@ public sealed class ReadinessHealthCheckExtensionsTests
     public void EveryProbe_BecomesAReadyTaggedRegistration_NamedAfterTheProbe()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddHealthChecks().AddSharedKernelReadiness();
         services.AddReadinessProbe(_ => new StubProbe("redis", ReadinessReport.Healthy()));
         services.AddReadinessProbe(_ => new StubProbe("storage-invoices", ReadinessReport.Healthy()));
@@ -70,6 +71,7 @@ public sealed class ReadinessHealthCheckExtensionsTests
     public void ExcludedProbe_IsNotMapped_AndTimeoutIsApplied()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddReadinessProbe(_ => new StubProbe("cache", ReadinessReport.Healthy()));
         services.AddReadinessProbe(_ => new StubProbe("redis", ReadinessReport.Healthy()));
         services.AddHealthChecks().AddSharedKernelReadiness(o =>
@@ -88,6 +90,7 @@ public sealed class ReadinessHealthCheckExtensionsTests
     public void CallingTwice_MapsEachProbeOnce()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddReadinessProbe(_ => new StubProbe("redis", ReadinessReport.Healthy()));
         services.AddHealthChecks().AddSharedKernelReadiness();
         services.AddHealthChecks().AddSharedKernelReadiness();
@@ -100,6 +103,7 @@ public sealed class ReadinessHealthCheckExtensionsTests
     public void DuplicateProbeNames_FailWithTheName()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddReadinessProbe(_ => new StubProbe("redis", ReadinessReport.Healthy()));
         services.AddReadinessProbe(_ => new StubProbe("redis", ReadinessReport.Healthy()));
         services.AddHealthChecks().AddSharedKernelReadiness();
@@ -113,6 +117,7 @@ public sealed class ReadinessHealthCheckExtensionsTests
     public void NoProbes_MapsNothing_AndKeepsOtherChecks()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSharedKernelHealthChecks().AddSharedKernelReadiness();
         using var provider = services.BuildServiceProvider();
 

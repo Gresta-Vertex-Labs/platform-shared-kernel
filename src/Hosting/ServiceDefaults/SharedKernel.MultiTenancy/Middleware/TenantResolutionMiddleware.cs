@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
-using SharedKernel.MultiTenancy.Logging;
+using SharedKernel.MultiTenancy.Diagnostics;
 using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Primitives.Propagation;
 

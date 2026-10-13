@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using SharedKernel.ServiceDefaults.Logging;
+using SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.ServiceDefaults.Security;
@@ -44,7 +44,7 @@ public static class MtlsForwardedHeaderExtensions
     /// <para>
     /// <b>Trust-boundary warning (WO-061/P-394):</b> when <paramref name="configure"/> leaves
     /// <see cref="MtlsForwardedHeaderOptions.TrustedNetworks"/> empty, a one-time startup
-    /// <c>MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured</c> warning fires the first
+    /// <c>ServiceDefaultsSecurityMtlsLog.ForwardedHeaderTrustNotConfigured</c> warning fires the first
     /// time <see cref="MtlsForwardedHeaderOptions"/> is resolved — forced to happen during host
     /// startup by the <c>.ValidateOnStart()</c> chain below, not deferred to first request.
     /// </para>
@@ -63,14 +63,13 @@ public static class MtlsForwardedHeaderExtensions
             {
                 if (configuredOptions.TrustedNetworks.Count == 0)
                 {
-                    var logger = loggerFactory.CreateLogger(
-                        "SharedKernel.ServiceDefaults.Security.MtlsForwardedHeaderMiddleware");
-                    MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured(logger, configuredOptions.HeaderName);
+                    var logger = loggerFactory.CreateLogger<MtlsForwardedHeaderMiddleware>();
+                    ServiceDefaultsSecurityMtlsLog.ForwardedHeaderTrustNotConfigured(logger, configuredOptions.HeaderName);
                 }
             })
             .Validate(
                 static options => !string.IsNullOrWhiteSpace(options.HeaderName),
-                $"{nameof(MtlsForwardedHeaderOptions)}.{nameof(MtlsForwardedHeaderOptions.HeaderName)} must be configured explicitly — it carries no default tied to any one ingress/gateway vendor's convention.")
+                $"{nameof(MtlsForwardedHeaderOptions)}.{nameof(MtlsForwardedHeaderOptions.HeaderName)} is not set. Set it to the header your ingress forwards the client certificate in; it has no default because no header name is common to every ingress.")
             .ValidateOnStart();
 
         return builder;

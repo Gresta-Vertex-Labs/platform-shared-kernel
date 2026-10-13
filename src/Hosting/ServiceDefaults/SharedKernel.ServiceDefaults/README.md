@@ -92,7 +92,7 @@ assembly's name.
   | Probe report | Health status |
   | --- | --- |
   | `ReadinessStatus.Healthy` / `Degraded` / `Unhealthy` | `Healthy` / `Degraded` / `Unhealthy` |
-  | The probe throws | `Unhealthy`, exception type only in the report; the exception object is logged (EventId 13005) |
+  | The probe throws | `Unhealthy`, exception type only in the report; the exception object is logged (EventId 13001) |
 
   The report's latency is added as `LatencyMilliseconds`. Registration order does not matter: probes are read when
   health checks are first resolved. Two probes with the same name fail resolution with an exception naming the duplicate.
@@ -161,7 +161,7 @@ app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authenticati
 | `HealthCheckNames` | `database`, `database-dapper`, `persistence-startup`, `startup` |
 | `HealthCheckTags` | `live`, `ready`, `db` |
 | `RateLimitPolicyNames.Authentication` | `"authentication"` |
-| `HealthCheckRegistrationLogging.LogRegistration(services, categoryName, name, tags)` | Logs a readiness check's registration from a check of your own |
+| `HealthCheckRegistrationLogging.LogRegistration(services, name, tags)` | Logs a health check's registration (EventId 13000) from a check of your own; needs logging services in the host |
 | `BaggageLogRecordProcessor` | The log-record enricher `AddServiceDefaults()` installs |
 
 ### Telemetry
@@ -190,17 +190,15 @@ builder.WithMessagingTelemetry();         // MassTransit's own spans and metrics
 builder.WithWorkflowTelemetry();          // Temporal client, workflow and activity spans
 ```
 
-### Breaking changes
+### Resilience logs
 
-- `WithApplicationTelemetry()`, `WithCachingTelemetry()`, `WithIntegrationTelemetry()`, `WithIntelligenceTelemetry()`,
-  `WithReportingTelemetry()`, `WithSchedulingTelemetry()`, `WithSearchTelemetry()` and `WithStorageTelemetry()` are
-  removed: they wired only `SharedKernel.*` names, which `AddServiceDefaults()` now exports. Delete the calls.
-- `WithMessagingTelemetry()`, `WithPersistenceTelemetry()` and `WithWorkflowTelemetry()` no longer subscribe
-  `SharedKernel.*` names (the wildcard covers them). `WithWorkflowTelemetry()` now exports Temporal's tracing sources.
-- `service.version` is the entry assembly's informational version (build metadata kept, for example `1.4.0+3f2a9c1`)
-  instead of its four-part assembly version, and `0.0.0` when there is no entry assembly. Dashboards that group by
-  the old value need the new one.
-- A kernel source or meter named outside `SharedKernel.` is no longer exportable by a registration here.
+The standard resilience handler (`AddStandardResilienceHandler`) logs every failed attempt under the `Polly` logger
+category with the outcome's exception message as the `{Result}` property: a host, a URL, a key. It offers no switch to
+format exceptions and sits outside every kernel logger, so `AddServiceDefaults()` adds a `Polly` category filter at
+`LogLevel.None`. The `Polly` meter (`WithCommunicationTelemetry()`) is unaffected. A service that wants those records back
+calls `builder.Logging.AddFilter("Polly", LogLevel.Warning)` after `AddServiceDefaults()` and accepts what they carry; a
+host composed without `AddServiceDefaults()` needs the same filter. `service.version` is the entry assembly's
+informational version (build metadata kept, for example `1.4.0+3f2a9c1`), `0.0.0` when there is no entry assembly.
 
 ### Health
 
@@ -213,8 +211,12 @@ Kernel probe names: `messaging`, `redis`, `cache`, `encryption-key-provider`, `f
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13002 | Information | Health check registered (name: `{HealthCheckName}`, tags: `{Tags}`) |
-| 13005 | Warning | Readiness probe `{ProbeName}` threw instead of reporting unhealthy (the exception is passed to the logger) |
+| 13000 | Information | Registered the health check `'{HealthCheckName}'` with the tags `'{Tags}'` |
+| 13001 | Error | The readiness probe `'{ProbeName}'` threw an exception instead of reporting its state (the exception is passed to the logger) |
+
+This package owns the sub-block 13000-13099 of the ServiceDefaults EventId block (13000-13999); every `[LoggerMessage]` of the domain stays inside its package's sub-block. Loggers are required dependencies: resolving health checks in a host without logging services throws.
+
+Event ids before this release: 13002 → 13000, 13005 → 13001.
 
 ## Testing
 

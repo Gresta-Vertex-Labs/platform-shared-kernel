@@ -67,10 +67,7 @@ public sealed class CachedTenantCatalog : ITenantCatalog
         ArgumentNullException.ThrowIfNull(keyProvider);
 
         var resolvedTtl = ttl ?? DefaultTtl;
-        if (resolvedTtl <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(ttl), resolvedTtl, "The cache TTL must be positive.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(resolvedTtl, TimeSpan.Zero, nameof(ttl));
 
         _inner = inner;
         _cache = cache;
