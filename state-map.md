@@ -19,7 +19,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 
 | # | Domain | Packages | Status | Open items |
 | --- | --- | --- | --- | --- |
-| 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ○ | Next: `SK.00.ObservabilityEnforce` (WO-087, after Phase 2) |
+| 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ● | None |
 | 01 | [Core](src/Foundation/state-map.md) | 13 (10 Foundation, 3 Adapter) | ● | None |
 | 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ● | None |
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ● | None |
@@ -411,7 +411,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-618 — Switch the observability rules to errors (Phase 3)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 00.Governance
 **Depends on:** P-583, P-600, P-601, P-602, P-603, P-604, P-605, P-606, P-607, P-608, P-609, P-610, P-611, P-612, P-613, P-614, P-615, P-616, P-617
 **Phase key:** `SK.00.ObservabilityEnforce`
