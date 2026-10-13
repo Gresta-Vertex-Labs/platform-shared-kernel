@@ -1,3 +1,5 @@
 #nullable enable
 SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions
 static SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions.WithCaching(this SharedKernel.Application.Pipeline.ApplicationPipelineBuilder! builder) -> SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!
+const SharedKernel.Application.Pipeline.Caching.PipelineCachingDiagnostics.MeterName = "SharedKernel.Application" -> string!
+SharedKernel.Application.Pipeline.Caching.PipelineCachingDiagnostics

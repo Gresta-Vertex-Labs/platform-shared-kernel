@@ -16,7 +16,7 @@ namespace SharedKernel.Application.Pipeline.Validation;
 /// Runs every registered validator <b>sequentially</b> — not <c>Task.WhenAll</c> — since a
 /// validator may use a scoped resource (e.g. a <c>DbContext</c>) that is not safe for concurrent
 /// use. Every error across every validator is collected and aggregated into a single
-/// <c>Error.Validation(errors)</c>, whose <see cref="Error.Details"/> carries each one. The aggregate
+/// <c>ApplicationErrors.ValidationFailed(errors)</c>, whose <see cref="Error.Details"/> carries each one. The aggregate
 /// is returned as a <c>Result.Failure</c>/<c>Result&lt;T&gt;.Failure</c> — <b>never thrown</b> — and
 /// the handler does not run.
 /// </para>
@@ -60,7 +60,7 @@ internal sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IReque
         }
 
         if (errors is { Count: > 0 })
-            return FailureResponse.Create<TResponse>(Error.Validation(errors));
+            return FailureResponse.Create<TResponse>(ApplicationErrors.ValidationFailed(errors));
 
         return await next().ConfigureAwait(false);
     }

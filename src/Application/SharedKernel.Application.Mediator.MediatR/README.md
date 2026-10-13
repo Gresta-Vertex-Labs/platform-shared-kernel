@@ -75,7 +75,7 @@ flowchart LR
 
 - **`Send`** runs `RequestPipeline<TRequest, TResponse>` — every registered `IPipelineBehavior<TRequest, TResponse>`,
   outermost first, then the handler. **`CreateStream`** runs `StreamRequestPipeline<,>` with the stream behaviors:
-  stream observability (an `application stream` span, a `request.kind` = `stream` duration measurement and a
+  stream observability (an `application stream` span, an `application.request_kind` = `stream` duration measurement and a
   `sharedkernel.application.stream.items` count, all starting at the first read) and then the `[RequirePermission]`
   check.
 - **Discovery is `AddSharedKernelApplication`'s job.** It finds the handlers, validators and domain-event handlers of

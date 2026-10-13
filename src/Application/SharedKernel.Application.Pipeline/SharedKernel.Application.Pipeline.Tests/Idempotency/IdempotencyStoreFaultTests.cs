@@ -98,7 +98,7 @@ public sealed class IdempotencyStoreFaultTests
         }
 
         // The request span (opened by the tracing behavior) carries the exception event; its status comes from the Result.
-        var request = probe.Spans.Single(span => span.OperationName == nameof(Charge));
+        var request = probe.Spans.Single(span => span.OperationName == "application send");
         request.ShouldHaveEvent("exception");
         request.ShouldHaveTag("error.code", "idempotency.store_unavailable");
         request.Tags.Select(tag => tag.Value).Should().NotContain(value => value != null && value.Contains(SentinelFaultText));

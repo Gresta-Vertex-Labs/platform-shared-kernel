@@ -113,7 +113,7 @@ public sealed class CachingBehaviorTests
             return Task.FromResult(1);
         }, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*must return Result<String>*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*must return 'Result<System.String>'*");
         nextCalled.Should().BeFalse();
     }
 

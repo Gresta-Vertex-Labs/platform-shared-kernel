@@ -189,7 +189,7 @@ public sealed class UseMediatRTests
         }
 
         activities.RecordedActivities
-            .Where(span => span.OperationName == "application stream" && Equals(span.GetTagItem("request.type"), requestType))
+            .Where(span => span.OperationName == "application stream" && Equals(span.GetTagItem("application.request_type"), requestType))
             .Should().ContainSingle().Which
             .ShouldHaveOutcome("success")
             .ShouldBeRecordedSuccess();
@@ -197,13 +197,13 @@ public sealed class UseMediatRTests
             .ShouldHaveMeasurement(
                 "sharedkernel.application.request.duration",
                 null,
-                new KeyValuePair<string, object?>("request.type", requestType),
-                new KeyValuePair<string, object?>("request.kind", "stream"),
+                new KeyValuePair<string, object?>("application.request_type", requestType),
+                new KeyValuePair<string, object?>("application.request_kind", "stream"),
                 new KeyValuePair<string, object?>("outcome", "success"))
             .ShouldHaveSum(
                 "sharedkernel.application.stream.items",
                 3,
-                new KeyValuePair<string, object?>("request.type", requestType));
+                new KeyValuePair<string, object?>("application.request_type", requestType));
     }
 
     [Fact]

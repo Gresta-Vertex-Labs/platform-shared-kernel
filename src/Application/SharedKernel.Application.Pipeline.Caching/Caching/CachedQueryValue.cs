@@ -26,8 +26,8 @@ internal static class CachedQueryValue<TValue>
         if (typeof(TResponse) != typeof(Result<TValue>))
         {
             throw new InvalidOperationException(
-                $"A query implementing ICacheableQuery<{typeof(TValue).Name}> must return Result<{typeof(TValue).Name}>, "
-                    + $"but its pipeline returns {typeof(TResponse).Name}.");
+                $"A query implementing ICacheableQuery<TValue> must return 'Result<{typeof(TValue).FullName ?? typeof(TValue).Name}>', "
+                    + $"but its pipeline returns '{typeof(TResponse).FullName ?? typeof(TResponse).Name}'.");
         }
 
         return refresh

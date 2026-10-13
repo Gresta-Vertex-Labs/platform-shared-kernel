@@ -129,7 +129,7 @@ public sealed class ApplicationPipelineTestHarnessTests
 
         var expectedTag = typeof(SucceedingCommand).FullName ?? nameof(SucceedingCommand);
         var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.type"), expectedTag))
+            .Where(a => Equals(a.GetTagItem("application.request_type"), expectedTag))
             .ToList();
         Assert.Single(spans);
     }
@@ -228,12 +228,12 @@ public sealed class ApplicationPipelineTestHarnessTests
         Assert.Contains(
             harness.CapturedActivities,
             activity => activity.OperationName == "application stream"
-                && Equals(activity.GetTagItem("request.type"), requestType));
+                && Equals(activity.GetTagItem("application.request_type"), requestType));
         Assert.Contains(
             harness.CapturedMeasurements,
             measurement => measurement.InstrumentName == "sharedkernel.application.request.duration"
-                && measurement.Tags.Any(tag => tag.Key == "request.type" && Equals(tag.Value, requestType))
-                && measurement.Tags.Any(tag => tag.Key == "request.kind" && Equals(tag.Value, "stream")));
+                && measurement.Tags.Any(tag => tag.Key == "application.request_type" && Equals(tag.Value, requestType))
+                && measurement.Tags.Any(tag => tag.Key == "application.request_kind" && Equals(tag.Value, "stream")));
     }
 
     [Fact]

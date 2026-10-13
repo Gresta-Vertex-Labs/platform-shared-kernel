@@ -245,6 +245,14 @@ public sealed class ConsumerVerifyTests
     }
 
     [Fact]
+    public void TelemetryNames_ArePublicConstantsOfThePackedPipelineAssembly()
+    {
+        // A host or test that subscribes by name uses these instead of typing the literal.
+        Assert.Equal("SharedKernel.Application", ApplicationDiagnostics.ActivitySourceName);
+        Assert.Equal("SharedKernel.Application", ApplicationDiagnostics.MeterName);
+    }
+
+    [Fact]
     public async Task Command_BlankIdempotencyKey_IsKeyRequired()
     {
         var (sender, journal, _) = Build();

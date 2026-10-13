@@ -2,7 +2,9 @@ using SharedKernel.Application.Caching;
 using System.Diagnostics;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Application.Pipeline.Caching.Diagnostics;
 using SharedKernel.Application.Pipeline.Caching.Shared;
+using SharedKernel.Application.Pipeline.Tracing;
 using SharedKernel.Execution.Context;
 using SharedKernel.Caching.Abstractions;
 
@@ -48,7 +50,7 @@ namespace SharedKernel.Application.Pipeline.Caching;
 /// query's policy. Fail-safe and every other setting are kept.
 /// </para>
 /// </remarks>
-internal sealed partial class CachingBehavior<TRequest, TResponse>(
+internal sealed class CachingBehavior<TRequest, TResponse>(
     ICacheService cacheService,
     ITenantCacheKeyProvider cacheKeys,
     CachingBehaviorsMetrics metrics,
@@ -78,7 +80,7 @@ internal sealed partial class CachingBehavior<TRequest, TResponse>(
                 requestContext?.UserId,
                 out var key))
         {
-            LogScopeUnavailable(logger, QueryTypeName, scope);
+            PipelineCachingLog.QueryScopeUnavailable(logger, QueryTypeName, CacheTelemetryNames.Of(scope));
             Record(scope, CacheOutcome.BypassedScopeUnavailable);
             return await next().ConfigureAwait(false);
         }
@@ -98,25 +100,13 @@ internal sealed partial class CachingBehavior<TRequest, TResponse>(
 
     private void Record(CacheScope scope, CacheOutcome outcome)
     {
-        metrics.RecordQueryOutcome(QueryTypeName, scope, outcome);
-        LogOutcome(logger, QueryTypeName, scope, outcome);
+        metrics.RecordLookup(QueryTypeName, scope, outcome);
+        PipelineCachingLog.QueryCacheResult(logger, QueryTypeName, CacheTelemetryNames.Of(outcome), CacheTelemetryNames.Of(scope));
 
         // Annotates the request span the TracingBehavior already started rather than starting one of
         // its own: a cache lookup is a property of the request, not a separate unit of work, and a
         // new ActivitySource name would export nothing until a host registered it.
-        Activity.Current?.SetTag("sharedkernel.cache.outcome", outcome.ToString());
-        Activity.Current?.SetTag("sharedkernel.cache.scope", scope.ToString());
+        Activity.Current?.SetTag(ApplicationTagKeys.CacheResult, CacheTelemetryNames.Of(outcome));
+        Activity.Current?.SetTag(ApplicationTagKeys.CacheScope, CacheTelemetryNames.Of(scope));
     }
-
-    [LoggerMessage(
-        EventId = CachingBehaviorsLoggingEventIds.LogQueryCacheOutcome,
-        Level = LogLevel.Debug,
-        Message = "Query {QueryType} cache outcome {CacheOutcome} at {CacheScope} scope")]
-    private static partial void LogOutcome(ILogger logger, string queryType, CacheScope cacheScope, CacheOutcome cacheOutcome);
-
-    [LoggerMessage(
-        EventId = CachingBehaviorsLoggingEventIds.LogQueryScopeUnavailable,
-        Level = LogLevel.Warning,
-        Message = "Query {QueryType} declares {CacheScope} cache scope but that identity is unavailable on this request; the cache was skipped and the handler ran")]
-    private static partial void LogScopeUnavailable(ILogger logger, string queryType, CacheScope cacheScope);
 }

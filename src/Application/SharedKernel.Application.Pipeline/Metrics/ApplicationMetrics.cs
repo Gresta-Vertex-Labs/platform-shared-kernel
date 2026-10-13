@@ -16,7 +16,7 @@ namespace SharedKernel.Application.Pipeline.Metrics;
 internal sealed class ApplicationMetrics
 {
     /// <summary>The meter name every instrument in this domain is recorded under.</summary>
-    internal const string MeterName = "SharedKernel.Application";
+    internal const string MeterName = ApplicationDiagnostics.MeterName;
 
     /// <summary>The instrument name for the per-request duration histogram.</summary>
     internal const string RequestDurationName = "sharedkernel.application.request.duration";
@@ -33,7 +33,7 @@ internal sealed class ApplicationMetrics
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
 
-        var meter = meterFactory.Create(MeterName);
+        var meter = meterFactory.Create(new MeterOptions(MeterName) { Version = ApplicationDiagnostics.TelemetryVersionText });
         _requestDuration = meter.CreateHistogram<double>(
             RequestDurationName,
             unit: "s",

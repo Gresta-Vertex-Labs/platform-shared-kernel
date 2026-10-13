@@ -53,8 +53,8 @@ internal static class FailureResponse
             if (method is null || method.ReturnType != typeof(TResponse))
             {
                 throw new InvalidOperationException(
-                    $"Cannot construct a failure response of type '{typeof(TResponse).FullName}'. " +
-                    "The request type's response must be Result or Result<T> — a type exposing a " +
+                    $"A failure response of type '{typeof(TResponse).FullName}' cannot be constructed. " +
+                    "The response of the request must be Result or Result<T>, or a type exposing a " +
                     "public static Failure(Error) factory method returning that same type.");
             }
 

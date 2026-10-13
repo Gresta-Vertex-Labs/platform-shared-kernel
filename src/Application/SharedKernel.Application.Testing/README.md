@@ -151,7 +151,7 @@ audit.ShouldHaveAudited("customer.rename", "Customer", customerId.ToString());
 ```csharp
 using var harness = new ApplicationPipelineTestHarness().WithActivityCapture();
 // … register, Build, SendAsync …
-Assert.Single(harness.CapturedActivities, a => Equals(a.GetTagItem("request.type"), typeof(PlaceOrder).FullName));
+Assert.Single(harness.CapturedActivities, a => Equals(a.GetTagItem("application.request_type"), typeof(PlaceOrder).FullName));
 ```
 
 ## Reference

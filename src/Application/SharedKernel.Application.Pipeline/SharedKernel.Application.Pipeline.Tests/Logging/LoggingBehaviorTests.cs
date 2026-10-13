@@ -1,44 +1,57 @@
 using SharedKernel.Application.Logging;
 using FluentAssertions;
-using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Pipeline.Logging;
-using SharedKernel.Application.Pipeline.Tests.Support;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Testing.Logging;
 
 namespace SharedKernel.Application.Pipeline.Tests.Logging;
 
 public sealed class LoggingBehaviorTests
 {
+    private const int Handling = 5100;
+    private const int HandledSuccess = 5101;
+    private const int HandledSlow = 5102;
+    private const int HandledFailure = 5103;
+    private const int HandlingThrew = 5104;
+    private const int HandlingCanceled = 5105;
+
     private sealed record TestRequest : IRequest<Result>;
 
-    private static LoggingBehavior<TestRequest, Result> CreateBehavior(
-        FakeLogger<TestRequest> logger,
+    private static (LoggingBehavior<TestRequest, Result> Behavior, InMemoryLogger<LoggingBehavior<TestRequest, Result>> Logger) CreateBehavior(
         TimeSpan? slowThreshold = null)
-        => new(logger, Options.Create(new ApplicationLoggingOptions
-        {
-            SlowRequestThreshold = slowThreshold ?? TimeSpan.FromMilliseconds(500),
-        }));
+    {
+        var logger = new InMemoryLogger<LoggingBehavior<TestRequest, Result>>();
+        var behavior = new LoggingBehavior<TestRequest, Result>(
+            logger,
+            Options.Create(new ApplicationLoggingOptions
+            {
+                SlowRequestThreshold = slowThreshold ?? TimeSpan.FromMilliseconds(500),
+            }));
+        return (behavior, logger);
+    }
 
     [Fact]
-    public async Task Handle_Success_LogsDebugStartAndInformationCompletion()
+    public async Task Handle_Success_LogsDebugStartAndDebugCompletion()
     {
-        var logger = new FakeLogger<TestRequest>();
-        var behavior = CreateBehavior(logger);
+        var (behavior, logger) = CreateBehavior();
 
         await behavior.Handle(new TestRequest(), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
-        logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug);
-        logger.Entries.Should().Contain(e => e.Level == LogLevel.Information);
+        logger.Records.ShouldHaveLogged(Handling, LogLevel.Debug);
+        logger.Records.ShouldHaveLogged(HandledSuccess, LogLevel.Debug);
+        logger.Records.Should().NotContain(record => record.LogLevel >= LogLevel.Information);
+        logger.Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Application, 1);
     }
 
     [Fact]
     public async Task Handle_SuccessOverSlowThreshold_LogsWarning()
     {
-        var logger = new FakeLogger<TestRequest>();
-        var behavior = CreateBehavior(logger, TimeSpan.FromMilliseconds(1));
+        var (behavior, logger) = CreateBehavior(TimeSpan.FromMilliseconds(1));
 
         await behavior.Handle(new TestRequest(), async () =>
         {
@@ -46,35 +59,66 @@ public sealed class LoggingBehaviorTests
             return Result.Success();
         }, CancellationToken.None);
 
-        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("threshold"));
+        logger.Records.ShouldHaveLogged(HandledSlow, LogLevel.Warning).Message.Should().Contain("threshold");
+        logger.Records.ShouldNotHaveLogged(HandledSuccess);
     }
 
     [Fact]
     public async Task Handle_Failure_LogsWarningWithErrorTypeAndCode()
     {
-        var logger = new FakeLogger<TestRequest>();
-        var behavior = CreateBehavior(logger);
+        var (behavior, logger) = CreateBehavior();
         var error = Error.Conflict("test.conflict", "conflict occurred");
 
         await behavior.Handle(new TestRequest(), () => Task.FromResult(Result.Failure(error)), CancellationToken.None);
 
-        logger.Entries.Should().Contain(e =>
-            e.Level == LogLevel.Warning
-            && e.Message.Contains("Conflict")
-            && e.Message.Contains("test.conflict"));
+        var record = logger.Records.ShouldHaveLogged(HandledFailure, LogLevel.Warning);
+        record.Message.Should().Contain("Conflict").And.Contain("test.conflict");
+        record.Message.Should().NotContain("conflict occurred");
     }
 
     [Fact]
-    public async Task Handle_ThrownException_LogsErrorAndRethrows()
+    public async Task Handle_ThrownException_LogsErrorWithTheExceptionAndRethrows()
     {
-        var logger = new FakeLogger<TestRequest>();
-        var behavior = CreateBehavior(logger);
+        var (behavior, logger) = CreateBehavior();
         var thrown = new InvalidOperationException("boom");
 
         var act = async () => await behavior.Handle(new TestRequest(), () => throw thrown, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
-        logger.Entries.Should().Contain(e => e.Level == LogLevel.Error && e.Exception == thrown);
+        var record = logger.Records.ShouldHaveLogged(HandlingThrew, LogLevel.Error);
+        record.Exception.Should().BeSameAs(thrown);
+        record.Message.Should().NotContain("boom");
+    }
+
+    [Fact]
+    public async Task Handle_Cancellation_LogsDebugNotErrorAndRethrows()
+    {
+        var (behavior, logger) = CreateBehavior();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await behavior.Handle(
+            new TestRequest(),
+            () => throw new OperationCanceledException(cts.Token),
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        logger.Records.ShouldHaveLogged(HandlingCanceled, LogLevel.Debug);
+        logger.Records.ShouldNotHaveLogged(HandlingThrew);
+    }
+
+    [Fact]
+    public async Task Handle_TheLoggerCategoryIsTheBehaviorNeverTheRequestType()
+    {
+        var factory = new InMemoryLoggerFactory();
+        var behavior = new LoggingBehavior<TestRequest, Result>(
+            factory.CreateLogger<LoggingBehavior<TestRequest, Result>>(),
+            Options.Create(new ApplicationLoggingOptions()));
+
+        await behavior.Handle(new TestRequest(), () => Task.FromResult(Result.Success()), CancellationToken.None);
+
+        factory.ShouldHaveCategory(typeof(LoggingBehavior<TestRequest, Result>));
+        factory.Loggers.Keys.Should().NotContain(key => key.EndsWith(nameof(TestRequest), StringComparison.Ordinal));
     }
 
     private sealed record LoggableRequest : IRequest<Result<string>>, ILoggableRequest<Result<string>>
@@ -88,7 +132,7 @@ public sealed class LoggingBehaviorTests
     [Fact]
     public async Task Handle_LoggableRequest_OpensRequestAndResponseScopes()
     {
-        var logger = new FakeLogger<LoggableRequest>();
+        var logger = new InMemoryLogger<LoggingBehavior<LoggableRequest, Result<string>>>();
         var behavior = new LoggingBehavior<LoggableRequest, Result<string>>(
             logger, Options.Create(new ApplicationLoggingOptions()));
 
@@ -98,7 +142,6 @@ public sealed class LoggingBehaviorTests
             CancellationToken.None);
 
         await act.Should().NotThrowAsync();
-        // BeginScope is exercised without throwing for a request implementing ILoggableRequest<TResponse> —
-        // the FakeLogger's BeginScope always returns a no-op disposable regardless of TState.
+        logger.Records.ShouldHaveLogged(HandledSuccess, LogLevel.Debug);
     }
 }

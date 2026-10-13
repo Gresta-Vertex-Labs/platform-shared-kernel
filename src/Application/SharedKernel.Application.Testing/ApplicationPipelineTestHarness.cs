@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
+using SharedKernel.Testing.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -36,22 +36,15 @@ namespace SharedKernel.Testing.Application;
 /// (for example with <c>AddFakeApplicationBehaviorServices()</c>) before building.
 /// </para>
 /// <para>
-/// Implements its OWN local <see cref="ActivityListener"/>/<see cref="MeterListener"/> wiring
-/// (self-contained BCL <c>System.Diagnostics</c> code), filtered by the literal string
-/// <c>"SharedKernel.Application"</c>: the source Meter/ActivitySource pair
-/// (<c>ApplicationDiagnostics</c> in <c>SharedKernel.Application.Pipeline</c>) is declared
-/// <see langword="internal"/> to that assembly, so this harness filters by the well-known name.
+/// Span and metric capture run through the shared <c>ActivityRecorder</c> and <c>MetricRecorder</c> of <c>SharedKernel.Testing</c>,
+/// filtered by <see cref="ApplicationDiagnostics.ActivitySourceName"/> and <see cref="ApplicationDiagnostics.MeterName"/>.
 /// </para>
 /// </remarks>
 public sealed class ApplicationPipelineTestHarness : IDisposable
 {
-    private const string ApplicationDiagnosticsName = "SharedKernel.Application";
-
     private readonly ServiceCollection _services = new();
-    private readonly List<Activity> _capturedActivities = [];
-    private readonly MeterListener _meterListener = new();
-    private readonly List<(string InstrumentName, double Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> _capturedMeasurements = [];
-    private ActivityListener? _activityListener;
+    private readonly MetricRecorder _metricRecorder = MetricRecorder.StartRecording(ApplicationDiagnostics.MeterName);
+    private ActivityRecorder? _activityRecorder;
     private ServiceProvider? _provider;
     private Action<ApplicationPipelineBuilder> _configure = static _ => { };
 
@@ -59,21 +52,6 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     public ApplicationPipelineTestHarness()
     {
         _services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-
-        _meterListener.InstrumentPublished = (instrument, listener) =>
-        {
-            if (instrument.Meter.Name == ApplicationDiagnosticsName)
-                listener.EnableMeasurementEvents(instrument);
-        };
-        _meterListener.SetMeasurementEventCallback<double>((instrument, measurement, tags, _) =>
-        {
-            var tagList = new List<KeyValuePair<string, object?>>();
-            foreach (var tag in tags)
-                tagList.Add(tag);
-            lock (_capturedMeasurements)
-                _capturedMeasurements.Add((instrument.Name, measurement, tagList));
-        });
-        _meterListener.Start();
     }
 
     /// <summary>Exposes the underlying <see cref="ServiceCollection"/> for additional test-specific registration.</summary>
@@ -94,23 +72,13 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     }
 
     /// <summary>
-    /// Registers an opt-in <see cref="ActivityListener"/> filtered to the
-    /// <c>"SharedKernel.Application"</c> <see cref="ActivitySource"/>.
+    /// Starts recording the spans of the
+    /// <see cref="ApplicationDiagnostics.ActivitySourceName"/> <see cref="ActivitySource"/> (through <c>ActivityRecorder</c>).
     /// </summary>
     /// <returns>This instance, for fluent chaining.</returns>
     public ApplicationPipelineTestHarness WithActivityCapture()
     {
-        _activityListener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == ApplicationDiagnosticsName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStarted = activity =>
-            {
-                lock (_capturedActivities)
-                    _capturedActivities.Add(activity);
-            },
-        };
-        ActivitySource.AddActivityListener(_activityListener);
+        _activityRecorder ??= ActivityRecorder.StartRecording(ApplicationDiagnostics.ActivitySourceName);
         return this;
     }
 
@@ -179,26 +147,29 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     /// Gets every <see cref="Activity"/> captured so far. Populated only when
     /// <see cref="WithActivityCapture"/> was called first.
     /// </summary>
-    public IReadOnlyList<Activity> CapturedActivities => _capturedActivities;
+    public IReadOnlyList<Activity> CapturedActivities => _activityRecorder?.StartedActivities ?? [];
 
     /// <summary>
-    /// Gets every duration measurement recorded on the <c>"SharedKernel.Application"</c> meter.
+    /// Gets every duration measurement recorded on the <see cref="ApplicationDiagnostics.MeterName"/> meter.
     /// Always captured (no opt-in gate needed).
     /// </summary>
     public IReadOnlyList<(string InstrumentName, double Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> CapturedMeasurements
     {
         get
         {
-            _meterListener.RecordObservableInstruments();
-            return _capturedMeasurements;
+            _metricRecorder.Collect();
+            return [.. _metricRecorder.Instruments
+                .Where(static instrument => instrument.ValueType == typeof(double))
+                .SelectMany(instrument => _metricRecorder.MeasurementsOf(instrument.Name))
+                .Select(static m => (m.InstrumentName, m.Value, m.Tags))];
         }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        _activityListener?.Dispose();
-        _meterListener.Dispose();
+        _activityRecorder?.Dispose();
+        _metricRecorder.Dispose();
         _provider?.Dispose();
     }
 

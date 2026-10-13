@@ -291,7 +291,7 @@ public sealed class IdempotencyBehaviorTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be("ok");
         logger.Entries.Should().ContainSingle(e =>
-            e.Level == LogLevel.Warning && e.Message.Contains("idempotency reservation was lost"));
+            e.Level == LogLevel.Warning && e.Message.Contains("was lost before it could be completed"));
     }
 
     [Fact]

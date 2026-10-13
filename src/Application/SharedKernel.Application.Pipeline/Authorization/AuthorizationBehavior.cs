@@ -105,9 +105,6 @@ internal sealed class StreamAuthorizationBehavior<TRequest, TResponse>(IServiceP
 /// <summary>The check both authorization behaviors run.</summary>
 internal static class PermissionCheck
 {
-    /// <summary>The error code for an unauthenticated caller of a protected request.</summary>
-    internal const string UnauthenticatedCode = ErrorCodes.Unauthorized.Default;
-
     /// <summary>
     /// Returns the denial for the current caller of <typeparamref name="TRequest"/>, or <see langword="null"/> when the
     /// request declares no permission or the caller holds every one.
@@ -122,15 +119,13 @@ internal static class PermissionCheck
             ?? throw new InvalidOperationException(MissingRequestContextMessage(typeof(TRequest)));
 
         if (!requestContext.IsAuthenticated)
-            return Error.Unauthorized(UnauthenticatedCode, "Authentication is required.");
+            return ApplicationErrors.Unauthenticated();
 
         foreach (var anyOf in requirements)
         {
             if (!await HoldsAnyAsync(requestContext, anyOf, cancellationToken).ConfigureAwait(false))
             {
-                return Error.Forbidden(
-                    ErrorCodes.Forbidden.InsufficientPermission,
-                    "The caller does not have the required permission.");
+                return ApplicationErrors.InsufficientPermission();
             }
         }
 
@@ -143,8 +138,8 @@ internal static class PermissionCheck
     /// <param name="requestType">The request type that declares the permission.</param>
     /// <returns>The message, naming the request type and the fix.</returns>
     internal static string MissingRequestContextMessage(Type requestType)
-        => $"'{requestType.FullName}' declares [RequirePermission], but no {nameof(IRequestContext)} is " +
-           "registered, so the caller's permissions cannot be checked; the request was not handled. " +
+        => $"The request '{requestType.FullName}' declares [RequirePermission], but no {nameof(IRequestContext)} is " +
+           "registered, so the caller's permissions cannot be checked and the request was not handled. " +
            PermissionRequirementScan.Fix;
 
     private static async Task<bool> HoldsAnyAsync(

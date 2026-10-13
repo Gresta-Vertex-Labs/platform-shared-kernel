@@ -5,7 +5,7 @@ namespace SharedKernel.Application.Messaging;
 /// </summary>
 /// <remarks>
 /// The read-side counterpart to <see cref="ICommandBase"/> — a pure generic-constraint marker that
-/// lets pipeline plumbing and diagnostics (e.g. the <c>request.kind</c> telemetry tag in
+/// lets pipeline plumbing and diagnostics (e.g. the <c>application.request_kind</c> telemetry tag in
 /// <c>SharedKernel.Application.Pipeline</c>) recognize "any query shape" regardless of the query's
 /// response type. Never implemented by <see cref="ICommand"/> or <see cref="ICommand{TResponse}"/>.
 /// </remarks>

@@ -119,18 +119,18 @@ public sealed class StreamObservabilityBehaviorTests
 
     private static KeyValuePair<string, object?>[] MetricTags<TRequest>(string? outcome = null)
         => outcome is null
-            ? [TelemetryProbe.Tag("request.type", typeof(TRequest).FullName), TelemetryProbe.Tag("request.kind", "stream")]
+            ? [TelemetryProbe.Tag("application.request_type", typeof(TRequest).FullName), TelemetryProbe.Tag("application.request_kind", "stream")]
             :
             [
-                TelemetryProbe.Tag("request.type", typeof(TRequest).FullName),
-                TelemetryProbe.Tag("request.kind", "stream"),
+                TelemetryProbe.Tag("application.request_type", typeof(TRequest).FullName),
+                TelemetryProbe.Tag("application.request_kind", "stream"),
                 TelemetryProbe.Tag("outcome", outcome),
             ];
 
     private static KeyValuePair<string, object?>[] ItemTags<TRequest>(string outcome)
         =>
         [
-            TelemetryProbe.Tag("request.type", typeof(TRequest).FullName),
+            TelemetryProbe.Tag("application.request_type", typeof(TRequest).FullName),
             TelemetryProbe.Tag("outcome", outcome),
         ];
 
@@ -155,8 +155,8 @@ public sealed class StreamObservabilityBehaviorTests
         probe.Spans.ShouldHaveSingleSpan("application stream")
             .ShouldHaveKind(ActivityKind.Internal)
             .ShouldHaveSource("SharedKernel.Application")
-            .ShouldHaveTag("request.type", typeof(Numbers).FullName)
-            .ShouldHaveTag("request.kind", "stream")
+            .ShouldHaveTag("application.request_type", typeof(Numbers).FullName)
+            .ShouldHaveTag("application.request_kind", "stream")
             .ShouldHaveOutcome("success")
             .ShouldBeRecordedSuccess();
         probe.Spans.ShouldFollowSpanConvention();
@@ -203,7 +203,7 @@ public sealed class StreamObservabilityBehaviorTests
 
         probe.Spans.ShouldNotHaveSpan("application stream");
         probe.Metrics.Count(ApplicationMetrics.RequestDurationName, MetricTags<Numbers>()).Should().Be(0);
-        probe.Metrics.Count(ApplicationMetrics.StreamItemsName, TelemetryProbe.Tag("request.type", typeof(Numbers).FullName)).Should().Be(0);
+        probe.Metrics.Count(ApplicationMetrics.StreamItemsName, TelemetryProbe.Tag("application.request_type", typeof(Numbers).FullName)).Should().Be(0);
         probe.Records(provider).Where(record => record.EventId.Id is >= 5140 and <= 5143).Should().BeEmpty();
     }
 

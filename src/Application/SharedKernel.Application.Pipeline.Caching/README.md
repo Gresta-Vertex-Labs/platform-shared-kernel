@@ -72,11 +72,11 @@ public sealed record ApproveOrderCommand(Guid OrderId) : ICommand, IInvalidatesC
 ```
 
 ```text
-GetOrderQuery(42)   tenant acme, first call        -> handler runs, value cached    outcome Miss
-                    tenant acme, second call       -> served from cache             outcome Hit
-                    tenant other, same order id    -> handler runs (different key)  outcome Miss
-                    handler returns NotFound       -> failure returned, NOT cached  outcome NotCachedFailure
-                    tenant could not be resolved   -> cache skipped, handler runs   outcome BypassedScopeUnavailable
+GetOrderQuery(42)   tenant acme, first call        -> handler runs, value cached    result miss
+                    tenant acme, second call       -> served from cache             result hit
+                    tenant other, same order id    -> handler runs (different key)  result miss
+                    handler returns NotFound       -> failure returned, NOT cached  result not_cached_failure
+                    tenant could not be resolved   -> cache skipped, handler runs   result bypassed_scope_unavailable
 
 ApproveOrderCommand(42)   handler succeeds, transaction commits  -> entry evicted, after the commit
                           handler returns a failed Result        -> nothing evicted
@@ -386,18 +386,17 @@ the package's contract is the interfaces above.
 
 ### Telemetry
 
-Both behaviors record under the existing `"SharedKernel.Application"` meter and activity source, so
-`SharedKernel.ServiceDefaults`' `WithApplicationTelemetry()` exports them with no extra registration and no new instrument
-name to add anywhere.
+Both behaviors record under the `"SharedKernel.Application"` meter and activity source (`ApplicationDiagnostics`), so
+the `SharedKernel.*` wildcard of `AddServiceDefaults` exports them with no extra registration.
 
 | Signal | Name | Tags |
 | --- | --- | --- |
-| Counter | `sharedkernel.application.query.cache.outcome` | `sharedkernel.query.type`, `sharedkernel.cache.scope`, `sharedkernel.cache.outcome` |
-| Counter | `sharedkernel.application.command.cache.invalidation` | `sharedkernel.command.type`, `sharedkernel.cache.target`, `sharedkernel.cache.evicted` |
-| Activity tags | on the request span | `sharedkernel.cache.outcome`, `sharedkernel.cache.scope` |
+| Counter | `sharedkernel.application.cache.lookups` (`{lookup}`) | `application.query_type`, `application.cache_scope`, `application.cache_result` |
+| Counter | `sharedkernel.application.cache.evictions` (`{eviction}`) | `application.command_type`, `application.cache_target`, `application.cache_evicted` |
+| Activity tags | on the request span | `application.cache_result`, `application.cache_scope` |
 
-Outcomes: `Hit`, `Miss`, `Refreshed`, `NotCachedFailure`, `NotCachedByPredicate`, `BypassedScopeUnavailable`. Hit
-ratio for one query type is `Hit / (Hit + Miss)`; the other four tell you *why* a call was not a plain hit or miss.
+Results (`application.cache_result`): `hit`, `miss`, `refreshed`, `not_cached_failure`, `not_cached_by_predicate`, `bypassed_scope_unavailable`; scopes `global`, `tenant`, `user`; targets `key`, `tag`. Hit
+ratio for one query type is `hit / (hit + miss)`; the other four tell you *why* a call was not a plain hit or miss.
 
 ### Logging
 
@@ -405,9 +404,9 @@ No tenant id, user id, cache key or cached value is ever a log or metric paramet
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 5200 | Debug | Query `{QueryType}` cache outcome `{CacheOutcome}` at `{CacheScope}` scope |
+| 5200 | Debug | The query had the cache result `{CacheResult}` at the `{CacheScope}` scope |
 | 5201 | Warning | Query declares a scope whose identity is unavailable; the cache was skipped and the handler ran |
-| 5210 | Debug | Command `{CommandType}` evicted `{KeyCount}` key(s) and `{TagCount}` tag(s) after commit |
+| 5210 | Debug | The command evicted `{KeyCount}` cache keys and `{TagCount}` cache tags after the commit |
 | 5211 | Error | A post-commit eviction of one key or tag failed; the cache serves a superseded value until it expires |
 | 5212 | Warning | Command declares a scope whose identity is unavailable; the affected entries were not evicted |
 

@@ -1,6 +1,7 @@
 using System.Reflection;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Application.Pipeline.Shared;
 
@@ -17,15 +18,6 @@ namespace SharedKernel.Application.Pipeline.Shared;
 /// </remarks>
 internal static class ResponseOutcome
 {
-    /// <summary>The <c>outcome</c> tag/log-branch value for a successful response.</summary>
-    internal const string Success = "success";
-
-    /// <summary>The <c>outcome</c> tag/log-branch value for a <c>Result.Failure</c>/<c>Result&lt;T&gt;.Failure</c> response.</summary>
-    internal const string Failure = "failure";
-
-    /// <summary>The <c>outcome</c> tag value recorded when the inner pipeline throws before producing a response.</summary>
-    internal const string Exception = "exception";
-
     /// <summary>
     /// Determines whether <paramref name="response"/> represents a successful outcome.
     /// </summary>
@@ -33,10 +25,10 @@ internal static class ResponseOutcome
         => response is not IHasSuccessFlag flag || flag.IsSuccess;
 
     /// <summary>
-    /// Classifies <paramref name="response"/> as <see cref="Success"/> or <see cref="Failure"/>.
+    /// Classifies <paramref name="response"/> as <see cref="WellKnownOutcomes.Success"/> or <see cref="WellKnownOutcomes.Failure"/>.
     /// </summary>
     internal static string Classify<TResponse>(TResponse response)
-        => IsSuccess(response) ? Success : Failure;
+        => IsSuccess(response) ? WellKnownOutcomes.Success : WellKnownOutcomes.Failure;
 
     /// <summary>
     /// Reads the <see cref="Error"/> carried by a failed <paramref name="response"/>, or
@@ -59,7 +51,7 @@ internal static class ResponseOutcome
         if (response is IHasSuccessFlag { IsSuccess: false })
             return ErrorReader<TResponse>.Read(response);
 
-        return null;
+        return default;
     }
 
     private static class ErrorReader<TResponse>

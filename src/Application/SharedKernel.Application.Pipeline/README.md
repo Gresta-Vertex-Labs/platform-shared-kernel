@@ -143,16 +143,19 @@ They compose: a refund command can be all four at once. Caching markers live in 
 
 #### `TracingBehavior`
 
-Starts an `Activity` named after the request type (`PlaceOrderCommand`), tagged `request.type` (full name)
-and `request.kind` (`command`/`query`/`request`). On a failed `Result` it sets the span status to `Error`
-with `error.type` and `error.code`; on an exception it sets `Error`, records the exception as a span event,
-and rethrows. No listener registered means no allocation.
+Starts the span `application send` (constant name, low cardinality), tagged `application.request_type` (full name),
+`application.request_kind` (`command`/`query`/`request`) and `outcome` (`success`, `failure`, `exception`,
+`canceled`). Failures go through the shared recorder: a failed `Result` sets status `Error` (the error code) with
+`error.type`/`error.code`; an exception sets `Error` described by its **full name** (never its message), adds the
+exception event and rethrows; a cancellation is not an error. No listener registered means no allocation.
 
 #### `LoggingBehavior`
 
-`Debug` on entry, then one completion line: `Information` on success, `Warning` when the elapsed time crosses
-`SlowRequestThreshold` (500 ms by default), `Warning` with the error type and code on a failed `Result`, and
-`Error` with the exception on a throw. Payloads are never logged unless the request opts in by implementing
+`Debug` on entry, then one completion line: `Debug` on success, `Warning` when the elapsed time crosses
+`SlowRequestThreshold` (500 ms by default), `Warning` with the error type and code on a failed `Result`, `Debug`
+on a cancellation and `Error` with the exception on any other throw. The logger category is the behavior
+(`SharedKernel.Application.Pipeline.Logging.LoggingBehavior`), never the request type: filter by that category, or
+by the `{RequestType}` placeholder in the message. Payloads are never logged unless the request opts in by implementing
 `ILoggableRequest<TResponse>`, which supplies exactly the fields it considers safe:
 
 ```csharp
@@ -170,9 +173,9 @@ public sealed record PlaceOrderCommand(string Customer, string CardNumber, decim
 #### `MetricsBehavior`
 
 Records one histogram measurement per request — `sharedkernel.application.request.duration`, **in seconds**,
-from an `IMeterFactory` meter named `SharedKernel.Application`. Tags: `request.type`, `request.kind`,
-`outcome` (`success`/`failure`/`exception`), and `error.type` when not successful. Recorded in a `finally`,
-so a throw is measured too.
+from a versioned `IMeterFactory` meter named `SharedKernel.Application`. Tags: `application.request_type`,
+`application.request_kind`, `outcome` and, for a failure or an exception (never a cancellation), `error.type` (the
+`ErrorType` name or exception full name, the text the span carries). Recorded in a `finally`, so a throw is measured.
 
 #### Authorization
 
@@ -414,6 +417,9 @@ are public so a mediator adapter (and tests) can resolve them; the behaviors are
 
 All come from `ErrorCodes` in `SharedKernel.Primitives`.
 
+Application declares no error codes of its own. A configuration error throws `InvalidOperationException` with a sentence
+naming the remedy; an undefined idempotency reservation status throws `UnreachableException` and never runs the handler.
+
 ### Seams
 
 Each is a contract from a Foundation or Abstractions-tier package, implemented by infrastructure. That is what
@@ -431,35 +437,33 @@ keeps this package from referencing persistence, security or a cache.
 
 | Signal | Name | Detail |
 | --- | --- | --- |
-| Activity source | `SharedKernel.Application` | Span name = request type short name, kind Internal |
-| Span tags | | `request.type`, `request.kind`, plus `error.type`/`error.code` on failure |
-| Meter | `SharedKernel.Application` | via `IMeterFactory` |
-| Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `request.type`, `request.kind` (`command`, `query`, `request` or `stream`), `outcome`, `error.type` |
-| Counter | `sharedkernel.application.stream.items` | `{item}`; items a streaming query yielded, including those before a fault; tags `request.type`, `outcome` |
-| Span | `application stream` | One per enumerated streaming query, kind Internal, tags `request.type`, `request.kind` = `stream`, `outcome` |
+| Activity source | `SharedKernel.Application` (`ApplicationDiagnostics.ActivitySourceName`) | Request span `application send`, kind Internal |
+| Span tags | | `application.request_type`, `application.request_kind`, `outcome`, plus `error.type`/`error.code` on failure |
+| Meter | `SharedKernel.Application` (`ApplicationDiagnostics.MeterName`) | via `IMeterFactory`, versioned |
+| Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `application.request_type`, `application.request_kind` (`command`, `query`, `request` or `stream`), `outcome`, `error.type` |
+| Counter | `sharedkernel.application.stream.items` | `{item}`; items a streaming query yielded, including those before a fault; tags `application.request_type`, `outcome` |
+| Span | `application stream` | One per enumerated streaming query, kind Internal, tags `application.request_type`, `application.request_kind` = `stream`, `outcome` |
 | Span | `application dispatch_events` | One per non-empty domain-event dispatch, tag `application.event_count`, `outcome` |
 | Span | `application handle_event` | One child per event type that has a handler, tag `application.event_type` (and `application.handler_type` when a handler fails), `outcome` |
 | Span | `application transaction` | The transaction around a command, tags `application.transaction_joined`, `application.attempts`, `outcome` |
 
-A stream's span, timer and log start at the first read and end once, at completion, at a fault or when the consumer
-disposes it; a stream that is never read records nothing. Ran to the end is `success`; the caller's cancellation, an
-`OperationCanceledException` or an early dispose is `canceled` (span status stays unset, no error log); any other
-exception is `exception` and is rethrown unchanged. A stream has no slow-request warning, because its consumer sets
-its pace. Failures on the new spans are recorded with the shared recorder, so they carry `error.type` and, for a
-classified exception, `error.code`.
+A stream's span, timer and log start at the first read and end once; a stream never read records nothing. Ran to the
+end is `success`; a cancellation or an early dispose is `canceled` (status unset, no error log); any other exception is
+`exception` and is rethrown unchanged. A stream has no slow-request warning, because its consumer sets its pace.
 
-Wire the meter and activity source into a host with `SharedKernel.ServiceDefaults`' `WithApplicationTelemetry()`,
-which also registers the seconds-based bucket boundaries this histogram needs.
+`AddServiceDefaults` subscribes to every `SharedKernel.*` source and meter by wildcard (and registers this histogram's
+second-scale buckets), so a service registers nothing; to subscribe by name use `ApplicationDiagnostics.ActivitySourceName` and `.MeterName`.
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
 | 5100 | Debug | A request enters the pipeline |
-| 5101 | Information | A request completed successfully |
+| 5101 | Debug | A request completed successfully |
 | 5102 | Warning | A successful request crossed `SlowRequestThreshold` |
 | 5103 | Warning | A request returned a failed `Result` (carries error type and code) |
 | 5104 | Error | A request threw |
+| 5105 | Debug | A request was canceled by its caller |
 | 5110 | Error | A post-commit `OnCompleted` callback threw |
 | 5120 | Warning | `CompleteAsync` reported the idempotency reservation was lost |
 | 5121 | Error (Warning for a classified exception) | The idempotency store threw while reserving the key; the request was not handled |
@@ -474,6 +478,9 @@ which also registers the seconds-based bucket boundaries this histogram needs.
 | 5160 | Warning | A transaction was rolled back because the command returned a failed `Result` |
 | 5161 | Error | A transaction was rolled back because the command threw |
 | 5162 | Warning | The unit of work ran the transaction delegate more than once |
+
+Every event is a one-sentence template, and a log on a caught-exception path passes the exception last. The category is
+the behavior that logs, never the request type. No key, tenant, actor or exception message is a placeholder.
 
 ## Testing
 

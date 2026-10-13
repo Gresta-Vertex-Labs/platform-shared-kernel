@@ -12,7 +12,7 @@ internal static class MetricRecorderExtensions
     public static MetricRecorder ShouldNotCarryErrorTypeFor(this MetricRecorder recorder, Type requestType)
     {
         var offenders = recorder.MeasurementsOf(ApplicationMetrics.RequestDurationName)
-            .Where(measurement => Equals(measurement.TryGetTag("request.type", out var value) ? value : null, requestType.FullName))
+            .Where(measurement => Equals(measurement.TryGetTag("application.request_type", out var value) ? value : null, requestType.FullName))
             .Where(measurement => measurement.TryGetTag("error.type", out _))
             .ToList();
 

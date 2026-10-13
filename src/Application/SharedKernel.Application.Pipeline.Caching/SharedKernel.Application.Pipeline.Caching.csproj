@@ -24,7 +24,7 @@ THINGS WORTH KNOWING BEFORE YOU ADOPT IT
 - Stampede-protected: the handler runs inside one ICacheService.GetOrSetAsync call. A failed Result is returned and never cached, so a query waiting on the same key runs the handler itself. Eager refresh and factory timeouts are switched off so the handler never runs outside the request.
 - A command names the query that owns each entry, not a raw key string, because entries are namespaced per query type. The command's Scope must match the queries it invalidates.
 - Eviction runs only when the command succeeded and the outermost command committed, is not cancellable by the request token, and continues past a failing key.
-- Hit/miss counters and Activity tags are recorded per query type under the existing "SharedKernel.Application" meter, so 13.ServiceDefaults' WithApplicationTelemetry() exports them with no extra registration. Logging uses EventIds 5200-5299.
+- Hit/miss counters and Activity tags are recorded per query type under the existing "SharedKernel.Application" meter, so the SharedKernel.* wildcard of AddServiceDefaults exports them with no extra registration. Logging uses EventIds 5200-5299.
 - The two behavior types are internal; the package's contract is the marker interfaces, CacheScope, CacheKeyRef and WithCaching().
 - SharedKernel.Analyzers' SK0017 and SK0018 flag a command implementing the query marker and a query implementing the command marker; SK0041 flags two cacheable queries sharing a simple type name, which would collapse their key namespaces.
 
