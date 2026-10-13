@@ -149,15 +149,15 @@ sequenceDiagram
   `IWebhookUrlValidator` or `ISymmetricEncryptionService`, say): it is logged at Error (EventId 15005) with the
   exception, recorded on the delivery span, shown to observers, and never aborts the other subscriptions.
   `DispatchAsync` never throws because of one subscriber. Only caller cancellation propagates.
-- **Fixed failure text.** `WebhookDeliveryResult.Error` and `WebhookDeliveryExhaustedEvent.LastError` carry one of a
-  closed set of sentences ("Webhook endpoint responded with status code 503.", "Webhook endpoint could not be
-  reached.", "Webhook delivery timed out.", "Webhook delivery failed unexpectedly.", ...), never exception text: a
-  transport exception names the subscriber host. The exception object goes to the log.
+- **Fixed failure text.** `WebhookDeliveryResult.Error` is an `Error` (`null` exactly when the delivery succeeded)
+  whose `Code` is one of `WebhookErrorCodes` and whose `Message` is a fixed sentence, never exception text: a
+  transport exception names the subscriber host. The exception object goes to the log and the span.
+  `WebhookDeliveryExhaustedEvent.LastErrorCode` carries the code of the last failure, and nothing else.
 - **Retries** live in the standard resilience handler on the named client, driven by `MaxAttempts`, the backoff
   delays and `RequestTimeout`. After the last attempt the dispatcher publishes exactly one
   `WebhookDeliveryExhaustedEvent`; a failed publish is logged (EventId 15004) and does not change the result.
 - **Observers.** Every `IWebhookDeliveryObserver` sees `OnAttemptAsync` and `OnCompletedAsync`, in registration order;
-  an observer exception is logged at Warning and never affects delivery.
+  an observer exception is logged at Error and never affects delivery.
 
 ## Recipes
 
@@ -237,8 +237,9 @@ var associatedData = WebhookPayloadAssociatedData.Build(subscription.Subscriptio
 Result<string> plaintext = await encryption.DecryptToStringAsync(rawBody, associatedData);
 ```
 
-`EncryptPayload` without a registered `ISymmetricEncryptionService` throws `InvalidOperationException` when
-`IWebhookDispatcher` is resolved, before any delivery.
+`EncryptPayload` without a registered `ISymmetricEncryptionService` fails host startup (options validation, an
+`OptionsValidationException` naming the missing service); a dispatcher built around unvalidated options still throws
+`InvalidOperationException` when it is resolved, before any delivery.
 
 ### 5. Send a test delivery to a new subscriber
 
@@ -254,7 +255,7 @@ signing and retry path. It is never published on the bus or fanned out.
 ### 6. React to a subscriber that stays down
 
 Consume `WebhookDeliveryExhaustedEvent` (`sharedkernel.webhooks.delivery-exhausted`; `SubscriptionId`, `EventType`,
-`Attempts`, `LastError`) with your messaging consumer — disable the subscription, alert, or show it in an admin UI.
+`Attempts`, `LastErrorCode`) with your messaging consumer — disable the subscription, alert, or show it in an admin UI.
 
 ### 7. Allow internal targets, or apply your own policy
 
@@ -288,7 +289,7 @@ Section `SharedKernel:Integration:Webhooks`, validated when the host starts; the
 
 | Method | Registers |
 | --- | --- |
-| `AddSharedKernelWebhooks(Action<WebhookDeliveryOptions>? configure = null)` | Options; `WebhookSignatureProvider` (singleton); `IWebhookUrlValidator` → `PrivateNetworkWebhookUrlValidator`; `IWebhookDispatcher` (scoped); the named client `WebhookHttpClientName.Name` (`SharedKernel.Integration.Webhooks`) with the standard resilience handler |
+| `AddSharedKernelWebhooks(Action<WebhookDeliveryOptions>? configure = null)` | Options; `WebhookSignatureProvider` (singleton); `IWebhookUrlValidator` → `PrivateNetworkWebhookUrlValidator`; `IWebhookDispatcher` (scoped); the named client `WebhookHttpClientName.Name` (`SharedKernel.Integration.Webhooks`) with the standard resilience handler; `WebhookMetrics` (singleton); `AddMetrics()` and `AddClock()` (`IClock`, kept if you registered your own) |
 | `WithDeliveryObserver<T>()` | An additional `IWebhookDeliveryObserver` |
 | `WithUrlValidator<T>()` | Replaces the `IWebhookUrlValidator` |
 
@@ -298,29 +299,57 @@ Section `SharedKernel:Integration:Webhooks`, validated when the host starts; the
 | --- | --- |
 | `IWebhookDispatcher` | `DispatchAsync<TEvent>`, `DispatchToSubscriptionAsync<TEvent>(subscription, evt)`, `SendTestDeliveryAsync(subscription)` |
 | `WebhookSubscription` | `SubscriptionId`, `Url`, `Secrets` (newest first), `EventTypes`, `IsActive`, `Headers`; the single-`secret` constructor and `Secret` are obsolete |
-| `WebhookDeliveryResult` | `SubscriptionId`, `DeliveryId`, `IsSuccess`, `StatusCode`, `Attempts`, `Error` |
+| `WebhookDeliveryResult` | `SubscriptionId`, `DeliveryId`, `IsSuccess`, `StatusCode`, `Attempts`, `Error` (`Error?`, `null` exactly when the delivery succeeded) |
+| `WebhookErrorCodes`, `WebhookTagKeys`, `WebhookMetrics` | The error codes, the span/metric tag keys, the instruments |
 | `WebhookSignatureVerifier` | `Verify(payloadJson, timestamp, signature, secretCandidates, tolerance?)` (also a single-`secret` overload) |
 | `WebhookSignatureHeaders` | `X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Delivery-Id` |
 | `WebhookPayloadAssociatedData` | `Build(subscriptionId, deliveryId)` |
 | `WebhookPingEvent`, `WebhookDeliveryExhaustedEvent` | The test event and the exhaustion event (`EventName` constants) |
 
+### Error codes
+
+A failed `WebhookDeliveryResult.Error` carries one of `WebhookErrorCodes` (lowercase `integration.webhook.{reason}`);
+the message is a fixed sentence.
+
+| Code | `ErrorType` | When |
+| --- | --- | --- |
+| `integration.webhook.endpoint_unavailable` | `Unavailable` | The endpoint answered 5xx, 408 or 429 |
+| `integration.webhook.endpoint_rejected` | `Unexpected` | The endpoint answered any other non-2xx status |
+| `integration.webhook.unavailable` | `Unavailable` | The endpoint could not be reached, the circuit is open or the resilience pipeline refused the call |
+| `integration.webhook.timeout` | `Timeout` | An attempt or the whole delivery timed out |
+| `integration.webhook.target_rejected` | `Validation` | The `IWebhookUrlValidator` refused the target |
+| `integration.webhook.header_collision` | `Validation` | A subscription header collides with a platform signature header |
+| `integration.webhook.secrets_missing` | `Validation` | The subscription has no signing secret |
+| `integration.webhook.delivery_faulted` | `Unexpected` | The per-subscription fault boundary caught an unexpected exception |
+
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 15000 | Warning | A delivery observer threw; the outcome is unaffected |
-| 15001 | Information | Delivery succeeded after `{Attempts}` attempt(s) |
-| 15002 | Warning | Delivery failed with `{StatusCode}` (the exception, when there was one, is the logged exception) |
+| 15000 | Error | A delivery observer threw; the outcome is unaffected (carries the exception) |
+| 15001 | Debug | Delivery succeeded after `{Attempts}` attempts with `{StatusCode}` |
+| 15002 | Warning | Delivery failed with `{ErrorType}` error `{ErrorCode}` (the exception, when there was one, is the logged exception) |
 | 15003 | Warning | Delivery exhausted without a successful response |
-| 15004 | Error | The exhaustion event could not be published (a failed result or a throwing publisher) |
+| 15004 | Warning | The publisher refused the exhaustion event (a failed result) |
 | 15005 | Error | A delivery faulted unexpectedly and is reported as failed; carries the exception |
+| 15006 | Error | The publisher threw while publishing the exhaustion event; carries the exception |
+
+Every delivery event names the `{DeliveryId}` and `{SubscriptionId}`; no URL, header, payload or secret is logged.
 
 ### Telemetry
 
-`ActivitySource` `SharedKernel.Integration` (subscribe with ServiceDefaults' `WithIntegrationTelemetry()`). Spans
-`WebhookDispatcher.Dispatch` (`webhook.subscription_count`, `webhook.event_type`) and
-`WebhookDispatcher.DispatchToSubscription` (`webhook.subscription_id`, `webhook.event_type`, `webhook.outcome`,
-`webhook.attempt_count`). URLs and secrets are never tags.
+`ActivitySource` and `Meter` `SharedKernel.Integration` (`AddServiceDefaults` subscribes by wildcard).
+
+| Signal | Name | Kind / unit | Tags |
+| --- | --- | --- | --- |
+| Span | `webhook dispatch` | Internal | `webhook.subscription_count`, `webhook.event_type` |
+| Span | `webhook deliver` | Client | `webhook.subscription_id`, `webhook.delivery_id`, `webhook.event_type`, `webhook.attempt_count`, `outcome` (plus `error.code`/`error.type` on failure) |
+| Counter | `sharedkernel.integration.webhook.deliveries` | `{delivery}` | `webhook.event_type`, `outcome` |
+| Histogram | `sharedkernel.integration.webhook.delivery.duration` | `s` | `webhook.event_type`, `outcome` |
+
+`outcome` is `success`, `failure`, `exception` or `canceled`. A retried delivery is counted once. URLs, secrets,
+subscription ids and delivery ids are never metric tags. `WebhookMetrics` is a singleton built from `IMeterFactory`;
+`AddSharedKernelWebhooks` registers it and calls `AddMetrics()`.
 
 ## Testing
 

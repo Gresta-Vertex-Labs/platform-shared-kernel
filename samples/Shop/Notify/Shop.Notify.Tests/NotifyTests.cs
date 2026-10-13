@@ -114,12 +114,12 @@ public sealed class ReceiptDueConsumerTests
     [Fact]
     public async Task RefusedEmail_FailsTheMessage_SoTheBusRetriesIt()
     {
-        _email.SetSendResult<ReceiptEmailModel>(m => new NotificationDeliveryResult(
-            m.NotificationDeliveryId,
-            false,
-            null,
-            "rejected"
-        ));
+        _email.SetSendResult<ReceiptEmailModel>(m =>
+            NotificationDeliveryResult.Failed(
+                m.NotificationDeliveryId,
+                NotificationErrors.ProviderRejected(400)
+            )
+        );
 
         var consume = () => ConsumeAsync(Contoso);
 

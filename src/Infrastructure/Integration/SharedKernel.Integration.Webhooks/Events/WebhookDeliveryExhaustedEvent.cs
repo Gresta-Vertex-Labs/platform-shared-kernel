@@ -14,7 +14,10 @@ namespace SharedKernel.Integration.Webhooks.Events;
 /// the same routing key the subscription matched on.
 /// </param>
 /// <param name="Attempts">The total number of HTTP attempts made before giving up.</param>
-/// <param name="LastError">The error from the final attempt, if any.</param>
+/// <param name="LastErrorCode">
+/// The <see cref="Dispatch.WebhookErrorCodes"/> code of the final attempt's failure; the code only, never message
+/// text.
+/// </param>
 /// <remarks>
 /// Lets any consumer elsewhere on the platform (an ops/alerting handler, or the owning service
 /// itself) react — disable the subscription, page someone, surface it in an admin UI. This type
@@ -32,7 +35,7 @@ public sealed record WebhookDeliveryExhaustedEvent(
     Guid SubscriptionId,
     string EventType,
     int Attempts,
-    string? LastError) : IIntegrationEvent
+    string? LastErrorCode) : IIntegrationEvent
 {
     /// <summary>
     /// The event's wire name: <c>sharedkernel.webhooks.delivery-exhausted</c>, identical to the CloudEvents

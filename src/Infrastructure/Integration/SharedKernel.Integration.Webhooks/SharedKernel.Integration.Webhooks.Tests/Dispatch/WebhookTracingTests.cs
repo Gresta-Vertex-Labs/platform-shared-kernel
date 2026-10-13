@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using FluentAssertions;
 using SharedKernel.Integration.Webhooks.Dispatch;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Integration.Webhooks.Tests.TestSupport;
 
@@ -43,9 +44,9 @@ public sealed class WebhookTracingTests
 
         var span = FindSubscriptionSpan(activities, subscription.SubscriptionId);
 
-        span.GetTagItem(WebhookActivityTags.EventType).Should().Be(TestOrderShippedEvent.EventName);
-        span.GetTagItem(WebhookActivityTags.Outcome).Should().Be("success");
-        span.GetTagItem(WebhookActivityTags.AttemptCount).Should().Be(1);
+        span.GetTagItem(WebhookTagKeys.EventType).Should().Be(TestOrderShippedEvent.EventName);
+        span.GetTagItem(WellKnownTagKeys.Outcome).Should().Be("success");
+        span.GetTagItem(WebhookTagKeys.AttemptCount).Should().Be(1);
 
         AssertNoSensitiveData(activities.Captured, subscription.Url, secret);
     }
@@ -69,7 +70,7 @@ public sealed class WebhookTracingTests
 
         var span = FindSubscriptionSpan(activities, subscription.SubscriptionId);
 
-        span.GetTagItem(WebhookActivityTags.Outcome).Should().Be("failure");
+        span.GetTagItem(WellKnownTagKeys.Outcome).Should().Be("failure");
 
         AssertNoSensitiveData(activities.Captured, subscription.Url, secret);
     }
@@ -96,16 +97,16 @@ public sealed class WebhookTracingTests
 
         var parentSpan = activities.Captured.Single(a => a.SpanId == childSpan1.ParentSpanId);
 
-        parentSpan.OperationName.Should().Be("WebhookDispatcher.Dispatch");
-        parentSpan.GetTagItem(WebhookActivityTags.SubscriptionCount).Should().Be(2);
-        parentSpan.GetTagItem(WebhookActivityTags.EventType).Should().Be(TestOrderShippedEvent.EventName);
+        parentSpan.OperationName.Should().Be("webhook dispatch");
+        parentSpan.GetTagItem(WebhookTagKeys.SubscriptionCount).Should().Be(2);
+        parentSpan.GetTagItem(WebhookTagKeys.EventType).Should().Be(TestOrderShippedEvent.EventName);
     }
 
     private static Activity FindSubscriptionSpan(ActivityCollector activities, Guid subscriptionId)
     {
         var matches = activities.Captured
-            .Where(a => a.OperationName == "WebhookDispatcher.DispatchToSubscription")
-            .Where(a => a.GetTagItem(WebhookActivityTags.SubscriptionId) is Guid tagged && tagged == subscriptionId)
+            .Where(a => a.OperationName == "webhook deliver")
+            .Where(a => a.GetTagItem(WebhookTagKeys.SubscriptionId) is Guid tagged && tagged == subscriptionId)
             .ToList();
 
         matches.Should().ContainSingle();

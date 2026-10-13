@@ -53,7 +53,7 @@ public sealed class InMemoryNotificationDeliveryObserver : INotificationDelivery
         if (!result.IsSuccess)
         {
             throw new InvalidOperationException(
-                $"Expected delivery '{notificationDeliveryId}' to have succeeded, but it failed with error '{result.Error}'.");
+                $"Expected delivery '{notificationDeliveryId}' to have succeeded, but it failed with error '{result.Error?.Code}'.");
         }
 
         return result;

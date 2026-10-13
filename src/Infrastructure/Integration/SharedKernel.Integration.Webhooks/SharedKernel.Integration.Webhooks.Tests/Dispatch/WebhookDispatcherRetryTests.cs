@@ -1,3 +1,4 @@
+using SharedKernel.Integration.Webhooks.Dispatch;
 using System.Net;
 using FluentAssertions;
 using SharedKernel.Integration.Webhooks.Events;
@@ -61,7 +62,7 @@ public sealed class WebhookDispatcherRetryTests
             CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().NotBeNullOrEmpty();
+        result.Error!.Code.Should().Be(WebhookErrorCodes.EndpointUnavailable);
         result.StatusCode.Should().Be((int)HttpStatusCode.ServiceUnavailable);
     }
 
@@ -127,6 +128,6 @@ public sealed class WebhookDispatcherRetryTests
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().BeNull();
-        result.Error.Should().NotBeNullOrEmpty();
+        result.Error!.Code.Should().Be(WebhookErrorCodes.Unavailable);
     }
 }

@@ -1,3 +1,4 @@
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using System.Net;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,7 @@ namespace SharedKernel.Integration.Notifications.Email.SendGrid.Tests;
 /// a log record or a span. The failure log carries the closed failure kind and the exception object; recipient and
 /// template fields stay absent from every record.
 /// </summary>
+[Collection(SendGridSenderCollection.Name)]
 public sealed class SendGridNoExceptionTextTests
 {
     private const string Sentinel = "https://api.sentinel-provider.invalid/v3/mail/send?key=sentinel-key";
@@ -65,16 +67,16 @@ public sealed class SendGridNoExceptionTextTests
         records.Select(r => r with { Exception = null }).ToList().ShouldNotLeak([.. forbidden, Recipient, Pin]);
 
         spans.RecordedActivities
-            .Where(a => a.OperationName == "NotificationSender.Send")
+            .Where(a => a.OperationName == "notification send")
             .ShouldNotLeak([.. forbidden, Recipient, Pin]);
         _ = deliveryId;
     }
 
     public static TheoryData<string, Func<Exception>, string> TransportFaults => new()
     {
-        { "HttpRequestException", () => new HttpRequestException(Sentinel), "SendGrid could not be reached." },
-        { "TimeoutRejectedException", () => new TimeoutRejectedException(Sentinel), "SendGrid delivery timed out." },
-        { "BrokenCircuitException", () => new BrokenCircuitException(Sentinel), "SendGrid delivery was rejected by the resilience pipeline." },
+        { "HttpRequestException", () => new HttpRequestException(Sentinel), NotificationErrorCodes.ProviderUnavailable },
+        { "TimeoutRejectedException", () => new TimeoutRejectedException(Sentinel), NotificationErrorCodes.ProviderTimeout },
+        { "BrokenCircuitException", () => new BrokenCircuitException(Sentinel), NotificationErrorCodes.ProviderUnavailable },
     };
 
     [Theory]
@@ -91,7 +93,7 @@ public sealed class SendGridNoExceptionTextTests
         var result = await harness.Sender.SendAsync(message, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Be(expectedReason);
+        result.Error!.Code.Should().Be(expectedReason);
         AssertNoLeak(harness, spans, message.NotificationDeliveryId, Sentinel, "sentinel-provider", "sentinel-key");
 
         var record = AllRecords(harness).ShouldHaveLoggedWithException(DeliveryFailedId, fault.GetType());
@@ -114,7 +116,7 @@ public sealed class SendGridNoExceptionTextTests
         var result = await harness.Sender.SendAsync(message, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Be("Unable to resolve one or more attachments: an attachment's store could not be opened.");
+        result.Error.Should().Be(NotificationErrors.AttachmentUnresolvable());
         handler.CallCount.Should().Be(0);
         AssertNoLeak(harness, spans, message.NotificationDeliveryId, Sentinel);
         AllRecords(harness).ShouldHaveLoggedWithException(DeliveryFailedId, typeof(InvalidOperationException)).Exception.Should().BeSameAs(fault);
@@ -138,7 +140,7 @@ public sealed class SendGridNoExceptionTextTests
         var result = await harness.Sender.SendAsync(message, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Be("Unable to resolve one or more attachments: an attachment could not be downloaded from storage.");
+        result.Error.Should().Be(NotificationErrors.AttachmentUnresolvable());
         handler.CallCount.Should().Be(0);
         AssertNoLeak(harness, spans, message.NotificationDeliveryId, Sentinel);
         AllRecords(harness).ShouldHaveLogged(DeliveryFailedId, LogLevel.Warning);
@@ -158,11 +160,11 @@ public sealed class SendGridNoExceptionTextTests
 
         var result = await harness.Sender.SendAsync(message, CancellationToken.None);
 
-        result.Error.Should().Be("SendGrid responded with status code 400.");
+        result.Error.Should().Be(NotificationErrors.ProviderRejected(400));
         AssertNoLeak(harness, spans, message.NotificationDeliveryId, "reason-phrase-sentinel", "body-sentinel");
         var record = AllRecords(harness).ShouldHaveLogged(DeliveryFailedId, LogLevel.Warning);
-        record.TryGetProperty("FailureKind", out var kind).Should().BeTrue();
-        kind.Should().Be("provider_rejected");
+        record.TryGetProperty("ErrorCode", out var kind).Should().BeTrue();
+        kind.Should().Be(NotificationErrorCodes.ProviderRejected);
         record.TryGetProperty("StatusCode", out var status).Should().BeTrue();
         status.Should().Be(400);
     }

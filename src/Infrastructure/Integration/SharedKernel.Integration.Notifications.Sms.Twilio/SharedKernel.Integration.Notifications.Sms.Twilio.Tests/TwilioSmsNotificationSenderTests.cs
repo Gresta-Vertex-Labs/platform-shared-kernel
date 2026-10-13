@@ -1,3 +1,4 @@
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using System.Net;
 using System.Web;
 using FluentAssertions;
@@ -7,6 +8,7 @@ using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Integration.Notifications.Sms.Twilio.Tests;
 
+[Collection(TwilioSenderCollection.Name)]
 public sealed class TwilioSmsNotificationSenderTests
 {
     private sealed record OtpTemplateModel(string Code);
@@ -117,7 +119,8 @@ public sealed class TwilioSmsNotificationSenderTests
         var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Contain("401");
+        result.Error!.Code.Should().Be(NotificationErrorCodes.ProviderRejected);
+        result.Error.Message.Should().Contain("401");
     }
 
     [Fact]

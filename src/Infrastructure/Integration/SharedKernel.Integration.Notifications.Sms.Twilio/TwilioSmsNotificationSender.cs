@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -8,8 +8,11 @@ using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
 using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Abstractions.Tracing;
+using SharedKernel.Integration.Notifications.Sms.Twilio.Diagnostics;
 using SharedKernel.Integration.Notifications.Sms.Twilio.Options;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Integration.Notifications.Sms.Twilio;
 
@@ -17,11 +20,12 @@ namespace SharedKernel.Integration.Notifications.Sms.Twilio;
 /// <see cref="INotificationSender"/> implementation delivering SMS via Twilio's Content API
 /// (templated messaging), called directly through <see cref="IHttpClientFactory"/> — no vendor SDK.
 /// </summary>
-public sealed partial class TwilioSmsNotificationSender : INotificationSender
+public sealed class TwilioSmsNotificationSender : INotificationSender
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IEnumerable<INotificationDeliveryObserver> _observers;
     private readonly TwilioNotificationOptions _options;
+    private readonly NotificationMetrics _metrics;
     private readonly ILogger<TwilioSmsNotificationSender> _logger;
 
     /// <summary>Initializes a new instance of <see cref="TwilioSmsNotificationSender"/>.</summary>
@@ -29,16 +33,19 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
         IHttpClientFactory httpClientFactory,
         IEnumerable<INotificationDeliveryObserver> observers,
         IOptions<TwilioNotificationOptions> options,
+        NotificationMetrics metrics,
         ILogger<TwilioSmsNotificationSender> logger)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
         ArgumentNullException.ThrowIfNull(observers);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(logger);
 
         _httpClientFactory = httpClientFactory;
         _observers = observers;
         _options = options.Value;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -52,21 +59,38 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        using var activity = NotificationIntegrationActivitySource.StartSend(NotificationChannel.Sms);
+        var started = Stopwatch.GetTimestamp();
+        using var activity = NotificationIntegrationActivitySource.StartSend(NotificationChannel.Sms, message.NotificationDeliveryId);
         var context = new NotificationDeliveryContext(message.NotificationDeliveryId, message.Channel, message.Recipient, message.TemplateId);
 
         await NotifyAttemptAsync(context, 1, ct).ConfigureAwait(false);
 
-        var outcome = await SendCoreAsync(message, ct).ConfigureAwait(false);
+        SendOutcome outcome;
+        try
+        {
+            outcome = await SendCoreAsync(message, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Caller cancellation is never an error; anything else is an unexpected fault that propagates after it
+            // is recorded in full on the span.
+            var faultOutcome = activity.RecordException(ex);
+            activity?.SetTag(WellKnownTagKeys.Outcome, faultOutcome);
+            _metrics.RecordSend(NotificationChannel.Sms, faultOutcome, started);
+            throw;
+        }
+
         var result = outcome.Result;
+        var outcomeName = result.Error is { } error ? activity.RecordFailure(error) : WellKnownOutcomes.Success;
+        _metrics.RecordSend(NotificationChannel.Sms, outcomeName, started);
+
+        if (activity is { IsAllDataRequested: true })
+        {
+            activity.SetTag(WellKnownTagKeys.Outcome, outcomeName);
+            activity.SetTag(NotificationTagKeys.AttemptCount, 1);
+        }
 
         LogDeliveryOutcome(outcome);
-
-        if (activity is not null)
-        {
-            activity.SetTag(NotificationActivityTags.Outcome, result.IsSuccess ? "success" : "failure");
-            activity.SetTag(NotificationActivityTags.AttemptCount, 1);
-        }
 
         await NotifyCompletedAsync(context, result, ct).ConfigureAwait(false);
 
@@ -74,31 +98,21 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
     }
 
     /// <summary>
-    /// A send outcome: the result plus the closed failure kind, the status code and the caught exception, which
-    /// travel to the failure log only — never into the result.
+    /// A send outcome: the result plus the status code and the caught exception, which travel to the failure log
+    /// only — never into the result.
     /// </summary>
     private readonly record struct SendOutcome(
         NotificationDeliveryResult Result,
-        string? FailureKind = null,
         int? StatusCode = null,
         Exception? Exception = null);
 
-    /// <summary>The closed set of failure kinds written to the failure log.</summary>
-    private static class FailureKinds
-    {
-        public const string ProviderRejected = "provider_rejected";
-        public const string Unreachable = "unreachable";
-        public const string Timeout = "timeout";
-        public const string RejectedByPipeline = "rejected_by_pipeline";
-    }
-
-    private static (string Kind, string Reason) ClassifyTransportFault(Exception exception) =>
+    private static Error ClassifyTransportFault(Exception exception) =>
         exception switch
         {
-            Polly.Timeout.TimeoutRejectedException => (FailureKinds.Timeout, "Twilio delivery timed out."),
-            Polly.ExecutionRejectedException => (FailureKinds.RejectedByPipeline, "Twilio delivery was rejected by the resilience pipeline."),
-            TimeoutException or TaskCanceledException => (FailureKinds.Timeout, "Twilio delivery timed out."),
-            _ => (FailureKinds.Unreachable, "Twilio could not be reached."),
+            Polly.Timeout.TimeoutRejectedException => NotificationErrors.ProviderTimeout(),
+            Polly.ExecutionRejectedException => NotificationErrors.ProviderUnavailable(),
+            TimeoutException or TaskCanceledException => NotificationErrors.ProviderTimeout(),
+            _ => NotificationErrors.ProviderUnavailable(),
         };
 
     private async Task<SendOutcome> SendCoreAsync<TTemplateModel>(
@@ -148,33 +162,28 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
         try
         {
             using var response = await httpClient.SendAsync(httpRequest, ct).ConfigureAwait(false);
-            var isSuccess = response.IsSuccessStatusCode;
+            var statusCode = (int)response.StatusCode;
 
-            string? providerMessageId = null;
-            if (isSuccess)
+            if (!response.IsSuccessStatusCode)
             {
-                var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                providerMessageId = TryExtractSid(body);
+                return new SendOutcome(
+                    NotificationDeliveryResult.Failed(message.NotificationDeliveryId, NotificationErrors.ForStatusCode(statusCode)),
+                    statusCode);
             }
 
-            var statusCode = (int)response.StatusCode;
-            return new SendOutcome(
-                new NotificationDeliveryResult(
-                    message.NotificationDeliveryId,
-                    isSuccess,
-                    providerMessageId,
-                    isSuccess ? null : string.Create(CultureInfo.InvariantCulture, $"Twilio responded with status code {statusCode}.")),
-                isSuccess ? null : FailureKinds.ProviderRejected,
-                statusCode);
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return new SendOutcome(NotificationDeliveryResult.Succeeded(message.NotificationDeliveryId, TryExtractSid(body)), statusCode);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or TimeoutException or Polly.ExecutionRejectedException)
+        catch (Exception ex) when (
+            ex is HttpRequestException or TimeoutException or Polly.ExecutionRejectedException
+            || (ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
             // Only the KIND of the transport fault reaches the result: the exception message names the
-            // provider endpoint. The exception itself goes to the failure log.
-            var (kind, reason) = ClassifyTransportFault(ex);
+            // provider endpoint. The exception itself goes to the failure log. A TaskCanceledException raised by the
+            // caller's own cancellation is not a failure and propagates; one raised by the client's timeout is a
+            // Timeout error.
             return new SendOutcome(
-                new NotificationDeliveryResult(message.NotificationDeliveryId, false, null, reason),
-                kind,
+                NotificationDeliveryResult.Failed(message.NotificationDeliveryId, ClassifyTransportFault(ex)),
                 Exception: ex);
         }
     }
@@ -202,7 +211,7 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
             }
             catch (Exception ex)
             {
-                Log.ObserverException(_logger, ex, observer.GetType().Name);
+                TwilioLog.ObserverException(_logger, observer.GetType().Name, ex);
             }
         }
     }
@@ -217,44 +226,23 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
             }
             catch (Exception ex)
             {
-                Log.ObserverException(_logger, ex, observer.GetType().Name);
+                TwilioLog.ObserverException(_logger, observer.GetType().Name, ex);
             }
         }
     }
 
     private void LogDeliveryOutcome(SendOutcome outcome)
     {
-        if (outcome.Result.IsSuccess)
+        var result = outcome.Result;
+        if (result.Error is not { } error)
         {
-            Log.DeliverySucceeded(_logger);
+            TwilioLog.DeliverySucceeded(_logger, result.NotificationDeliveryId);
         }
         else
         {
-            // NEVER include Recipient/TemplateModel here — only the closed failure kind, the status code and
-            // the caught exception object (never its message as a placeholder).
-            Log.DeliveryFailed(_logger, outcome.FailureKind ?? FailureKinds.ProviderRejected, outcome.StatusCode, outcome.Exception);
+            // NEVER include Recipient/TemplateModel here — only the error type and code, the status code and the
+            // caught exception object (never its message as a placeholder).
+            TwilioLog.DeliveryFailed(_logger, result.NotificationDeliveryId, error.Type, error.Code, outcome.StatusCode, outcome.Exception);
         }
-    }
-
-    /// <summary>Source-generated <see cref="LoggerMessage"/> definitions for <see cref="TwilioSmsNotificationSender"/>.</summary>
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 300,
-            Level = LogLevel.Information,
-            Message = "Twilio SMS delivery succeeded.")]
-        public static partial void DeliverySucceeded(ILogger logger);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 301,
-            Level = LogLevel.Warning,
-            Message = "Twilio SMS delivery failed with failure kind {FailureKind} and status code {StatusCode}.")]
-        public static partial void DeliveryFailed(ILogger logger, string failureKind, int? statusCode, Exception? exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 302,
-            Level = LogLevel.Warning,
-            Message = "Notification delivery observer {ObserverType} threw an exception; delivery outcome is unaffected.")]
-        public static partial void ObserverException(ILogger logger, Exception ex, string observerType);
     }
 }

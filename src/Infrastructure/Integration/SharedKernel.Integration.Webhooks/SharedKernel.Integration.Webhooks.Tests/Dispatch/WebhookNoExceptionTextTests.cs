@@ -29,10 +29,10 @@ public sealed class WebhookNoExceptionTextTests
 
     public static TheoryData<string, Func<Exception>, string> TransportFaults => new()
     {
-        { "HttpRequestException", () => new HttpRequestException(Sentinel), WebhookDeliveryFailureReasons.EndpointUnreachable },
-        { "TimeoutRejectedException", () => new TimeoutRejectedException(Sentinel), WebhookDeliveryFailureReasons.TimedOut },
-        { "BrokenCircuitException", () => new BrokenCircuitException(Sentinel), WebhookDeliveryFailureReasons.RejectedByPipeline },
-        { "TimeoutException", () => new TimeoutException(Sentinel), WebhookDeliveryFailureReasons.TimedOut },
+        { "HttpRequestException", () => new HttpRequestException(Sentinel), WebhookErrorCodes.Unavailable },
+        { "TimeoutRejectedException", () => new TimeoutRejectedException(Sentinel), WebhookErrorCodes.Timeout },
+        { "BrokenCircuitException", () => new BrokenCircuitException(Sentinel), WebhookErrorCodes.Unavailable },
+        { "TimeoutException", () => new TimeoutException(Sentinel), WebhookErrorCodes.Timeout },
     };
 
     [Theory]
@@ -62,7 +62,8 @@ public sealed class WebhookNoExceptionTextTests
             CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Be(expectedReason);
+        result.Error!.Code.Should().Be(expectedReason);
+        result.Error.Message.Should().NotContain("sentinel");
 
         var records = harness.LoggerFactory.GetLogger(DispatcherCategory).Records;
         records.Select(r => r with { Exception = null }).ToList().ShouldNotLeak(Sentinel, "sentinel-host", "bearer-sentinel-token", "super-secret");
@@ -74,13 +75,13 @@ public sealed class WebhookNoExceptionTextTests
         // The exhaustion event carries the fixed reason, never the exception text.
         if (harness.EventPublisher.PublishedOf<WebhookDeliveryExhaustedEvent>() is { Count: > 0 } published)
         {
-            published.Should().OnlyContain(e => e.LastError == expectedReason);
-            published.Should().NotContain(e => e.LastError!.Contains("sentinel"));
+            published.Should().OnlyContain(e => e.LastErrorCode == expectedReason);
+            published.Should().NotContain(e => e.LastErrorCode!.Contains("sentinel"));
         }
 
         var span = spans.RecordedActivities
-            .Where(a => a.OperationName == "WebhookDispatcher.DispatchToSubscription")
-            .Single(a => a.GetTagItem(WebhookActivityTags.SubscriptionId) is Guid id && id == subscription.SubscriptionId);
+            .Where(a => a.OperationName == "webhook deliver")
+            .Single(a => a.GetTagItem(WebhookTagKeys.SubscriptionId) is Guid id && id == subscription.SubscriptionId);
         span.ShouldNotLeak(Sentinel, "sentinel-host", "bearer-sentinel-token", "super-secret");
     }
 
@@ -133,7 +134,7 @@ public sealed class WebhookNoExceptionTextTests
             (encryptionResult, encryptionHarness, encryptionFault),
         })
         {
-            result.Error.Should().Be(WebhookDeliveryFailureReasons.DeliveryFaulted);
+            result.Error.Should().Be(WebhookErrors.DeliveryFaulted());
             var records = harness.LoggerFactory.GetLogger(DispatcherCategory).Records;
             records.Select(r => r with { Exception = null }).ToList().ShouldNotLeak(Sentinel);
             records.ShouldHaveLoggedWithException(Id(5), typeof(InvalidOperationException)).Exception.Should().BeSameAs(fault);
@@ -158,7 +159,8 @@ public sealed class WebhookNoExceptionTextTests
             new TestOrderShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid()),
             CancellationToken.None);
 
-        result.Error.Should().Be("Webhook endpoint responded with status code 400.");
+        result.Error.Should().Be(WebhookErrors.EndpointResponded(400));
+        result.Error!.Code.Should().Be(WebhookErrorCodes.EndpointRejected);
         harness.LoggerFactory.GetLogger(DispatcherCategory).Records.ShouldNotLeak("reason-phrase-sentinel", "body-sentinel");
     }
 

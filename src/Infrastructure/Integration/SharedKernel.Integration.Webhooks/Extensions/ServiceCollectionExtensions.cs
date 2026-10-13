@@ -8,6 +8,7 @@ using SharedKernel.Integration.Webhooks.Dispatch;
 using SharedKernel.Integration.Webhooks.Observability;
 using SharedKernel.Integration.Webhooks.Options;
 using SharedKernel.Integration.Webhooks.Signing;
+using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Integration.Webhooks.Extensions;
 
@@ -62,6 +63,9 @@ public static class ServiceCollectionExtensions
             .AddOptions<WebhookDeliveryOptions>()
             .BindConfiguration("SharedKernel:Integration:Webhooks")
             .ValidateDataAnnotations()
+            .Validate<IServiceProviderIsService>(
+                static (options, isService) => WebhookEncryptionRegistrationValidator.IsSatisfied(options, isService),
+                WebhookEncryptionRegistrationValidator.MissingServiceMessage)
             .ValidateOnStart();
 
         if (configure is not null)
@@ -69,6 +73,9 @@ public static class ServiceCollectionExtensions
             optionsBuilder.Configure(configure);
         }
 
+        services.AddMetrics();
+        services.AddClock();
+        services.TryAddSingleton<WebhookMetrics>();
         services.AddSingleton<WebhookSignatureProvider>();
         services.TryAddSingleton<IWebhookUrlValidator, PrivateNetworkWebhookUrlValidator>();
         services.AddScoped<IWebhookDispatcher, WebhookDispatcher>();

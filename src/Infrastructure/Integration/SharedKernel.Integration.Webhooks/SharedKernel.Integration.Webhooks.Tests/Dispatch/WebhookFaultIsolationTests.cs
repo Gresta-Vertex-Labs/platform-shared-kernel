@@ -23,7 +23,7 @@ namespace SharedKernel.Integration.Webhooks.Tests.Dispatch;
 public sealed class WebhookFaultIsolationTests
 {
     private const string DispatcherCategory = "SharedKernel.Integration.Webhooks.Dispatch.WebhookDispatcher";
-    private const string SpanName = "WebhookDispatcher.DispatchToSubscription";
+    private const string SpanName = "webhook deliver";
 
     private static WebhookSubscription Subscription(string host, string[]? secrets = null) =>
         new(Guid.NewGuid(), new Uri($"https://{host}.example.test/hook"), secrets ?? ["secret"], [], true);
@@ -91,7 +91,7 @@ public sealed class WebhookFaultIsolationTests
         faultedResult.IsSuccess.Should().BeFalse();
         faultedResult.DeliveryId.Should().NotBeEmpty();
         faultedResult.StatusCode.Should().BeNull();
-        faultedResult.Error.Should().Be(WebhookDeliveryFailureReasons.DeliveryFaulted);
+        faultedResult.Error.Should().Be(WebhookErrors.DeliveryFaulted());
         results.Where(r => r.SubscriptionId != faulty.SubscriptionId).Should().OnlyContain(r => r.IsSuccess);
 
         // Siblings were really delivered over HTTP (the gate was released even when bounded to one).
@@ -140,7 +140,7 @@ public sealed class WebhookFaultIsolationTests
         brokenResult.IsSuccess.Should().BeFalse();
         brokenResult.DeliveryId.Should().NotBeEmpty();
         brokenResult.Attempts.Should().Be(0);
-        brokenResult.Error.Should().Be(WebhookDeliveryFailureReasons.SigningSecretsMissing);
+        brokenResult.Error.Should().Be(WebhookErrors.SecretsMissing());
         results.Single(r => r.SubscriptionId == healthy.SubscriptionId).IsSuccess.Should().BeTrue();
 
         handler.Requests.Should().ContainSingle();
@@ -166,7 +166,7 @@ public sealed class WebhookFaultIsolationTests
 
         result.IsSuccess.Should().BeFalse();
         result.DeliveryId.Should().NotBeEmpty();
-        result.Error.Should().Be(WebhookDeliveryFailureReasons.DeliveryFaulted);
+        result.Error.Should().Be(WebhookErrors.DeliveryFaulted());
         handler.CallCount.Should().Be(0);
     }
 
@@ -263,15 +263,21 @@ public sealed class WebhookFaultIsolationTests
 
         result.IsSuccess.Should().BeFalse();
         result.Attempts.Should().Be(2);
-        result.Error.Should().Be(WebhookDeliveryFailureReasons.EndpointResponded(503));
+        result.Error.Should().Be(WebhookErrors.EndpointResponded(503));
 
         var records = harness.LoggerFactory.GetLogger(DispatcherCategory).Records;
-        records.ShouldHaveLoggedCount(Id(4), 1);
         records.ShouldHaveLogged(Id(3), LogLevel.Warning);
         records.Select(r => r with { Exception = null }).ToList().ShouldNotLeak(sentinel);
         if (behaviour == PublisherBehaviour.Throws)
         {
-            records.ShouldHaveLoggedWithException(Id(4), typeof(InvalidOperationException)).Exception.Should().BeSameAs(thrown);
+            records.ShouldHaveLoggedCount(Id(6), 1);
+            records.ShouldHaveLoggedWithException(Id(6), typeof(InvalidOperationException)).Exception.Should().BeSameAs(thrown);
+            records.ShouldNotHaveLogged(Id(4));
+        }
+        else
+        {
+            records.ShouldHaveLoggedCount(Id(4), 1);
+            records.ShouldHaveLogged(Id(4), LogLevel.Warning);
         }
     }
 
@@ -292,7 +298,7 @@ public sealed class WebhookFaultIsolationTests
         await harness.Dispatcher.DispatchToSubscriptionAsync(subscription, NewEvent(), CancellationToken.None);
 
         var published = harness.EventPublisher.ShouldHavePublishedOnce<WebhookDeliveryExhaustedEvent>();
-        published.LastError.Should().Be(WebhookDeliveryFailureReasons.EndpointResponded(503));
+        published.LastErrorCode.Should().Be(WebhookErrorCodes.EndpointUnavailable);
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------
@@ -300,7 +306,7 @@ public sealed class WebhookFaultIsolationTests
     private static System.Diagnostics.Activity FindSpan(ActivityRecorder spans, Guid subscriptionId) =>
         spans.RecordedActivities
             .Where(a => a.OperationName == SpanName)
-            .Single(a => a.GetTagItem(WebhookActivityTags.SubscriptionId) is Guid id && id == subscriptionId);
+            .Single(a => a.GetTagItem(WebhookTagKeys.SubscriptionId) is Guid id && id == subscriptionId);
 
     private static ISymmetricEncryptionService ThrowingEncryptionServiceFor(WebhookSubscription faulty, Exception fault)
     {

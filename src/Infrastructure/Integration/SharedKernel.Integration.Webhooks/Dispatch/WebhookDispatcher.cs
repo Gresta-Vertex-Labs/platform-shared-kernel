@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
@@ -8,13 +9,15 @@ using Polly;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Execution.Context;
+using SharedKernel.Integration.Webhooks.Diagnostics;
 using SharedKernel.Integration.Webhooks.Events;
 using SharedKernel.Integration.Webhooks.Observability;
 using SharedKernel.Integration.Webhooks.Options;
 using SharedKernel.Integration.Webhooks.Signing;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Telemetry;
 
@@ -24,7 +27,7 @@ namespace SharedKernel.Integration.Webhooks.Dispatch;
 /// Default <see cref="IWebhookDispatcher"/> implementation — looks up active subscriptions, signs
 /// each delivery, and sends it through the named, resilience-wrapped <see cref="HttpClient"/>.
 /// </summary>
-public sealed partial class WebhookDispatcher : IWebhookDispatcher
+public sealed class WebhookDispatcher : IWebhookDispatcher
 {
     private readonly IWebhookSubscriptionStore _subscriptionStore;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -33,7 +36,8 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
     private readonly IEventPublisher _eventPublisher;
     private readonly IEnumerable<IWebhookDeliveryObserver> _observers;
     private readonly WebhookDeliveryOptions _options;
-    private const string PublisherThrewCode = "publisher_threw";
+    private readonly WebhookMetrics _metrics;
+    private readonly IClock _clock;
 
     private readonly ISymmetricEncryptionService? _encryptionService;
     private readonly ILogger<WebhookDispatcher> _logger;
@@ -48,6 +52,8 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         IEnumerable<IWebhookDeliveryObserver> observers,
         IOptions<WebhookDeliveryOptions> options,
         IServiceProvider serviceProvider,
+        WebhookMetrics metrics,
+        IClock clock,
         ILogger<WebhookDispatcher> logger)
     {
         ArgumentNullException.ThrowIfNull(subscriptionStore);
@@ -58,6 +64,8 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         ArgumentNullException.ThrowIfNull(observers);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(serviceProvider);
+        ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(logger);
 
         _subscriptionStore = subscriptionStore;
@@ -67,17 +75,17 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         _eventPublisher = eventPublisher;
         _observers = observers;
         _options = options.Value;
+        _metrics = metrics;
+        _clock = clock;
         _logger = logger;
 
-        // Host misconfiguration, not a per-subscription fault: checked at resolution so it can never be
-        // swallowed by the fault boundary of a single delivery or surface in the middle of a fan-out.
+        // Host misconfiguration, not a per-subscription fault: checked at resolution (and at startup by
+        // WebhookEncryptionRegistrationValidator) so it can never be swallowed by the fault boundary of a single
+        // delivery or surface in the middle of a fan-out.
         if (_options.EncryptPayload)
         {
             _encryptionService = serviceProvider.GetService<ISymmetricEncryptionService>()
-                ?? throw new InvalidOperationException(
-                    "WebhookDeliveryOptions.EncryptPayload is enabled but no ISymmetricEncryptionService is registered. " +
-                    "Register an IEncryptionKeyProvider and call AddSharedKernelCryptography(configuration).AddSymmetricEncryption() " +
-                    "before resolving IWebhookDispatcher.");
+                ?? throw new InvalidOperationException(WebhookEncryptionRegistrationValidator.MissingServiceMessage);
         }
     }
 
@@ -128,8 +136,9 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         var eventType = ResolveEventType(integrationEvent);
         var deliveryId = Guid.NewGuid();
         var payloadJson = JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType());
+        var started = Stopwatch.GetTimestamp();
 
-        using var activity = WebhookIntegrationActivitySource.StartDispatchToSubscription(subscription.SubscriptionId, eventType);
+        using var activity = WebhookIntegrationActivitySource.StartDeliver(subscription.SubscriptionId, deliveryId, eventType);
 
         await NotifyAttemptAsync(subscription, 1, ct).ConfigureAwait(false);
 
@@ -141,30 +150,41 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         {
             outcome = await SendAsync(subscription, deliveryId, payloadJson, tracker, ct).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
         {
+            activity?.SetTag(WellKnownTagKeys.Outcome, activity.RecordException(ex));
+            _metrics.RecordDelivery(eventType, WellKnownOutcomes.Canceled, started);
             throw;
         }
         catch (Exception ex)
         {
             outcome = new SendOutcome(
-                new WebhookDeliveryResult(
-                    subscription.SubscriptionId,
-                    deliveryId,
-                    false,
-                    null,
-                    tracker.Attempts,
-                    WebhookDeliveryFailureReasons.DeliveryFaulted),
+                WebhookDeliveryResult.Failed(subscription.SubscriptionId, deliveryId, WebhookErrors.DeliveryFaulted(), null, tracker.Attempts),
                 ex,
                 IsFault: true);
         }
 
         var result = outcome.Result;
 
+        string outcomeName;
         if (outcome.IsFault)
         {
-            Log.DeliveryFaulted(_logger, subscription.SubscriptionId, eventType, outcome.Exception);
-            activity.RecordException(outcome.Exception!);
+            outcomeName = activity.RecordException(outcome.Exception!);
+        }
+        else if (result.Error is { } error)
+        {
+            outcomeName = activity.RecordFailure(error);
+        }
+        else
+        {
+            outcomeName = WellKnownOutcomes.Success;
+        }
+
+        _metrics.RecordDelivery(eventType, outcomeName, started);
+
+        if (outcome.IsFault)
+        {
+            WebhooksLog.DeliveryFaulted(_logger, deliveryId, subscription.SubscriptionId, eventType, outcome.Exception!);
         }
         else
         {
@@ -176,10 +196,10 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             }
         }
 
-        if (activity is not null)
+        if (activity is { IsAllDataRequested: true })
         {
-            activity.SetTag(WebhookActivityTags.Outcome, result.IsSuccess ? "success" : "failure");
-            activity.SetTag(WebhookActivityTags.AttemptCount, result.Attempts);
+            activity.SetTag(WellKnownTagKeys.Outcome, outcomeName);
+            activity.SetTag(WebhookTagKeys.AttemptCount, result.Attempts);
         }
 
         await NotifyCompletedAsync(subscription, result, ct).ConfigureAwait(false);
@@ -192,7 +212,7 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
     {
         ArgumentNullException.ThrowIfNull(subscription);
 
-        var pingEvent = new WebhookPingEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
+        var pingEvent = new WebhookPingEvent(Guid.NewGuid(), _clock.UtcNow);
         return DispatchToSubscriptionAsync(subscription, pingEvent, ct);
     }
 
@@ -217,20 +237,20 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         // P-426: a reserved-header-name collision is rejected before any I/O — cheapest check first.
         if (TryFindReservedHeaderCollision(subscription.Headers))
         {
-            return Rejected(subscription, deliveryId, WebhookDeliveryFailureReasons.HeaderCollision);
+            return Rejected(subscription, deliveryId, WebhookErrors.HeaderCollision());
         }
 
         // A subscription without a signing secret is one subscription's data defect: a failed result, not an exception.
         if (subscription.Secrets is not { Count: > 0 })
         {
-            return Rejected(subscription, deliveryId, WebhookDeliveryFailureReasons.SigningSecretsMissing);
+            return Rejected(subscription, deliveryId, WebhookErrors.SecretsMissing());
         }
 
         // P-422: re-validated immediately before every send — never cached from registration time.
         var isTargetAllowed = await _urlValidator.ValidateAsync(subscription.Url, ct).ConfigureAwait(false);
         if (!isTargetAllowed)
         {
-            return Rejected(subscription, deliveryId, WebhookDeliveryFailureReasons.TargetRejected);
+            return Rejected(subscription, deliveryId, WebhookErrors.TargetRejected());
         }
 
         // P-427: opt-in encrypt-then-sign — the HMAC signature always covers the transmitted bytes.
@@ -244,7 +264,7 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
                 ct).ConfigureAwait(false);
         }
 
-        var timestamp = DateTimeOffset.UtcNow;
+        var timestamp = _clock.UtcNow;
         var signature = _signatureProvider.Sign(wireBody, subscription.Secrets[0], timestamp);
 
         using var httpClient = _httpClientFactory.CreateClient(WebhookHttpClientName.Name);
@@ -265,14 +285,22 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             }
         }
 
-        // The caller's correlation id, so a subscriber's support request can be traced back to the operation
-        // that caused the delivery (P-566). Only the correlation id: the tenant, actor and client are internal
-        // attribution and never leave the platform — a webhook endpoint is outside its trust boundary.
-        if (CorrelationIds.Current(RequestContextScope.Current) is { } correlationId
-            && !request.Headers.Contains(WellKnownHeaders.CorrelationId))
-        {
-            request.Headers.TryAddWithoutValidation(WellKnownHeaders.CorrelationId, correlationId);
-        }
+        // The caller's correlation id, so a subscriber's support request can be traced back to the operation that
+        // caused the delivery (P-566), written by the shared propagation helper. The context is deliberately null:
+        // the helper then writes the correlation id only, so the tenant, actor kind, actor id and client are
+        // internal attribution that cannot leave the platform — a webhook endpoint is outside its trust boundary.
+        // A subscription header of the same name already on the request wins.
+        RequestContextPropagation.WriteHeaders<HttpRequestMessage>(
+            context: null,
+            request,
+            static (carrier, name, value) =>
+            {
+                if (!carrier.Headers.Contains(name))
+                {
+                    carrier.Headers.TryAddWithoutValidation(name, value);
+                }
+            },
+            CorrelationIds.Current(RequestContextScope.Current));
 
         request.Options.Set(WebhookAttemptTracker.Key, tracker);
         tracker.MarkSendStarted();
@@ -281,15 +309,11 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         {
             using var response = await httpClient.SendAsync(request, ct).ConfigureAwait(false);
 
-            var isSuccess = response.IsSuccessStatusCode;
+            var statusCode = (int)response.StatusCode;
             return new SendOutcome(
-                new WebhookDeliveryResult(
-                    subscription.SubscriptionId,
-                    deliveryId,
-                    isSuccess,
-                    (int)response.StatusCode,
-                    tracker.Attempts,
-                    isSuccess ? null : WebhookDeliveryFailureReasons.EndpointResponded((int)response.StatusCode)),
+                response.IsSuccessStatusCode
+                    ? WebhookDeliveryResult.Succeeded(subscription.SubscriptionId, deliveryId, statusCode, tracker.Attempts)
+                    : WebhookDeliveryResult.Failed(subscription.SubscriptionId, deliveryId, WebhookErrors.EndpointResponded(statusCode), statusCode, tracker.Attempts),
                 Exception: null);
         }
         catch (Exception ex) when (
@@ -302,25 +326,20 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             // Treated identically to any other transport-level failure: a non-throwing,
             // failed WebhookDeliveryResult, never a propagated exception. Only its KIND reaches the
             // result (the message names the subscriber host); the exception itself goes to the log.
-            // A TaskCanceledException raised by the caller's own cancellation is not a failure: it propagates.
+            // A TaskCanceledException raised by the caller's own cancellation is not a failure: it propagates,
+            // while one raised by the client's own timeout is a Timeout error.
             return new SendOutcome(
-                new WebhookDeliveryResult(
-                    subscription.SubscriptionId,
-                    deliveryId,
-                    false,
-                    null,
-                    tracker.Attempts,
-                    WebhookDeliveryFailureReasons.ForTransportFault(ex)),
+                WebhookDeliveryResult.Failed(subscription.SubscriptionId, deliveryId, WebhookErrors.ForTransportFault(ex), null, tracker.Attempts),
                 ex);
         }
     }
 
-    private static SendOutcome Rejected(WebhookSubscription subscription, Guid deliveryId, string reason) =>
-        new(new WebhookDeliveryResult(subscription.SubscriptionId, deliveryId, false, null, 0, reason), Exception: null);
+    private static SendOutcome Rejected(WebhookSubscription subscription, Guid deliveryId, Error error) =>
+        new(WebhookDeliveryResult.Failed(subscription.SubscriptionId, deliveryId, error), Exception: null);
 
     /// <summary>
     /// The result of one send, with the caught transport exception (or fault) travelling beside it to the
-    /// logging call only — it is never stored in the result or the exhaustion event.
+    /// logging call and the span only — it is never stored in the result or the exhaustion event.
     /// </summary>
     private readonly record struct SendOutcome(WebhookDeliveryResult Result, Exception? Exception, bool IsFault = false);
 
@@ -351,17 +370,17 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
     private void LogDeliveryOutcome(WebhookSubscription subscription, string eventType, SendOutcome outcome)
     {
         var result = outcome.Result;
-        if (result.IsSuccess)
+        if (result.Error is not { } error)
         {
-            Log.DeliverySucceeded(_logger, subscription.SubscriptionId, eventType, result.Attempts, result.StatusCode ?? 0);
+            WebhooksLog.DeliverySucceeded(_logger, result.DeliveryId, subscription.SubscriptionId, eventType, result.Attempts, result.StatusCode ?? 0);
         }
         else if (result.Attempts >= _options.MaxAttempts)
         {
-            Log.DeliveryExhausted(_logger, subscription.SubscriptionId, eventType, result.Attempts, outcome.Exception);
+            WebhooksLog.DeliveryExhausted(_logger, result.DeliveryId, subscription.SubscriptionId, eventType, result.Attempts, error.Type, error.Code, outcome.Exception);
         }
         else
         {
-            Log.DeliveryFailed(_logger, subscription.SubscriptionId, eventType, result.Attempts, result.StatusCode, outcome.Exception);
+            WebhooksLog.DeliveryFailed(_logger, result.DeliveryId, subscription.SubscriptionId, eventType, result.Attempts, error.Type, error.Code, outcome.Exception);
         }
     }
 
@@ -380,22 +399,22 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         {
             var exhaustedEvent = new WebhookDeliveryExhaustedEvent(
                 Guid.NewGuid(),
-                DateTimeOffset.UtcNow,
+                _clock.UtcNow,
                 subscription.SubscriptionId,
                 eventType,
                 result.Attempts,
-                result.Error);
+                result.Error?.Code);
 
             var publishResult = await _eventPublisher.PublishAsync(exhaustedEvent, ct).ConfigureAwait(false);
 
             if (publishResult.IsFailure)
             {
-                Log.ExhaustionEventNotPublished(
+                WebhooksLog.ExhaustionEventNotPublished(
                     _logger,
+                    result.DeliveryId,
                     subscription.SubscriptionId,
-                    eventType,
-                    publishResult.Error.Code,
-                    null);
+                    publishResult.Error.Type,
+                    publishResult.Error.Code);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -404,7 +423,7 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
         }
         catch (Exception ex)
         {
-            Log.ExhaustionEventNotPublished(_logger, subscription.SubscriptionId, eventType, PublisherThrewCode, ex);
+            WebhooksLog.ExhaustionPublisherFaulted(_logger, result.DeliveryId, subscription.SubscriptionId, ex);
         }
     }
 
@@ -418,7 +437,7 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             }
             catch (Exception ex)
             {
-                LogObserverException(ex, observer.GetType().Name);
+                WebhooksLog.ObserverException(_logger, observer.GetType().Name, ex);
             }
         }
     }
@@ -433,51 +452,8 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             }
             catch (Exception ex)
             {
-                LogObserverException(ex, observer.GetType().Name);
+                WebhooksLog.ObserverException(_logger, observer.GetType().Name, ex);
             }
         }
-    }
-
-    private void LogObserverException(Exception ex, string observerTypeName) =>
-        Log.ObserverException(_logger, ex, observerTypeName);
-
-    /// <summary>Source-generated <see cref="LoggerMessage"/> definitions for <see cref="WebhookDispatcher"/>.</summary>
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 0,
-            Level = LogLevel.Warning,
-            Message = "Webhook delivery observer {ObserverType} threw an exception; delivery outcome is unaffected.")]
-        public static partial void ObserverException(ILogger logger, Exception ex, string observerType);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 1,
-            Level = LogLevel.Information,
-            Message = "Webhook delivery to subscription {SubscriptionId} for event {EventType} succeeded after {Attempts} attempt(s) with status code {StatusCode}.")]
-        public static partial void DeliverySucceeded(ILogger logger, Guid subscriptionId, string eventType, int attempts, int statusCode);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 2,
-            Level = LogLevel.Warning,
-            Message = "Webhook delivery to subscription {SubscriptionId} for event {EventType} failed after {Attempts} attempt(s) with status code {StatusCode}.")]
-        public static partial void DeliveryFailed(ILogger logger, Guid subscriptionId, string eventType, int attempts, int? statusCode, Exception? exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 3,
-            Level = LogLevel.Warning,
-            Message = "Webhook delivery to subscription {SubscriptionId} for event {EventType} was exhausted after {Attempts} attempt(s) without a successful response.")]
-        public static partial void DeliveryExhausted(ILogger logger, Guid subscriptionId, string eventType, int attempts, Exception? exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 4,
-            Level = LogLevel.Error,
-            Message = "Webhook exhaustion event for subscription {SubscriptionId} / event {EventType} could not be published ({ErrorCode}). The delivery outcome stands; only the notification was lost.")]
-        public static partial void ExhaustionEventNotPublished(ILogger logger, Guid subscriptionId, string eventType, string errorCode, Exception? exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Integration + 5,
-            Level = LogLevel.Error,
-            Message = "Webhook delivery to subscription {SubscriptionId} for event {EventType} faulted unexpectedly; the delivery is reported as failed.")]
-        public static partial void DeliveryFaulted(ILogger logger, Guid subscriptionId, string eventType, Exception? exception);
     }
 }

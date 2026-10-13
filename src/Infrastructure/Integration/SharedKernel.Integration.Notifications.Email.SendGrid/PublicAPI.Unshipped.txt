@@ -1,0 +1,15 @@
+#nullable enable
+SharedKernel.Integration.Notifications.Email.SendGrid.Extensions.ServiceCollectionExtensions
+SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions
+SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions.ApiKey.get -> string!
+SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions.ApiKey.set -> void
+SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions.BaseAddress.get -> System.Uri!
+SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions.BaseAddress.set -> void
+SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions.SendGridNotificationOptions() -> void
+SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Integration.Notifications.Email.SendGrid.SendGridEmailNotificationSender
+SharedKernel.Integration.Notifications.Email.SendGrid.SendGridEmailNotificationSender.SendAsync<TTemplateModel>(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!>!
+SharedKernel.Integration.Notifications.Email.SendGrid.SendGridEmailNotificationSender.SendGridEmailNotificationSender(System.Net.Http.IHttpClientFactory! httpClientFactory, SharedKernel.Storage.IFileStorageFactory? storageFactory, SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationSenderIdentityResolver! senderIdentityResolver, System.Collections.Generic.IEnumerable<SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationDeliveryObserver!>! observers, Microsoft.Extensions.Options.IOptions<SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions!>! options, SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics! metrics, Microsoft.Extensions.Logging.ILogger<SharedKernel.Integration.Notifications.Email.SendGrid.SendGridEmailNotificationSender!>! logger) -> void
+SharedKernel.Integration.Notifications.Email.SendGrid.SendGridEmailNotificationSender.SupportedChannel.get -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+static SharedKernel.Integration.Notifications.Email.SendGrid.Extensions.ServiceCollectionExtensions.AddSendGridEmailNotifications(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static readonly SharedKernel.Integration.Notifications.Email.SendGrid.Options.SendGridNotificationOptions.DefaultBaseAddress -> System.Uri!

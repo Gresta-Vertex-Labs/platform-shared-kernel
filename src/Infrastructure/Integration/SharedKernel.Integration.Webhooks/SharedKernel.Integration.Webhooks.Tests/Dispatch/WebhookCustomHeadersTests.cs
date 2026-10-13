@@ -1,3 +1,4 @@
+using SharedKernel.Integration.Webhooks.Dispatch;
 using System.Net;
 using FluentAssertions;
 using SharedKernel.Integration.Webhooks.Signing;
@@ -60,7 +61,7 @@ public sealed class WebhookCustomHeadersTests
             CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().NotBeNullOrEmpty();
+        result.Error!.Code.Should().Be(WebhookErrorCodes.HeaderCollision);
         handler.CallCount.Should().Be(0);
     }
 

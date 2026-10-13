@@ -77,10 +77,10 @@ var result = await email.SendAsync(                         // [FromKeyedService
   base64-encoded through a `CryptoStream` + `ToBase64Transform`, so the raw bytes are never one contiguous array (the
   Mail Send API still needs the base64 text as one JSON field). A reference the storage factory cannot open (a store
   that is not registered, a tenant the store does not have) fails the send with
-  `notifications.attachment_unresolvable`; a failed download fails it too. The result text is a fixed sentence
-  ("Unable to resolve one or more attachments: ..."); the storage message and the exception text never reach it. Storage
-  is needed only for attachments: a host without `AddSharedKernelStorage()` sends every other message, and a message
-  with attachments fails with `notifications.attachment_unresolvable`.
+  `integration.notification.attachment_unresolvable`; a failed download fails it too. The error message is a fixed
+  sentence; the storage message and the exception text never reach it (the storage error code is logged as
+  `{StorageErrorCode}`). Storage is needed only for attachments: a host without `AddSharedKernelStorage()` sends
+  every other message, and a message with attachments fails with `integration.notification.attachment_unresolvable`.
 - **Resilience.** The named client `SharedKernel.Integration.Notifications.Email.SendGrid` uses the standard
   resilience handler configured from `NotificationDeliveryOptions`: `MaxAttempts - 1` exponential retries between
   `BaseBackoffDelay` and `MaxBackoffDelay`, `RequestTimeout` per attempt, and a rate limiter of `MaxConcurrentSends`.
@@ -112,24 +112,41 @@ Retry, timeout and concurrency come from `SharedKernel:Integration:Notifications
 
 ### Errors
 
-| Code | When |
-| --- | --- |
-| `notifications.attachment_unresolvable` | An attachment's `FileReference` could not be opened by `IFileStorageFactory`, or could not be downloaded from storage |
+`NotificationDeliveryResult.Error` is an `Error` (`null` exactly when the send succeeded) with a fixed message, never
+exception text. The codes are `NotificationErrorCodes` in `SharedKernel.Integration.Notifications.Abstractions`:
 
-`NotificationDeliveryResult.Error` is always a fixed sentence, never exception text: the SendGrid status code
-("SendGrid responded with status code 400."), "SendGrid could not be reached.", "SendGrid delivery timed out." or
-"SendGrid delivery was rejected by the resilience pipeline.". The exception object goes to the failure log.
+| Code | `ErrorType` | When |
+| --- | --- | --- |
+| `integration.notification.provider_unavailable` | `Unavailable` | SendGrid answered 5xx or 429, could not be reached, or the circuit is open |
+| `integration.notification.provider_timeout` | `Timeout` | The attempt or the whole send timed out |
+| `integration.notification.provider_rejected` | `Unexpected` | SendGrid answered any other non-2xx status |
+| `integration.notification.attachment_unresolvable` | `Validation` | An attachment's `FileReference` could not be opened by `IFileStorageFactory`, or could not be downloaded from storage |
+
+The exception object goes to the failure log and, for an unexpected fault, to the span.
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 15200 | Information | SendGrid email delivery succeeded |
-| 15201 | Warning | SendGrid email delivery failed with `{FailureKind}` and `{StatusCode}`; carries the exception when there was one |
-| 15202 | Warning | A delivery observer threw; the outcome is unaffected |
+| 15200 | Debug | SendGrid email delivery `{NotificationDeliveryId}` succeeded |
+| 15201 | Warning | Delivery failed with `{ErrorType}` error `{ErrorCode}` and `{StatusCode}`; carries the exception when there was one |
+| 15202 | Error | A delivery observer threw; the outcome is unaffected (carries the exception) |
+| 15203 | Warning | An attachment could not be read from storage, with `{StorageErrorCode}` |
 
-Spans come from `NotificationIntegrationActivitySource` (`SharedKernel.Integration`); subscribe with
-`WithIntegrationTelemetry()`.
+No recipient, template value, attachment name or API key is ever logged.
+
+### Telemetry
+
+`ActivitySource` and `Meter` `SharedKernel.Integration` (`AddServiceDefaults` subscribes by wildcard).
+
+| Signal | Name | Kind / unit | Tags |
+| --- | --- | --- | --- |
+| Span | `notification send` | Client | `notification.channel`, `notification.delivery_id`, `notification.attempt_count`, `outcome` (plus `error.code`/`error.type` on failure) |
+| Counter | `sharedkernel.integration.notification.sends` | `{message}` | `notification.channel`, `outcome` |
+| Histogram | `sharedkernel.integration.notification.send.duration` | `s` | `notification.channel`, `outcome` |
+
+`outcome` is `success`, `failure`, `exception` or `canceled`. The recipient and the delivery id are never metric tags.
+`NotificationMetrics` is a singleton built from `IMeterFactory`; the registration calls `AddMetrics()`.
 
 ## Testing
 
@@ -145,7 +162,7 @@ Unit tests of code that sends email use
 | --- | --- | --- |
 | Rely on SendGrid to drop a duplicate send | Record `NotificationDeliveryId` as sent in your outbox and check it | `custom_args` is correlation only |
 | Forget the identity resolver | Register `INotificationSenderIdentityResolver` | The sender cannot be constructed without it |
-| Attach from a store the host never registered | Register every store an attachment may name | The send fails with `notifications.attachment_unresolvable` |
+| Attach from a store the host never registered | Register every store an attachment may name | The send fails with `integration.notification.attachment_unresolvable` |
 | Attach very large files | Link to a presigned download instead | The base64 text is still one JSON field in the request |
 | Put the API key in `appsettings.json` | Load it from a secret store | It grants mail-send on your account |
 

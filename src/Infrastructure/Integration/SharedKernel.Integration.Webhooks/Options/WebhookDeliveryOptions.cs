@@ -62,7 +62,7 @@ public sealed class WebhookDeliveryOptions : IValidatableObject
     /// own TLS termination boundary. Requires an <c>ISymmetricEncryptionService</c> to be registered
     /// (via <c>SharedKernel.Cryptography</c>'s <c>AddSharedKernelCryptography(configuration).AddSymmetricEncryption()</c>
     /// plus a consumer-supplied <c>IEncryptionKeyProvider</c>) — enabling this option without registering that
-    /// service fails loudly at first delivery, not silently. The transmitted body is the ciphertext's canonical
+    /// service fails host startup through options validation, not silently. The transmitted body is the ciphertext's canonical
     /// <c>EncryptedPayload.ToString()</c> form (unpadded Base64Url), which a subscriber reads back with
     /// <c>EncryptedPayload.TryParse</c> or <c>ISymmetricEncryptionService.DecryptToStringAsync</c>.
     /// </summary>

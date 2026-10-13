@@ -1,9 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 using Polly;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
 using SharedKernel.Integration.Notifications.Abstractions.Options;
+using SharedKernel.Integration.Notifications.Abstractions.Tracing;
 using SharedKernel.Integration.Notifications.Sms.Twilio.Options;
 
 namespace SharedKernel.Integration.Notifications.Sms.Twilio.Extensions;
@@ -16,7 +18,7 @@ public static class ServiceCollectionExtensions
     /// <see cref="System.Net.Http.HttpClient"/> used for Twilio delivery (wired with
     /// <c>Microsoft.Extensions.Http.Resilience</c>'s standard resilience handler, configured from
     /// the shared <see cref="NotificationDeliveryOptions"/>), and the keyed
-    /// <see cref="Notifications.INotificationSender"/> for <see cref="NotificationChannel.Sms"/>.
+    /// <see cref="INotificationSender"/> for <see cref="NotificationChannel.Sms"/>.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configure">Callback to supply <see cref="TwilioNotificationOptions.AccountSid"/>/<see cref="TwilioNotificationOptions.AuthToken"/> and any other overrides.</param>
@@ -34,6 +36,8 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddMetrics();
+        services.TryAddSingleton<NotificationMetrics>();
         services.AddKeyedScoped<INotificationSender, TwilioSmsNotificationSender>(NotificationChannel.Sms);
 
         services

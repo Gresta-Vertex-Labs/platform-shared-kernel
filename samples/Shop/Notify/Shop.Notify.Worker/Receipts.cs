@@ -103,7 +103,7 @@ public sealed class ReceiptDueConsumer(
         if (!emailed.IsSuccess)
         {
             throw new InvalidOperationException(
-                $"The receipt email was not accepted: {emailed.Error}"
+                $"The receipt email was not accepted: {emailed.Error?.Code}"
             );
         }
 
@@ -134,7 +134,7 @@ public sealed class ReceiptDueConsumer(
         if (!texted.IsSuccess)
         {
             throw new InvalidOperationException(
-                $"The merchant text was not accepted: {texted.Error}"
+                $"The merchant text was not accepted: {texted.Error?.Code}"
             );
         }
     }

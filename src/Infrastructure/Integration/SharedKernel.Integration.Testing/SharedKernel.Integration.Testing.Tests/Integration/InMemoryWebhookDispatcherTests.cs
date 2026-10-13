@@ -1,3 +1,4 @@
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Integration.Webhooks.Dispatch;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Testing.Integration;
@@ -97,7 +98,7 @@ public sealed class InMemoryWebhookDispatcherTests
     {
         var dispatcher = new InMemoryWebhookDispatcher();
         var subscription = CreateSubscription();
-        var failure = new WebhookDeliveryResult(subscription.SubscriptionId, Guid.NewGuid(), false, 500, 5, "boom");
+        var failure = WebhookDeliveryResult.Failed(subscription.SubscriptionId, Guid.NewGuid(), Error.Unavailable("integration.webhook.endpoint_unavailable", "The webhook endpoint answered with status code 500."), 500, 5);
         dispatcher.SetDispatchResult(subscription.SubscriptionId, failure);
 
         var result = await dispatcher.DispatchToSubscriptionAsync(
@@ -141,7 +142,7 @@ public sealed class InMemoryWebhookDispatcherTests
     {
         var dispatcher = new InMemoryWebhookDispatcher();
         var subscription = CreateSubscription();
-        var failure = new WebhookDeliveryResult(subscription.SubscriptionId, Guid.NewGuid(), false, null, 3, "timeout");
+        var failure = WebhookDeliveryResult.Failed(subscription.SubscriptionId, Guid.NewGuid(), Error.Timeout("integration.webhook.timeout", "The webhook delivery timed out."), null, 3);
         dispatcher.SetTestDeliveryResult(subscription.SubscriptionId, failure);
 
         var result = await dispatcher.SendTestDeliveryAsync(subscription, CancellationToken.None);

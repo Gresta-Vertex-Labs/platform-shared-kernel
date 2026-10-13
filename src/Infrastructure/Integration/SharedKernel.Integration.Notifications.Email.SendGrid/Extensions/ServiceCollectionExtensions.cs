@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,6 +8,7 @@ using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
 using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Abstractions.Options;
+using SharedKernel.Integration.Notifications.Abstractions.Tracing;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Options;
 using SharedKernel.Storage;
 
@@ -20,7 +22,7 @@ public static class ServiceCollectionExtensions
     /// <see cref="System.Net.Http.HttpClient"/> used for SendGrid delivery (wired with
     /// <c>Microsoft.Extensions.Http.Resilience</c>'s standard resilience handler, configured from
     /// the shared <see cref="NotificationDeliveryOptions"/>), and the keyed
-    /// <see cref="Notifications.INotificationSender"/> for <see cref="NotificationChannel.Email"/>.
+    /// <see cref="INotificationSender"/> for <see cref="NotificationChannel.Email"/>.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configure">Callback to supply <see cref="SendGridNotificationOptions.ApiKey"/> and any other overrides.</param>
@@ -30,7 +32,7 @@ public static class ServiceCollectionExtensions
     /// to be registered by the consuming service (this method does not register it). Attachments additionally need
     /// <see cref="SharedKernel.Storage.IFileStorageFactory"/> (<c>services.AddSharedKernelStorage()</c> plus a provider
     /// and the stores they live in); without it every message without attachments is still sent, and one with
-    /// attachments fails with <c>notifications.attachment_unresolvable</c>. Each attachment is read from the store
+    /// attachments fails with <c>integration.notification.attachment_unresolvable</c>. Each attachment is read from the store
     /// its <c>FileReference</c> names, through that reference's tenant view when it carries a tenant.
     /// </remarks>
     public static IServiceCollection AddSendGridEmailNotifications(
@@ -51,6 +53,9 @@ public static class ServiceCollectionExtensions
                 "AddSendGridEmailNotifications needs an INotificationSenderIdentityResolver (the From address); register one.")
             .ValidateOnStart();
 
+        services.AddMetrics();
+        services.TryAddSingleton<NotificationMetrics>();
+
         // A factory, so storage stays optional (GetService) while every required dependency still fails with its
         // own name (GetRequiredService) when it is missing.
         services.AddKeyedScoped<INotificationSender>(
@@ -61,6 +66,7 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<INotificationSenderIdentityResolver>(),
                 serviceProvider.GetServices<INotificationDeliveryObserver>(),
                 serviceProvider.GetRequiredService<IOptions<SendGridNotificationOptions>>(),
+                serviceProvider.GetRequiredService<NotificationMetrics>(),
                 serviceProvider.GetRequiredService<ILogger<SendGridEmailNotificationSender>>()));
 
         services

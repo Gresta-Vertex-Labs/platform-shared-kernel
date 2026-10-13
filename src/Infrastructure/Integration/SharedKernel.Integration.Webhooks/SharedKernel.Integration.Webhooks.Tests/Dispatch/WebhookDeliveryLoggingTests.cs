@@ -36,7 +36,7 @@ public sealed class WebhookDeliveryLoggingTests
             CancellationToken.None);
 
         var records = harness.LoggerFactory.GetLogger(DispatcherCategory).Records;
-        var record = records.ShouldHaveLogged(LoggingEventIdRanges.Integration + 1, LogLevel.Information);
+        var record = records.ShouldHaveLogged(LoggingEventIdRanges.Integration + 1, LogLevel.Debug);
         record.TryGetProperty("SubscriptionId", out var subscriptionId).Should().BeTrue();
         subscriptionId.Should().Be(subscription.SubscriptionId);
 

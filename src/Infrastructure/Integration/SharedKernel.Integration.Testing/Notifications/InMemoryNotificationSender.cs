@@ -75,7 +75,7 @@ public sealed class InMemoryNotificationSender : INotificationSender
             return Task.FromResult(typedFactory(message));
         }
 
-        return Task.FromResult(new NotificationDeliveryResult(message.NotificationDeliveryId, true, null, null));
+        return Task.FromResult(NotificationDeliveryResult.Succeeded(message.NotificationDeliveryId));
     }
 
     /// <summary>Returns the first recorded message matching <paramref name="filter"/> (or any, when omitted).</summary>

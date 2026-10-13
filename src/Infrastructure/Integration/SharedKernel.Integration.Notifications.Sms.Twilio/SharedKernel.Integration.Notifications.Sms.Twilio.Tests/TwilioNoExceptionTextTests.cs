@@ -1,3 +1,4 @@
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using System.Net;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,7 @@ namespace SharedKernel.Integration.Notifications.Sms.Twilio.Tests;
 /// Rule 24: exception text (the provider endpoint) never reaches a result, a log record or a span. The failure log
 /// carries the closed failure kind and the exception object; recipient and template fields stay absent.
 /// </summary>
+[Collection(TwilioSenderCollection.Name)]
 public sealed class TwilioNoExceptionTextTests
 {
     private const string Sentinel = "https://api.sentinel-provider.invalid/2010-04-01/Accounts/ACsentinel/Messages.json";
@@ -50,15 +52,15 @@ public sealed class TwilioNoExceptionTextTests
     {
         AllRecords(harness).Select(r => r with { Exception = null }).ToList().ShouldNotLeak([.. forbidden, Recipient, Code]);
         spans.RecordedActivities
-            .Where(a => a.OperationName == "NotificationSender.Send")
+            .Where(a => a.OperationName == "notification send")
             .ShouldNotLeak([.. forbidden, Recipient, Code]);
     }
 
     public static TheoryData<string, Func<Exception>, string> TransportFaults => new()
     {
-        { "HttpRequestException", () => new HttpRequestException(Sentinel), "Twilio could not be reached." },
-        { "TimeoutRejectedException", () => new TimeoutRejectedException(Sentinel), "Twilio delivery timed out." },
-        { "BrokenCircuitException", () => new BrokenCircuitException(Sentinel), "Twilio delivery was rejected by the resilience pipeline." },
+        { "HttpRequestException", () => new HttpRequestException(Sentinel), NotificationErrorCodes.ProviderUnavailable },
+        { "TimeoutRejectedException", () => new TimeoutRejectedException(Sentinel), NotificationErrorCodes.ProviderTimeout },
+        { "BrokenCircuitException", () => new BrokenCircuitException(Sentinel), NotificationErrorCodes.ProviderUnavailable },
     };
 
     [Theory]
@@ -74,7 +76,7 @@ public sealed class TwilioNoExceptionTextTests
         var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Be(expectedReason);
+        result.Error!.Code.Should().Be(expectedReason);
         AssertNoLeak(harness, spans, Sentinel, "sentinel-provider", "ACsentinel");
 
         var record = AllRecords(harness).ShouldHaveLoggedWithException(DeliveryFailedId, fault.GetType());
@@ -95,11 +97,11 @@ public sealed class TwilioNoExceptionTextTests
 
         var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
 
-        result.Error.Should().Be("Twilio responded with status code 401.");
+        result.Error.Should().Be(NotificationErrors.ProviderRejected(401));
         AssertNoLeak(harness, spans, "reason-phrase-sentinel", "body-sentinel");
         var record = AllRecords(harness).ShouldHaveLogged(DeliveryFailedId, LogLevel.Warning);
-        record.TryGetProperty("FailureKind", out var kind).Should().BeTrue();
-        kind.Should().Be("provider_rejected");
+        record.TryGetProperty("ErrorCode", out var kind).Should().BeTrue();
+        kind.Should().Be(NotificationErrorCodes.ProviderRejected);
         record.TryGetProperty("StatusCode", out var status).Should().BeTrue();
         status.Should().Be(401);
     }
