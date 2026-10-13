@@ -28,8 +28,8 @@ namespace SharedKernel.Messaging.MassTransit.Tests.ErrorSafetyTests;
 /// </remarks>
 public sealed class MessagingMeterExportTests
 {
-    private const string PublishCount = "messaging.publish.count";
-    private const string ConsumeCount = "messaging.consume.count";
+    private const string PublishCount = "sharedkernel.messaging.publish.count";
+    private const string ConsumeCount = "sharedkernel.messaging.consume.count";
     private const string MessageTypeTag = "messaging.message_type";
 
     [Fact]

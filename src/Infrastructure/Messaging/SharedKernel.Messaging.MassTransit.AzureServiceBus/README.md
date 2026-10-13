@@ -72,7 +72,7 @@ builder.Services
 | Builder call | On Azure Service Bus |
 | --- | --- |
 | `WithDelayedDelivery()` | MassTransit's Service Bus scheduler (`ScheduledEnqueueTimeUtc`); the broker holds the message |
-| `WithDeadLetterPolicy(...)` | **Does nothing.** Dead-lettering is native (`MaxDeliveryCount` on the entity, set in infrastructure); a startup warning (7010) says so |
+| `WithDeadLetterPolicy(...)` | **Does nothing.** Dead-lettering is native (`MaxDeliveryCount` on the entity, set in infrastructure); a startup warning (7200) says so |
 | `PublishContext.WithPartitionKey(key)` | The session id (and the routing key). Ordering needs sessions enabled on the receiving entity — an infrastructure responsibility |
 | `ConsumerDefinitionBase.ConcurrentMessageLimit` | Overrides `MaxConcurrentCalls` on that consumer's endpoint |
 
@@ -106,7 +106,7 @@ it; bind it inside the `configure` action if you keep it in configuration
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 7010 | Warning | `WithDeadLetterPolicy()` was called under Azure Service Bus; it has no effect |
+| 7200 | Warning | `WithDeadLetterPolicy()` was called under Azure Service Bus; it has no effect |
 
 Error codes, the other log events and the `messaging` readiness probe belong to the core — see the
 [MassTransit package README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit/README.md#reference).

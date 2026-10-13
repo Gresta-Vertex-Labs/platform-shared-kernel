@@ -10,13 +10,12 @@ namespace SharedKernel.Testing.Messaging;
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="InMemoryMessageBus"/> as the <see cref="IMessageBus"/> singleton.
+    /// Registers <see cref="InMemoryMessageBus"/> as the scoped <see cref="IMessageBus"/>.
     /// </summary>
     /// <remarks>
-    /// <strong>Lifetime deviation:</strong> production <see cref="IMessageBus"/> registrations are
-    /// scoped. This double is registered as a singleton so tests can resolve the same recorder
-    /// instance that outlives the DI scope used by the system under test, allowing assertions to
-    /// run after the action under test completes. Do not mistake this for the production DI shape.
+    /// The interface is scoped, like the production registration. The recorder behind it is one singleton, so tests
+    /// can resolve the same instance that outlives the DI scope used by the system under test and assert after the
+    /// action completes.
     /// </remarks>
     /// <param name="services">The service collection to register against.</param>
     /// <returns><paramref name="services"/>, for fluent chaining.</returns>
@@ -24,17 +23,16 @@ public static class MessagingServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<InMemoryMessageBus>();
-        services.AddSingleton<IMessageBus>(sp => sp.GetRequiredService<InMemoryMessageBus>());
+        services.AddScoped<IMessageBus>(sp => sp.GetRequiredService<InMemoryMessageBus>());
         return services;
     }
 
     /// <summary>
-    /// Registers <see cref="InMemoryEventPublisher"/> as the <see cref="IEventPublisher"/> singleton.
+    /// Registers <see cref="InMemoryEventPublisher"/> as the scoped <see cref="IEventPublisher"/>.
     /// </summary>
     /// <remarks>
-    /// <strong>Lifetime deviation:</strong> production <see cref="IEventPublisher"/> registrations
-    /// are scoped. This double is registered as a singleton for the same reason documented on
-    /// <see cref="AddInMemoryMessageBus"/>.
+    /// The interface is scoped, like the production registration; the recorder behind it is one singleton, for the
+    /// reason given on <see cref="AddInMemoryMessageBus"/>.
     /// </remarks>
     /// <param name="services">The service collection to register against.</param>
     /// <returns><paramref name="services"/>, for fluent chaining.</returns>
@@ -42,7 +40,7 @@ public static class MessagingServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<InMemoryEventPublisher>();
-        services.AddSingleton<IEventPublisher>(sp => sp.GetRequiredService<InMemoryEventPublisher>());
+        services.AddScoped<IEventPublisher>(sp => sp.GetRequiredService<InMemoryEventPublisher>());
         return services;
     }
 }

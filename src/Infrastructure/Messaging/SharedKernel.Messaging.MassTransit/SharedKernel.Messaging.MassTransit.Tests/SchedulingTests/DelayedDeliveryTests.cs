@@ -43,7 +43,7 @@ public sealed class DelayedDeliveryTests
         // Resolve MassTransit's IMessageScheduler from a scope (it is registered as scoped).
         using var scope = provider.CreateScope();
         var mtScheduler = scope.ServiceProvider.GetRequiredService<global::MassTransit.IMessageScheduler>();
-        var scheduler = new MassTransitMessageScheduler(mtScheduler);
+        var scheduler = new MassTransitMessageScheduler(mtScheduler, NullLogger<MassTransitMessageScheduler>.Instance);
 
         // Schedule a message for 200 ms from now.
         var deliverAt = DateTimeOffset.UtcNow.AddMilliseconds(200);
@@ -88,7 +88,7 @@ public sealed class DelayedDeliveryTests
 
         using var scope = provider.CreateScope();
         var mtScheduler = scope.ServiceProvider.GetRequiredService<global::MassTransit.IMessageScheduler>();
-        var scheduler = new MassTransitMessageScheduler(mtScheduler);
+        var scheduler = new MassTransitMessageScheduler(mtScheduler, NullLogger<MassTransitMessageScheduler>.Instance);
 
         // Schedule with a long delay — long enough that we can cancel before delivery.
         var deliverAt = DateTimeOffset.UtcNow.AddSeconds(30);
@@ -136,7 +136,7 @@ public sealed class DelayedDeliveryTests
 
         using var scope = provider.CreateScope();
         var mtScheduler = scope.ServiceProvider.GetRequiredService<global::MassTransit.IMessageScheduler>();
-        var scheduler = new MassTransitMessageScheduler(mtScheduler);
+        var scheduler = new MassTransitMessageScheduler(mtScheduler, NullLogger<MassTransitMessageScheduler>.Instance);
 
         // Act — cancel with a token that was never returned by ScheduleAsync.
         var unknownToken = Guid.NewGuid();
@@ -174,6 +174,7 @@ public sealed class DelayedDeliveryTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddLogging();
         services
             .AddSharedKernelMessaging(o => o.ServiceName = "sched-test")
             .UseRabbitMq("rabbitmq://localhost")

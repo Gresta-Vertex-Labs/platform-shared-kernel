@@ -27,7 +27,7 @@ public sealed class OTelInstrumentationTests
     private const string SourceName = "SharedKernel.Messaging";
 
     // -------------------------------------------------------------------------
-    // OT-05: ConsumerBase.Consume produces a "Consumer.Consume" activity
+    // OT-05: ConsumerBase.Consume produces a "messaging consume" activity
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class OTelInstrumentationTests
                 // Complete only for THIS test's activity. Signalling on any stopped activity let
                 // another class's Consumer.Consume release the wait early, so the assertion ran
                 // before the activity under test had finished -- the test then found nothing.
-                if (activity.OperationName == "Consumer.Consume"
+                if (activity.OperationName == "messaging consume"
                     && Equals(activity.GetTagItem("messaging.message_type"), nameof(OTelTestMessage)))
                 {
                     activityStopped.TrySetResult(true);
@@ -77,16 +77,16 @@ public sealed class OTelInstrumentationTests
 
         // Filter by the message-type tag rather than asserting global singularity — the
         // ActivityListener is process-wide and other test classes running concurrently
-        // also drive ConsumerBase<T>.Consume(), emitting their own "Consumer.Consume" activities.
+        // also drive ConsumerBase<T>.Consume(), emitting their own "messaging consume" activities.
         var consumeActivity = capturedActivities.Should().ContainSingle(a =>
-                a.OperationName == "Consumer.Consume" &&
+                a.OperationName == "messaging consume" &&
                 Equals(a.GetTagItem("messaging.message_type"), nameof(OTelTestMessage)))
             .Subject;
         consumeActivity.GetTagItem("messaging.message_type").Should().Be(nameof(OTelTestMessage));
     }
 
     // -------------------------------------------------------------------------
-    // OT-06: MassTransitEventPublisher.PublishAsync produces an "EventPublisher.Publish" activity
+    // OT-06: MassTransitEventPublisher.PublishAsync produces an "messaging publish_event" activity
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class OTelInstrumentationTests
         // The tag is the [IntegrationEvent] name (the envelope's CloudEvents type), never the CLR class name.
         var publishActivity = capturedActivities
             .Should().ContainSingle(a =>
-                a.OperationName == "EventPublisher.Publish" &&
+                a.OperationName == "messaging publish_event" &&
                 Equals(a.GetTagItem("messaging.event_type"), OTelTestIntegrationEvent.EventName))
             .Subject;
         publishActivity.GetTagItem("messaging.event_type").Should().Be(OTelTestIntegrationEvent.EventName);
@@ -181,7 +181,7 @@ public sealed class OTelInstrumentationTests
         // Filter by the event-type tag (set before envelope construction runs) rather than
         // asserting global singularity — see note in PublishAsync_ProducesEventPublisherPublishActivity...
         capturedActivities.Should().ContainSingle(a =>
-            a.OperationName == "EventPublisher.Publish" &&
+            a.OperationName == "messaging publish_event" &&
             Equals(a.GetTagItem("messaging.event_type"), OTelInvalidIntegrationEvent.EventName));
     }
 
@@ -215,7 +215,7 @@ public sealed class OTelInstrumentationTests
 
         OTelLogScopeCaptureStore.CapturedKeys.Should().Contain("messaging.message_type",
             "messaging.message_type must always be present in the consumer log scope");
-        OTelLogScopeCaptureStore.CapturedKeys.Should().Contain("messaging.destination",
+        OTelLogScopeCaptureStore.CapturedKeys.Should().Contain("messaging.destination.name",
             "messaging.destination must be present when ConsumeContext.DestinationAddress is set " +
             "(MassTransit TestHarness always assigns a receive endpoint address)");
     }

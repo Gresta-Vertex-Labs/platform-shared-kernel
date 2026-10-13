@@ -176,6 +176,106 @@ public sealed class DispatchContextParityTests
 
         await harness.Stop();
     }
+
+    /// <summary>
+    /// Both verbs write the actor kind through the one platform mapping (<c>RequestContextPropagation</c>): with no caller
+    /// identity it is <c>Anonymous</c>, which readers treat the same as an absent header, and the correlation and tenant
+    /// headers keep their names and formats.
+    /// </summary>
+    [Fact]
+    public async Task BothVerbs_WriteTheSameTenantCorrelationAndActorKindHeaders()
+    {
+        var tenantId = Guid.NewGuid();
+        var correlationId = Guid.NewGuid();
+
+        await using ServiceProvider provider = BuildProvider();
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            var tenant = new SharedKernel.Execution.Tenancy.TenantId(tenantId);
+            await scope.ServiceProvider.GetRequiredService<IMessageBus>().PublishAsync(
+                new ParityMessage("payload"),
+                ctx => ctx.WithTenantId(tenant).WithHeader(WellKnownHeaders.CorrelationId, correlationId.ToString("D")),
+                CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<IEventPublisher>().PublishAsync(
+                ParityEvent.Create(),
+                ctx => ctx.WithTenantId(tenant).WithHeader(WellKnownHeaders.CorrelationId, correlationId.ToString("D")),
+                CancellationToken.None);
+        }
+
+        (await harness.Published.Any<ParityMessage>()).Should().BeTrue();
+        (await harness.Published.Any<EventEnvelope<ParityEvent>>()).Should().BeTrue();
+
+        var message = harness.Published.Select<ParityMessage>().First().Context.Headers;
+        var envelope = harness.Published.Select<EventEnvelope<ParityEvent>>().First().Context.Headers;
+
+        foreach (var headers in new[] { message, envelope })
+        {
+            headers.Get<string>(WellKnownHeaders.TenantId).Should().Be(tenantId.ToString("D"));
+            headers.Get<string>(WellKnownHeaders.CorrelationId).Should().Be(correlationId.ToString("D"));
+            headers.Get<string>(WellKnownHeaders.ActorKind).Should().Be("Anonymous");
+            headers.Get<string>(WellKnownHeaders.ActorId).Should().BeNull("no identity is stamped by the pipe");
+            headers.Get<string>(WellKnownHeaders.ClientId).Should().BeNull();
+        }
+
+        await harness.Stop();
+    }
+
+    /// <summary>
+    /// A caller-supplied actor kind overwrites the pipe's <c>Anonymous</c> default, so the explicit-wins rule holds for the
+    /// header the platform mapping now always writes.
+    /// </summary>
+    [Fact]
+    public async Task ExplicitActorKind_OverwritesTheAnonymousDefault()
+    {
+        await using ServiceProvider provider = BuildProvider();
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IMessageBus>().PublishAsync(
+                new ParityMessage("explicit-kind"),
+                ctx => ctx.WithHeader(WellKnownHeaders.ActorKind, "Service"),
+                CancellationToken.None);
+        }
+
+        (await harness.Published.Any<ParityMessage>()).Should().BeTrue();
+
+        harness.Published.Select<ParityMessage>().First()
+            .Context.Headers.Get<string>(WellKnownHeaders.ActorKind)
+            .Should().Be("Service", "caller-supplied headers are applied last");
+
+        await harness.Stop();
+    }
+
+    /// <summary>
+    /// <c>PublishContextPipe</c> never writes a correlation or tenant header directly: those names are written by
+    /// <c>RequestContextPropagation</c> alone.
+    /// </summary>
+    [Fact]
+    public void PublishContextPipe_DoesNotWriteWellKnownHeadersDirectly()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "src", "Infrastructure", "Messaging", "SharedKernel.Messaging.MassTransit", "Internal", "PublishContextPipe.cs"));
+
+        source.Should().NotContain("Headers.Set(WellKnownHeaders.TenantId");
+        source.Should().NotContain("Headers.Set(WellKnownHeaders.CorrelationId");
+        source.Should().Contain("RequestContextPropagation.WriteHeaders");
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Platform.SharedKernel.slnx")))
+            directory = directory.Parent;
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException("The repository root containing Platform.SharedKernel.slnx was not found.");
+    }
 }
 
 /// <summary>The plain message used by these tests.</summary>

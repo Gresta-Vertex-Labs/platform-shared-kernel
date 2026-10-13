@@ -46,6 +46,7 @@ public sealed class MessagingBusBuilderGuardTests
     public async Task Build_AfterUseRabbitMq_RegistersIMessageBus()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services
             .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
             .UseRabbitMq("rabbitmq://localhost")
@@ -60,6 +61,7 @@ public sealed class MessagingBusBuilderGuardTests
     public async Task Build_AfterUseRabbitMq_RegistersIEventPublisher()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services
             .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
             .UseRabbitMq("rabbitmq://localhost")
@@ -144,6 +146,7 @@ public sealed class MessagingBusBuilderGuardTests
         // A BuildServiceProvider() call inside Build() would add UsageTracker and other
         // MassTransit singleton descriptors twice, causing duplicate descriptor counts.
         var services = new ServiceCollection();
+        services.AddLogging();
         services
             .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
             .UseRabbitMq("rabbitmq://localhost")

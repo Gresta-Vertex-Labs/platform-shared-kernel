@@ -21,7 +21,7 @@ public sealed class AzureServiceBusBuilderGuardTests
         var act = () => builder.UseAzureServiceBus("Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=fake=");
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*transport has already been configured*");
+            .WithMessage("*transport is already configured*");
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public sealed class AzureServiceBusBuilderGuardTests
         var act = () => builder.UseRabbitMq("rabbitmq://localhost");
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*transport has already been configured*");
+            .WithMessage("*transport is already configured*");
     }
 
     [Fact]

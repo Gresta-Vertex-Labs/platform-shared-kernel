@@ -1,5 +1,6 @@
 using MassTransit;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Messaging.MassTransit.Diagnostics;
 
 namespace SharedKernel.Messaging.MassTransit.SchemaEvolution;
 
@@ -23,7 +24,7 @@ namespace SharedKernel.Messaging.MassTransit.SchemaEvolution;
 /// using the application's configured logging providers.
 /// </para>
 /// </remarks>
-internal static partial class TranslatorRegistrationValidator
+internal static class TranslatorRegistrationValidator
 {
     /// <summary>
     /// Validates a single <c>WithVersionTranslator&lt;TOld, TNew, TTranslator&gt;()</c> registration
@@ -43,7 +44,7 @@ internal static partial class TranslatorRegistrationValidator
         ILogger logger)
     {
         if (!HasConsumerFor(newType, registeredConsumerTypes))
-            LogNoConsumerForNewSchema(logger, oldType.Name, newType.Name);
+            MessagingLog.NoConsumerForNewSchema(logger, oldType.Name, newType.Name);
     }
 
     /// <summary>
@@ -66,15 +67,4 @@ internal static partial class TranslatorRegistrationValidator
 
         return false;
     }
-
-    /// <summary>
-    /// Logs an advisory warning when no consumer for the new schema type was found in this service.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 7009,
-        Level = LogLevel.Warning,
-        Message = "WithVersionTranslator registered a translation from {OldType} to {NewType}, but no " +
-            "consumer for the new schema type was found in this service. This is advisory only — " +
-            "the consumer may be registered in a separate service.")]
-    private static partial void LogNoConsumerForNewSchema(ILogger logger, string oldType, string newType);
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,7 +63,8 @@ public sealed class RoutingTests
             sendEndpointProvider: sendEndpointProvider,
             serviceProvider: Substitute.For<IServiceProvider>(),
             routeMap: routeMap,
-            resolver: resolver);
+            resolver: resolver,
+            logger: NullLogger<MassTransitMessageBus>.Instance);
     }
 
     // -------------------------------------------------------------------------
@@ -159,7 +161,8 @@ public sealed class RoutingTests
             sendEndpointProvider: sendEndpointProvider,
             serviceProvider: Substitute.For<IServiceProvider>(),
             routeMap: routeMap,
-            resolver: resolver);
+            resolver: resolver,
+            logger: NullLogger<MassTransitMessageBus>.Instance);
 
         // Act
         await bus.SendAsync(new OrderCreatedCommand(), CancellationToken.None);

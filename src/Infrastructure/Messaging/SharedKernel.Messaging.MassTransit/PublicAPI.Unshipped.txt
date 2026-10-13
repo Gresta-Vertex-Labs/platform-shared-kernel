@@ -118,3 +118,11 @@ SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings
 SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings.ConfigureBus<TEndpointConfigurator>(MassTransit.IBusRegistrationContext! context, MassTransit.IBusFactoryConfigurator<TEndpointConfigurator>! bus) -> void
 SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings.DeadLetterPolicy.get -> SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions?
 SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings.DelayedDelivery.get -> bool
+const SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTagKeys.BatchMessageCount = "messaging.batch.message_count" -> string!
+const SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTagKeys.Destination = "messaging.destination.name" -> string!
+const SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTagKeys.EventType = "messaging.event_type" -> string!
+const SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTagKeys.MessageType = "messaging.message_type" -> string!
+const SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTelemetry.MeterName = "SharedKernel.Messaging" -> string!
+const SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTelemetry.SourceName = "SharedKernel.Messaging" -> string!
+SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTagKeys
+SharedKernel.Messaging.MassTransit.Diagnostics.MessagingTelemetry

@@ -152,7 +152,7 @@ the section name `SharedKernel:Messaging:Idempotency`, but the bus sets it throu
 
 ### Errors
 
-`MessagingErrorCodes` (factories in `MessagingErrors`):
+`MessagingErrorCodes` (the factory that builds the `Error`s is internal to the core):
 
 | Code | Type | When |
 | --- | --- | --- |

@@ -3,6 +3,8 @@ using MassTransit;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Messaging.MassTransit.Diagnostics;
 using SharedKernel.Messaging.MassTransit.Logging;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
@@ -38,7 +40,7 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// from a consumer exactly as it does from an HTTP handler.
 /// </para>
 /// </remarks>
-public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
+public abstract class ConsumerBase<TMessage> : IConsumer<TMessage>
     where TMessage : class
 {
     /// <summary>
@@ -52,6 +54,8 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// <param name="logger">The logger for this consumer type.</param>
     protected ConsumerBase(ILogger logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
         Logger = logger;
     }
 
@@ -65,14 +69,14 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// <param name="context">The MassTransit consume context providing the message and metadata.</param>
     /// <remarks>
     /// <para>
-    /// A child <see cref="Activity"/> named <c>"Consumer.Consume"</c> is started via
-    /// <see cref="MessagingDiagnostics.ActivitySource"/> for the duration of the consume
-    /// operation, tagged with <c>messaging.message_type</c>. The activity is disposed
-    /// after <see cref="ConsumeAsync"/> completes, whether it succeeds or throws.
+    /// A <c>messaging consume</c> span (kind <c>Consumer</c>) is started for the duration of the consume
+    /// operation, tagged with <c>messaging.message_type</c> and <c>messaging.destination.name</c> (when known). A
+    /// throwing <see cref="ConsumeAsync"/> is recorded through the shared Primitives recorder; cancellation is not an
+    /// error. The span is disposed after <see cref="ConsumeAsync"/> completes, whether it succeeds or throws.
     /// </para>
     /// <para>
     /// The structured log scope carries <c>CorrelationId</c>, <c>MessageType</c>,
-    /// <c>messaging.message_type</c>, <c>messaging.destination</c> (the consume endpoint's
+    /// <c>messaging.message_type</c>, <c>messaging.destination.name</c> (the consume endpoint's
     /// queue/topic path, omitted when unavailable) and <c>ActorKind</c> (from the
     /// <c>x-sk-actor-kind</c> header, when present).
     /// </para>
@@ -83,38 +87,35 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// log line of a consume. Tenant and correlation already flow ambiently from the request context.
     /// </para>
     /// <para>
-    /// P-348/WO-054: also increments <see cref="MessagingDiagnostics.RetryCounter"/> when
-    /// <c>context.GetRetryAttempt() &gt; 0</c> (this invocation is a retry-filter
-    /// re-delivery), increments <see cref="MessagingDiagnostics.ConsumeCounter"/> after
-    /// <see cref="ConsumeAsync"/> completes without throwing, and records
-    /// <see cref="MessagingDiagnostics.ConsumeDurationHistogram"/> unconditionally
-    /// (success or failure) — all tagged <c>messaging.message_type</c>.
+    /// Also increments the retry counter when <c>context.GetRetryAttempt() &gt; 0</c> (this invocation is a
+    /// retry-filter re-delivery), and counts every invocation on the consume counter and records its duration in
+    /// seconds, both tagged with <c>messaging.message_type</c> and <c>outcome</c>.
     /// </para>
     /// </remarks>
     public async Task Consume(ConsumeContext<TMessage> context)
     {
-        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("Consumer.Consume");
+        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("messaging consume", ActivityKind.Consumer);
         var messageTypeName = typeof(TMessage).Name;
         activity?.SetTag(MessagingTagKeys.MessageType, messageTypeName);
 
-        var metricTag = new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName);
+        var destination = context.DestinationAddress?.AbsolutePath;
+        if (destination is not null)
+            activity?.SetTag(MessagingTagKeys.Destination, destination);
 
-        // P-348/WO-054: GetRetryAttempt() > 0 identifies this invocation as a retry-filter
-        // re-delivery (0 on the original delivery, and safely 0 — never throws — when no
-        // retry middleware is configured at all). See MessagingDiagnostics.RetryCounter's
-        // doc comment for why this is the best available observation point in MassTransit
-        // 9.1.2: IRetryObserver/IRetryObserverConnector exist but nothing reachable from
-        // MessagingBusBuilder implements the connector.
+        // GetRetryAttempt() > 0 identifies this invocation as a retry-filter re-delivery (0 on the original
+        // delivery, and safely 0, never throwing, when no retry middleware is configured). See
+        // MessagingDiagnostics.RetryCounter for why this is the observation point.
         if (context.GetRetryAttempt() > 0)
-            MessagingDiagnostics.RetryCounter.Add(1, metricTag);
+        {
+            MessagingDiagnostics.RetryCounter.Add(
+                1, new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName));
+        }
 
-        // HP-05: Build log scope with CorrelationId, MessageType and the allow-listed headers.
-        // OT-03: additive messaging.destination / messaging.message_type entries.
+        // Build the log scope with the correlation id, the message type and the allow-listed headers.
         var scopeState = MessagingLogScope.Create(context.CorrelationId);
         scopeState["MessageType"] = messageTypeName;
         scopeState[MessagingTagKeys.MessageType] = messageTypeName;
 
-        var destination = context.DestinationAddress?.AbsolutePath;
         if (destination is not null)
             scopeState[MessagingTagKeys.Destination] = destination;
 
@@ -124,22 +125,29 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
 
         using var scope = Logger.BeginScope(scopeState);
 
-        var stopwatch = Stopwatch.StartNew();
+        // One outcome feeds the span's result and the metric tags.
+        var outcome = WellKnownOutcomes.Success;
+        var started = Stopwatch.GetTimestamp();
         try
         {
             await ConsumeAsync(context.Message, context.CancellationToken).ConfigureAwait(false);
-            MessagingDiagnostics.ConsumeCounter.Add(1, metricTag);
         }
         catch (Exception ex)
         {
-            LogConsumeError(Logger, messageTypeName, ex);
-            throw; // Never swallow — activates MassTransit retry/fault policies.
+            outcome = activity.RecordException(ex);
+
+            // Cancellation (a host shutting down) is not an error and is not logged as one.
+            if (outcome != WellKnownOutcomes.Canceled)
+                MessagingLog.ConsumeFailed(Logger, messageTypeName, ex);
+
+            throw; // Never swallow: activates MassTransit retry/fault policies.
         }
         finally
         {
-            // Recorded unconditionally (success or failure) so the histogram reflects true
-            // end-to-end consume latency, including attempts that ultimately faulted.
-            MessagingDiagnostics.ConsumeDurationHistogram.Record(stopwatch.Elapsed.TotalMilliseconds, metricTag);
+            // Recorded on success and failure alike, so the histogram reflects true end-to-end consume latency.
+            var tags = MessagingDiagnostics.OutcomeTags(MessagingTagKeys.MessageType, messageTypeName, outcome);
+            MessagingDiagnostics.ConsumeCounter.Add(1, tags);
+            MessagingDiagnostics.ConsumeDurationHistogram.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
         }
     }
 
@@ -154,14 +162,4 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// and trigger the configured retry and fault policies.
     /// </remarks>
     protected abstract Task ConsumeAsync(TMessage message, CancellationToken ct);
-
-    /// <summary>
-    /// Logs an unhandled exception raised from <see cref="ConsumeAsync"/>. See CorrelationId
-    /// in the structured log scope established by <see cref="Consume"/>.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 7001,
-        Level = LogLevel.Error,
-        Message = "Unhandled exception consuming message {MessageType}. See CorrelationId in scope.")]
-    private static partial void LogConsumeError(ILogger logger, string messageType, Exception exception);
 }

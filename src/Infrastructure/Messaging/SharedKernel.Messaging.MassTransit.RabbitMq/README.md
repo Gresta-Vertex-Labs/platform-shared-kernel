@@ -117,7 +117,7 @@ builder.Services
 | `MessagingBusBuilder.UseRabbitMq(string connectionString)` | Sets the RabbitMQ transport from an AMQP URI |
 | `MessagingBusBuilder.UseRabbitMq(Action<RabbitMqBusOptions>)` | Sets the transport from explicit options |
 
-Error codes, log events (7000–7099) and the `messaging` readiness probe belong to the core — see the
+Error codes, log events (7000–7099 for the core; the RabbitMQ sub-block 7100–7199 is reserved and unused) and the `messaging` readiness probe belong to the core — see the
 [MassTransit package README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit/README.md#reference).
 
 ## Testing

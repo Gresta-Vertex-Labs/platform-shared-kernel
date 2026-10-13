@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
 using MassTransit;
@@ -118,7 +119,8 @@ public sealed class DispatchRethrowTests
             sendEndpointProvider,
             Substitute.For<IServiceProvider>(),
             new Dictionary<Type, string>(),
-            new ConventionSendEndpointResolver(MsOptions.Create(new MessagingOptions { ServiceName = "rethrow-service" })));
+            new ConventionSendEndpointResolver(MsOptions.Create(new MessagingOptions { ServiceName = "rethrow-service" })),
+            NullLogger<MassTransitMessageBus>.Instance);
 }
 
 public sealed record RethrowMessage(string Text);

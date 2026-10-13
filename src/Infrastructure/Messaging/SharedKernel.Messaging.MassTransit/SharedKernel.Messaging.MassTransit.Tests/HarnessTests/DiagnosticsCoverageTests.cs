@@ -32,7 +32,7 @@ public sealed class DiagnosticsCoverageTests
     private const string SourceName = "SharedKernel.Messaging";
 
     // -------------------------------------------------------------------------
-    // DC-06a: SendAsync produces a "MessageBus.Send" activity
+    // DC-06a: SendAsync produces a "messaging send" activity
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -67,7 +67,8 @@ public sealed class DiagnosticsCoverageTests
             sendEndpointProvider: sendEndpointProvider,
             serviceProvider: Substitute.For<IServiceProvider>(),
             routeMap: new Dictionary<Type, string>(),
-            resolver: new ConventionSendEndpointResolver(options));
+            resolver: new ConventionSendEndpointResolver(options),
+            logger: NullLogger<MassTransitMessageBus>.Instance);
 
         await bus.SendAsync(new DcSendMessage("send-activity-check"), CancellationToken.None);
 
@@ -76,7 +77,7 @@ public sealed class DiagnosticsCoverageTests
         // Filter by the message-type tag rather than global singularity — see OTelInstrumentationTests
         // for the documented parallel-test-isolation hazard (the ActivityListener is process-wide).
         var sendActivity = capturedActivities.Should().ContainSingle(a =>
-                a.OperationName == "MessageBus.Send" &&
+                a.OperationName == "messaging send" &&
                 Equals(a.GetTagItem("messaging.message_type"), nameof(DcSendMessage)))
             .Subject;
         sendActivity.GetTagItem("messaging.message_type").Should().Be(nameof(DcSendMessage));
@@ -119,7 +120,7 @@ public sealed class DiagnosticsCoverageTests
         await harness.Stop();
 
         measurements.Should().Contain(m =>
-                m.InstrumentName == "messaging.publish.count" &&
+                m.InstrumentName == "sharedkernel.messaging.publish.count" &&
                 m.Value == 1 &&
                 m.Tags.Any(t => t.Key == "messaging.event_type" && Equals(t.Value, DcPublishIntegrationEvent.EventName)),
             "messaging.publish.count must record exactly one measurement tagged with the event's " +
@@ -156,12 +157,13 @@ public sealed class DiagnosticsCoverageTests
             sendEndpointProvider: Substitute.For<ISendEndpointProvider>(),
             serviceProvider: Substitute.For<IServiceProvider>(),
             routeMap: new Dictionary<Type, string>(),
-            resolver: new ConventionSendEndpointResolver(options));
+            resolver: new ConventionSendEndpointResolver(options),
+            logger: NullLogger<MassTransitMessageBus>.Instance);
 
         await bus.PublishAsync(new DcMessageBusPublishMessage("publish-counter-check"), CancellationToken.None);
 
         measurements.Should().Contain(m =>
-                m.InstrumentName == "messaging.publish.count" &&
+                m.InstrumentName == "sharedkernel.messaging.publish.count" &&
                 m.Value == 1 &&
                 m.Tags.Any(t => t.Key == "messaging.message_type" && Equals(t.Value, nameof(DcMessageBusPublishMessage))),
             "messaging.publish.count must record exactly one measurement tagged with the message type " +
@@ -204,13 +206,13 @@ public sealed class DiagnosticsCoverageTests
         await harness.Stop();
 
         longMeasurements.Should().Contain(m =>
-                m.InstrumentName == "messaging.consume.count" &&
+                m.InstrumentName == "sharedkernel.messaging.consume.count" &&
                 m.Value == 1 &&
                 m.Tags.Any(t => t.Key == "messaging.message_type" && Equals(t.Value, nameof(DcConsumeMessage))),
             "messaging.consume.count must record exactly one measurement after a successful ConsumeAsync");
 
         doubleMeasurements.Should().Contain(m =>
-                m.InstrumentName == "messaging.consume.duration" &&
+                m.InstrumentName == "sharedkernel.messaging.consume.duration" &&
                 m.Value >= 0 &&
                 m.Tags.Any(t => t.Key == "messaging.message_type" && Equals(t.Value, nameof(DcConsumeMessage))),
             "messaging.consume.duration must record a non-negative duration for the same consume operation");
@@ -259,7 +261,7 @@ public sealed class DiagnosticsCoverageTests
         await harness.Stop();
 
         measurements.Should().Contain(m =>
-                m.InstrumentName == "messaging.retry.count" &&
+                m.InstrumentName == "sharedkernel.messaging.retry.count" &&
                 m.Tags.Any(t => t.Key == "messaging.message_type" && Equals(t.Value, nameof(DcRetryMessage))),
             "messaging.retry.count must record at least one measurement when ConsumeContext.GetRetryAttempt() > 0");
     }
@@ -307,7 +309,7 @@ public sealed class DiagnosticsCoverageTests
         await harness.Stop();
 
         measurements.Should().Contain(m =>
-                m.InstrumentName == "messaging.fault.count" &&
+                m.InstrumentName == "sharedkernel.messaging.fault.count" &&
                 m.Value == 1 &&
                 m.Tags.Any(t => t.Key == "messaging.message_type" && Equals(t.Value, nameof(DcFaultMessage))),
             "messaging.fault.count must record exactly one measurement when FaultConsumerAdapter observes a fault");

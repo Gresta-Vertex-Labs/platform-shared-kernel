@@ -43,7 +43,7 @@
 
 | Package | Tier | Reference it from | Use it for |
 | --- | --- | --- | --- |
-| [SharedKernel.Messaging.Abstractions](SharedKernel.Messaging.Abstractions/README.md) | Abstractions | Application | `IEventPublisher`, `IMessageBus`, `IMessageScheduler`, `MessagingErrors` — publish, send and schedule |
+| [SharedKernel.Messaging.Abstractions](SharedKernel.Messaging.Abstractions/README.md) | Abstractions | Application | `IEventPublisher`, `IMessageBus`, `IMessageScheduler`, `MessagingErrorCodes` — publish, send and schedule |
 | [SharedKernel.Messaging.MassTransit](SharedKernel.Messaging.MassTransit/README.md) | Adapter | Infrastructure | `AddSharedKernelMessaging(…)`: the bus builder, `ConsumerBase<T>`, retry, idempotency, caller propagation, probe |
 | [SharedKernel.Messaging.MassTransit.RabbitMq](SharedKernel.Messaging.MassTransit.RabbitMq/README.md) | Adapter | Infrastructure | `UseRabbitMq(…)` — the bus on RabbitMQ |
 | [SharedKernel.Messaging.MassTransit.AzureServiceBus](SharedKernel.Messaging.MassTransit.AzureServiceBus/README.md) | Adapter | Infrastructure | `UseAzureServiceBus(…)` — the bus on Azure Service Bus, with managed identity |
@@ -141,7 +141,7 @@ samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-
 
 | Guarantee | How it is held |
 | --- | --- |
-| **No exceptions for expected failures** — every verb returns `Result`; unrecognised exceptions are rethrown | `MessagingExceptionClassifierTests`, `MessagingErrorsTests`; analyzer `SK0030` flags a discarded `Result` |
+| **No exceptions for expected failures** — every verb returns `Result`; unrecognised exceptions are rethrown | `MessagingExceptionClassifierTests`, `MassTransitErrorsTests`; analyzer `SK0030` flags a discarded `Result` |
 | **No accidental double-processing** — one conditional reservation per message id and consumer | `IdempotencyPerConsumerTests`, `IdempotencyTests` |
 | **No tenant leakage** across the bus | `InboundRequestContextTests` (`MalformedTenantHeader_ConsumesWithNoTenantRatherThanFaulting`), `HeaderPropagationTests`, `PropagationSymmetryTests` |
 | **CloudEvents-compliant envelopes**, validated before any transport work | `CloudEventsEnvelopeTests`; analyzers `SK0038`, `SK0039` on `[IntegrationEvent]` |
