@@ -51,7 +51,7 @@ Test projects are nested in their package folder. `src/Infrastructure/Integratio
 
 **General**
 - Options use `ISectionBoundOptions` + `AddValidatedOptions` under `SharedKernel:Integration:…`; the literal `BindConfiguration` paths and the unbound SendGrid/Twilio sections are Known Limitations — fix them only when the phase says so.
-- Tags only from `WebhookActivityTags`/`NotificationActivityTags`; a cross-domain tag reuses `WellKnownTagKeys`.
+- Tags only from `WebhookTagKeys`/`NotificationTagKeys`; a cross-domain tag reuses `WellKnownTagKeys`.
 - **Logging**: `LoggingEventIdRanges.Integration + n`, sub-blocks in `src/Infrastructure/Integration/CLAUDE.md` → `## Logging` (Webhooks +0–99, SendGrid +200, Twilio +300, a new package +400). Take the next free id and add it to the table.
 - **MAX_PATH**: check before adding any project here — the notification projects have the longest names in the repo.
 

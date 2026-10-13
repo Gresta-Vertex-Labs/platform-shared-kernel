@@ -78,7 +78,7 @@ Cite rule numbers from `src/Infrastructure/Scheduling/CLAUDE.md` → `## Rules &
 - **02.Caching** — `IDistributedLockService.TryAcquireLeaseAsync`, `DistributedLease.FencingToken`, `DistributedLockUnavailableException`.
 - **05.Application** — `ISender`/`ICommand`; `[RequirePermission]` commands need a permissioned scope opened by the job.
 - **01.Core** — `SystemRequestContext`, `RequestContextScope`, `CorrelationIds`, `TenantScope`, `IClock`, `IReadinessProbe`.
-- **13.ServiceDefaults** — `WithSchedulingTelemetry()` and `AddSharedKernelReadiness()`; a new source, meter or probe name is a note there.
+- **13.ServiceDefaults** — the `SharedKernel.*` telemetry wildcard covers `SharedKernel.Scheduling`; `AddSharedKernelReadiness()` maps the `scheduler` probe; a new probe name, or a source or meter outside that prefix, is a note there.
 - **16.Testing** — double rules (`src/Testing/CLAUDE.md`) and the catalogue row for `SharedKernel.Scheduling.Testing`.
 - **17.Workflows** — composition only; no reference either way.
 

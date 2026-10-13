@@ -42,7 +42,7 @@ Cite the rule number of `src/Application/CLAUDE.md` → Rules & Invariants.
 - **Dispatch (21)** is serial; no parallel dispatch, no mediator notifications.
 - **Reflection (22)** only at cached or registration-time sites; **internals (23)** stay internal.
 - **Analyzers (24).** A new marker implying a `Result` response needs a governance note to extend SK0040.
-- **Telemetry.** Source/meter `SharedKernel.Application` and `sharedkernel.application.request.duration` are subscribed by name in `13.ServiceDefaults` — renaming breaks `WithApplicationTelemetry`.
+- **Telemetry.** Source/meter `SharedKernel.Application` and `sharedkernel.application.request.duration` are exported by `13.ServiceDefaults`' `SharedKernel.*` wildcard — a rename outside that prefix breaks export.
 
 ---
 
@@ -82,7 +82,7 @@ Cite the rule number of `src/Application/CLAUDE.md` → Rules & Invariants.
 - **03.Domain** — `IDomainEventDispatcher` implemented here, called by `06.Persistence` before the save.
 - **06.Persistence** — implements `IUnitOfWork` (retry-safe replay) and `IAuditTrailWriter`.
 - **18.Idempotency** — keyed `IIdempotencyStore` for `IdempotencyPurpose.Request`.
-- **13.ServiceDefaults** — `AddSharedKernelRequestContext()`; `WithApplicationTelemetry` subscribes by name.
+- **13.ServiceDefaults** — `AddSharedKernelRequestContext()`; the `SharedKernel.*` telemetry wildcard subscribes `SharedKernel.Application`.
 - **14.Presentation** — endpoints send through `ISender`; `[RequireEndpointPermission]`; shared idempotency error codes.
 - **17.Workflows / 19.Scheduling** — `CommandActivity<>`, `ScheduledCommandJob<>` send through `ISender`.
 - **16.Testing** — double rules; `FakeIdempotencyStore`, `AddFakeUnitOfWork()`, `FakeCacheService`, `TestRequestContext` composed by the harness.

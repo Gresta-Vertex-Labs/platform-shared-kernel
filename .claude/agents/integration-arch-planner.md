@@ -88,7 +88,7 @@ Cite the rule number from `src/Infrastructure/Integration/CLAUDE.md` → `## Rul
 - **04.Contracts** — `IIntegrationEvent`, `[IntegrationEvent]`, `IntegrationEventDescriptor` (routing key = CloudEvents `type`).
 - **07.Messaging** — `IEventPublisher` for `WebhookDeliveryExhaustedEvent`.
 - **08.Storage** — `FileReference`, `IFileStorageFactory` for attachments.
-- **13.ServiceDefaults** — `WithIntegrationTelemetry()` subscribes to `SharedKernel.Integration` by name.
+- **13.ServiceDefaults** — the `SharedKernel.*` wildcard of `AddServiceDefaults()` subscribes the `SharedKernel.Integration` source and meter (no per-domain call).
 - **14.Presentation** — receivers call `WebhookSignatureVerifier`.
 - **16.Testing** — the rules `SharedKernel.Integration.Testing` follows (`src/Testing/CLAUDE.md`).
 

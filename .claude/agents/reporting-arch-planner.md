@@ -82,7 +82,7 @@ Cite rule numbers from `src/Infrastructure/Reporting/CLAUDE.md` → `## Rules & 
 
 - **08.Storage** — delivery through `IFileStorage.UploadAsync`, `WriteCondition`, presigned download URLs, tenant stores; a new delivery need is an outbound note.
 - **01.Core** — `Result`/`Error`, `LoggingEventIdRanges.Reporting`, `IReadinessProbe`, `AddValidatedOptions`, `Execution` (correlation id for Gotenberg).
-- **13.ServiceDefaults** — `WithReportingTelemetry()` subscribes the `SharedKernel.Reporting` source/meter; `AddSharedKernelReadiness()` maps `gotenberg`. A new name is a note there.
+- **13.ServiceDefaults** — the `SharedKernel.*` wildcard of `AddServiceDefaults()` subscribes the `SharedKernel.Reporting` source/meter; `AddSharedKernelReadiness()` maps `gotenberg`. A new name is a note there.
 - **06.Persistence** — none by reference; callers compose `StreamAsync`/`ListKeysetAsync` into the row source.
 - **17.Workflows, 19.Scheduling** — composition in consumer code only.
 - **16.Testing** — double rules (`src/Testing/CLAUDE.md`), the catalogue row for `SharedKernel.Reporting.Testing`, and any shared Gotenberg fixture request.

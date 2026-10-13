@@ -87,7 +87,7 @@ Declines follow the Planner method in `_common.md`: no board entry; report the v
 - **05.Application** — `Application.Pipeline.Caching`'s `CachingBehavior` relies on `GetOrSetAsync` + `SkipCaching()`; `SharedKernel.Application` references `Caching.Abstractions` for its markers. A semantic change to either is an outbound obligation.
 - **18.Idempotency** — `Idempotency.Redis` builds on `Redis.Core` (declared edge).
 - **19.Scheduling** — single execution per occurrence uses `TryAcquireLeaseAsync` and the fencing token.
-- **13.ServiceDefaults** — maps the `redis`/`cache` probes; `WithCachingTelemetry()` subscribes by meter/source name (renaming either breaks it); `SharedKernel.MultiTenancy`'s `CachedTenantCatalog` uses `Caching.Abstractions`.
+- **13.ServiceDefaults** — maps the `redis`/`cache` probes; the `SharedKernel.*` telemetry wildcard subscribes the `SharedKernel.Caching` source and meter (a rename outside that prefix breaks export); `SharedKernel.MultiTenancy`'s `CachedTenantCatalog` uses `Caching.Abstractions`.
 - **01.Core** — `TenantId` (Execution), `ISymmetricEncryptionService` (Cryptography) for encryption.
 - **16.Testing** — owns the double rules and catalogue that `SharedKernel.Caching.Testing` / `.Redis.Testing` (in this folder) follow; a new double is a catalogue note.
 - **00.Governance** — `RedisTopologyRules`, SK0007 (Pub/Sub in messaging code). A new topology rule is a note for the governance planner.

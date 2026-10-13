@@ -43,7 +43,7 @@ Harness: `src/Infrastructure/Communication/consumer-verify` (Unit lane) composes
 **REST pipeline (order is load-bearing)**
 - `RequestContextPropagationHandler` → `IdempotencyKeyHandler` → service handlers → resilience or hedging (`RestResilience`) → `ClientAuthenticationHandler` → service discovery → `SocketsHttpHandler` + `ClientTls`. Propagation and idempotency run once per call, outside resilience, so every retry carries the same correlation id and key.
 - POST/PATCH retried or hedged only with `PropagateIdempotencyKey` or `Retry:RetryNonIdempotentMethods`; a caller-supplied key is kept. `MaxRetryAttempts = 0` and `CircuitBreaker:Enabled = false` must really switch off.
-- The `Result<T>` verbs map ProblemDetails → the service's own `Error`, no response → `communication.unreachable`/`timeout`/`circuit_open`; only the caller's cancellation throws. `HttpStatusErrorTypeMap` mirrors `14.Presentation`'s map — a change on either side is a cross-domain note.
+- The `Result<T>` verbs map ProblemDetails → the service's own `Error`, no response → `communication.unavailable`/`timeout`/`circuit_open`; only the caller's cancellation throws. `HttpStatusErrorTypeMap` mirrors `14.Presentation`'s map — a change on either side is a cross-domain note.
 
 **gRPC**
 - Deadline through `CallOptionsActions` with `IClock`; retry `ServiceConfig` from `GrpcRetryOptions` (never `DeadlineExceeded`); keepalive and `EnableMultipleHttp2Connections` on the primary handler.

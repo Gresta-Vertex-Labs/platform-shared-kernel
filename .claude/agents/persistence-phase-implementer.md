@@ -45,13 +45,13 @@ Test projects are nested in their package folder. `src/Infrastructure/Persistenc
 - The save pipeline order is fixed (rule 8); add a step through the registration pipeline in its named slot, never by reordering.
 - Per-caller state goes through the lease attach/reset path (rule 2); singleton interceptors read identity from the context being saved.
 - Code inside `ExecuteInTransactionAsync` must be re-runnable (rule 4); an ambiguous commit throws `CommitOutcomeUnknownException`, never replays.
-- A new SQLSTATE goes into `PostgresExceptionClassifier`/`PostgresClassifiedErrorCodes`; a cross-tenant write keeps the same Conflict as a stale version (rule 14).
+- A new SQLSTATE goes into `PostgresExceptionClassifier`/`PersistenceErrorCodes.Postgresql`; a cross-tenant write keeps the same Conflict as a stale version (rule 14).
 - Extend `ProtectedColumnUpdateGuard` with any new bulk path (rule 10).
 - Wire formats (AUDITv3, AAD layout, `EntityVersion` `0x01`, advisory-lock hashing) are `Span<byte>` code with known-answer tests; a change is a new version, and `AUDIT-FORMAT.md` (packed, parsed by `AuditFormatVectorTests`) moves with it.
 - Type handlers use `StronglyTypedId<TValue>`'s explicit operator and `SmartEnum<TEnum,TValue>.TryFromValue`, never per-row reflection.
 - Every package tracks `PublicAPI.*.txt`; EfCore's surface is already large — prefer `internal` + IVT.
 
-**Logging** — `LoggingEventIdRanges.Persistence + n` in the package's sub-block (EfCore 6000–6099, Abstractions 6100–6199, Npgsql 6300–6349, EfCore RLS 6350–6399, Dapper 6400–6499, Encryption 6500–6699, Auditing 6700–6899; 6200–6299 reserved). Record new ids in the `## Logging` table.
+**Logging** — `LoggingEventIdRanges.Persistence + n` in the package's sub-block (EfCore 6000–6099 including the RLS logs 6027–6028, Abstractions 6100–6199, Npgsql 6300–6399, Dapper 6400–6499, Encryption 6500–6599, Auditing 6700–6799; 6200–6299, 6600–6699 and 6800–6899 reserved). Record new ids in the `## Logging` table.
 
 ---
 

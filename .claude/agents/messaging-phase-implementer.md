@@ -41,7 +41,7 @@ Test projects are nested in their package folder. `src/Infrastructure/Messaging/
 - `Build()` registers `MassTransitMessageBusProbe` as the `messaging` `IReadinessProbe`, resolving `IBusInstance` inside `ProbeAsync` — no second connection, no `IHealthCheck`.
 
 **Pitfalls**
-- `MessagingExceptionClassifier` maps only recognised transport faults (`MessagingErrors`); everything else rethrows; only cancellation throws.
+- `MessagingExceptionClassifier` maps only recognised transport faults (internal `MassTransitErrors` factory over the public `MessagingErrorCodes`); everything else rethrows; only cancellation throws.
 - Envelopes only in `MassTransitEventPublisher` via `EventEnvelope.Wrap(evt, source:, subject:, tenantId:, correlationId:, causationId:)`; Wrap failures map before transport work.
 - Correlation precedence (rule 9) never falls back to an `Activity` id. A new `PublishContext` field goes through `PublishContextPipe` with a `DispatchContextParityTests` case. Headers come from `WellKnownHeaders` through `RequestContextPropagation` — never a second mapping.
 - `WithInboundRequestContext()` runs ahead of every consume filter; `HasPermissionAsync` always `false`.
