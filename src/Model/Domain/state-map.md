@@ -29,7 +29,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-- **01.Core (`SK.01.CoreConformance` C-02):** owns the `ErrorCodes.Domain.RuleViolated` value change to `domain.rule_violated`. Domain holds no literal and does not read the constant, so this phase needs nothing from it; the only trace of the old code in 03 is a test comment, removed by C-04.
-- **06.Persistence (note only):** a stored `Money` amount with excess decimals now surfaces as `DomainException` with `ErrorType.Unexpected` (500) instead of `BusinessRuleViolationException` (422); check any persistence test or handler that expects the old type (`MoneyMapping`, `CurrencyValueConverter`).
-- **00.Governance (`SK.00.ObservabilityReportOnly`):** the error-code format assertion must accept the exemption in D-03 and read `DomainErrorCodes` constants.
-- **16.Testing / samples (note only):** `MoneyFaker` and `Shop.Ordering.Domain` use no changed code; verify nothing spells `money.currency_mismatch` by literal.
+None open.

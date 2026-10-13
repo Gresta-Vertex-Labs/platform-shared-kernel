@@ -34,9 +34,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-- **01.Core (inbound):** `SK.01.ObservabilityHelpers` supplies `TelemetryVersion.Of`, `ActivityFailureExtensions` (`RecordFailure`, `RecordException`), `WellKnownOutcomes`, `WellKnownTagKeys.Outcome` and `LoggingEventIdRanges.SubBlockStart/IsInSubBlock`.
-- **16.Testing (inbound):** `SK.16.TelemetryCapture` supplies `ActivityRecorder`, `MetricRecorder` and the log/span/metric convention assertions every task above tests with.
-- **13.ServiceDefaults (outbound, note):** `SK.13.WildcardTelemetry` deletes `WithIntegrationTelemetry()`; Integration documentation stops naming it in `SK.15.IntegrationConformance`.
-- **00.Governance (outbound, note):** P-583 report-only rules must show zero Integration findings after `SK.15.IntegrationConformance`.
-- **Root `CLAUDE.md` (outbound, `/sync-brain`):** the "Propagating context on outbound calls" row wrongly lists Webhooks as propagating the full request context through `RequestContextPropagation`; after `SK.15.IntegrationConformance` it sends the correlation id only, through that helper with a null context.
 - `NotificationMessage.Locale` remains a forward-compatible seam; consuming `SharedKernel.Localization` is optional, not a dependency.

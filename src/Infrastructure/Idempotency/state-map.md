@@ -33,13 +33,6 @@ None.
 
 ## Cross-Domain Dependencies
 
-| Domain | Direction | What |
-| --- | --- | --- |
-| 01.Core | inbound, **open** | `ErrorCodes.Idempotency.StoreUnavailable` = `idempotency.store_unavailable` (additive constant; the store's outage code, `ErrorType.Unavailable`). Also the P-580 helpers (`TelemetryVersion.Of`, `ActivityFailureExtensions`, `WellKnownOutcomes`, `WellKnownTagKeys.Outcome`, `IHasError`, `LoggingEventIdRanges.PackageSubBlockWidth`) and P-584 (`Execution` references `Core`; this phase states the reference explicitly) |
-| 05.Application | outbound / coordination | `SK.05.PipelineTelemetryGaps` already passes a `SharedKernelException`'s `Error` through unchanged and keeps the catch-all for third-party stores; nothing there waits on this phase. Its tests may use the fake's outage switch instead of a hand-rolled faulting store; `IdempotencyBehavior` need not name the new type |
-| 07.Messaging | outbound / note | The consumer idempotency behavior now sees `IdempotencyStoreUnavailableException` instead of a raw Redis/Npgsql exception from a fail-closed store; retry classification and any `catch` on the raw types is 07's to review |
-| 13.ServiceDefaults | inbound | `SK.13.WildcardTelemetry` subscribes `SharedKernel.*`, so the new source and meter need no registration |
-| 16.Testing | inbound / outbound | `SK.16.TelemetryCapture` helpers are used by every telemetry test; the `Idempotency.Testing` catalogue row in `src/Testing/CLAUDE.md` gains the outage switch (note for the testing planner) |
-| 00.Governance | inbound | `SK.00.ObservabilityReportOnly` (P-583) measures "zero findings" |
+None open.
 
 The domain needs no readiness probe of its own: Redis and database connectivity are covered by the `redis` probe and the persistence readiness checks.

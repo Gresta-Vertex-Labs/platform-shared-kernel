@@ -35,12 +35,7 @@ None.
 
 ## Cross-Domain Dependencies
 
-The domain never references persistence (the caller supplies the `IAsyncEnumerable<TRow>`); delivery goes through `08.Storage`'s `IFileStorageFactory`. Open obligations (notes only, nobody else's work is planned here):
+The domain never references persistence (the caller supplies the `IAsyncEnumerable<TRow>`); delivery goes through `08.Storage`'s `IFileStorageFactory`.
 
-- **01.Core** — consumes `SK.01.ObservabilityHelpers` (recorder, `TelemetryVersion`, `WellKnownOutcomes`, `IHasError`, `LoggingEventIdRanges.IsInSubBlock`); `SharedKernel.Reporting.Abstractions` gains a `SharedKernel.Core` reference (`SharedKernelException`).
-- **16.Testing** — `SK.16.TelemetryCapture` helpers (`SpanRecorder`, `MetricRecorder`, log capture) are the assertion path of both phases; the `.Testing` doubles are changed here, in step with the contract (error factories, `FormatNotSupported`).
-- **13.ServiceDefaults** — `SK.13.WildcardTelemetry` deletes `WithReportingTelemetry()` (the `SharedKernel.*` wildcard and the seconds-histogram view replace it); Reporting removes every mention from docs and the root `CLAUDE.md` snippet needs a `/sync-brain` edit.
-- **14.Presentation** — the HTTP/gRPC/SignalR status assertions for a `SharedKernelException` carrying `Validation`/`Unavailable`/`Timeout` reporting errors (the aborted-report and invalid-definition exceptions) belong to the edge mappers' tests there; Reporting pins only the `Error` they switch on.
 - **08.Storage** — an `IFileStorage.UploadAsync` that reads a faulted pipe sees `ReportAbortedException` (a `SharedKernelException`); a provider that wraps it should keep it as the inner exception so its span can carry the cause `error.code`. No change is required of Storage.
 - **15.Integration** — same propagation shape (`RequestContextPropagation.WriteHeaders` with a null context and explicit correlation id); the planners keep the two in line.
-- **00.Governance** — `SK.00.ObservabilityReportOnly` must show zero Reporting findings before `SK.20.ReportingConformance` closes.

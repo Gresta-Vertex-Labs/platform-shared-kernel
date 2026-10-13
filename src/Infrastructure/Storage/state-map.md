@@ -31,10 +31,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-- **Inbound, 01.Core:** `SK.01.ObservabilityHelpers` (recorder, `TelemetryVersion`, outcomes, `IsInSubBlock`), `SK.01.CoreObservabilityFixes` D-01 (Execution references Core; this domain adds the same reference to Abstractions).
-- **Inbound, 16.Testing:** `SK.16.TelemetryCapture` (`ActivityRecorder`, `MetricRecorder`, `LoggerAssertions` conventions).
-- **Inbound, 13.ServiceDefaults:** `SK.13.WildcardTelemetry` deletes `WithStorageTelemetry()`; call site `samples/Shop/Catalog/Shop.Catalog.Api/Program.cs` and the ServiceDefaults README mention it (theirs to change in the same pull request). Dashboards on `storage.client.*` must be repointed to `sharedkernel.storage.*`.
-- **Outbound, 14.Presentation:** HTTP, gRPC and SignalR status assertions for a thrown `StorageException` per `ErrorType` (`Unavailable` 503/`UNAVAILABLE`, `Forbidden` 403/`PERMISSION_DENIED`, `Validation` 400, `Conflict` 409, `Unexpected` 500) belong to the mapper tests, since Storage test projects reference no host package; the `Error` inputs are pinned here (SK.08.StorageExceptionEdge T-02).
-- **Outbound, 16.Testing:** `SharedKernel.Storage.Testing` (`InMemoryFileStorage`) throws the new base type with no API change; no telemetry in the double. Catalogue note only.
-- **Outbound, 20.Reporting / 15.Integration:** no code change; they receive `Result` values, and a caller that catches `StorageException` around `ListAsync` now also matches `SharedKernelException`.
-- **Outbound, 00.Governance:** the P-583 report-only tests must show zero findings for 08.Storage before P-618 turns them into errors.
+None open.

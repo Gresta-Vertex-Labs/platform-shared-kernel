@@ -35,14 +35,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-Inbound (this domain waits on):
-- **01.Core** `SK.01.ObservabilityHelpers` (P-580): `IHasError`, `LoggingEventIdRanges.SubBlockStart/IsInSubBlock`. `SK.01.CoreObservabilityFixes` (P-584): `CommitOutcomeUnknownException` -> `execution.commit_outcome_unknown` / Timeout (504). `SK.01.CoreConformance` (P-600): `unexpected.exception` -> `unexpected.default`; this domain holds no literal of either, the reverse maps read `errorCode`, and T-06 pins both.
-- **16.Testing** `SK.16.TelemetryCapture` (P-581): span, metric and log capture; `ActivityRecorder` moves from `SharedKernel.Testing.Communication` to `SharedKernel.Testing.Telemetry` (README of `SharedKernel.Communication.Testing` follows, C-05).
-- **00.Governance** `SK.00.ObservabilityReportOnly` (P-583): report-only rules the conformance phase must clear; SK0044 bans bare `EventId` literals.
-- **13.ServiceDefaults** `SK.13.WildcardTelemetry` (P-582): `WithCommunicationTelemetry()` keeps the gRPC client instrumentation and the Polly meter; no code change here.
-
-Outbound (notes for other domains, nothing planned here):
-- **14.Presentation:** assert at the three edges (WebApi exception handler, gRPC server interceptor, SignalR hub filter) that an `AccessTokenUnavailableException` maps to 503 / `Unavailable` / `communication.access_token_unavailable`; `grpc.{status}` and `http.{status}` names in `GrpcErrorCodes.ForStatus` and the framework-problem codes are mirrored by hand here, so a rename there must be mirrored in `CommunicationErrorCodes`.
-- **13.ServiceDefaults:** `ServiceDefaults.Security`'s `EndToEndPropagationTests` may add a raw typed-client call with a failing token provider expecting 503 (the end-to-end proof of the P-592 edge mapping).
-- **All consumers:** `communication.unreachable` -> `communication.unavailable`, `money.proto.invalid` -> `communication.grpc.invalid_money`, the authentication handler's logger category, and `AccessTokenUnavailableException` no longer being an `HttpRequestException` are release-note items (WO-087 decision 2).
-- **samples/Shop and `consumer-verify`:** compile-only checks (T-06 / T-08).
+- **14.Presentation:** the `grpc.{status}` and `http.{status}` names in `GrpcErrorCodes.ForStatus` and the framework-problem codes are mirrored by hand in `CommunicationErrorCodes`, so a rename there must be mirrored here.

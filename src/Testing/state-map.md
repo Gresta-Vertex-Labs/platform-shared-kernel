@@ -48,7 +48,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-Open outbound notes left by `SK.16.TelemetryCapture` (not tasks of this domain):
-- **02.Caching:** `SharedKernel.Caching.FusionCache.Tests` `Telemetry/TelemetryCapture.cs` (`MetricRecorder`, internal `ActivityRecorder`, `CapturingLoggerProvider`) duplicates this phase; migrate in its Phase 1/2.
-- **05.Application:** `ApplicationPipelineTestHarness.WithActivityCapture()` keeps a private listener; the 05 implementer may expose its recorded spans and measurements through the shared recorders. `Pipeline.Tests` tracing/metrics suites migrate in its Phase 2.
-- **11.Communication:** `SharedKernel.Communication.Testing` README names `ActivityRecorder`; it now lives in `SharedKernel.Testing.Telemetry`.
+None open.

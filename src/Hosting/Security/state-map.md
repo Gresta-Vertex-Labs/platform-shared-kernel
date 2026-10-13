@@ -35,8 +35,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-- **01.Core, `SK.01.ObservabilityHelpers` (P-580):** `LoggingEventIdRanges.IsInSubBlock` and `PackageSubBlockWidth` for the sub-block tests (C-01, T-01 of `SK.12.SecurityConformance`). Nothing else is consumed: Security records no span or metric.
-- **16.Testing, `SK.16.TelemetryCapture` (P-581):** the log assertions named under Blocked. The Security `.Testing` package needs no new double (no new consumer-implemented store or validator).
-- **13.ServiceDefaults (P-611):** its split of the shared 13000-13099 range is independent of this domain; every Security event is in 12xxx. Note for that planner: `Security.Mtls` is 12300 and `ServiceDefaults.Security.Mtls` is 13xxx, so tests must not conflate them.
-- **00.Governance, `SK.00.ObservabilityReportOnly` (P-583):** the zero-findings acceptance of `SK.12.SecurityConformance` reads its SK0044 and EventId reports. Its error-code check must tolerate a domain with no `{Capability}ErrorCodes` class (Security produces no `Error`; see the deviation in the phase).
-- **arch-lead:** (1) confirm or overrule the `SecurityErrorCodes` deviation; (2) root L6 has no carve-out for a handled, degraded exception (12106 stays Warning); (3) root L5 lists "actor id, client id" but not credential handles: the managed API key id is logged by design (rule 23), consider listing "key ids" under Allowed. Pre-existing text follows. (`01.Core`'s TOTP primitives, P-451, and the `ITotpReplayGuard` change, P-514/P-528, have shipped.)
+None open.

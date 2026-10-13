@@ -32,12 +32,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-| Domain | Direction | Item |
-| --- | --- | --- |
-| 01.Core | inbound | `ErrorCodes.Idempotency.StoreUnavailable` = `idempotency.store_unavailable` (additive, see Blocked); P-580 helpers (`RecordResult`, `RecordException`, `AddExceptionEvents`, `WellKnownOutcomes`, `WellKnownTagKeys.Outcome`, `TelemetryVersion.Of`, `IHasError`); P-584 makes `CommitOutcomeUnknownException` and `TransactionRolledBackException` `SharedKernelException`s, which gives the new transaction span their `error.code` (richer, not required) |
-| 16.Testing | inbound | P-581 `ActivityRecorder`/`MetricRecorder`/`LoggerAssertions`; `ApplicationPipelineTestHarness` (this domain) migrates to them in SK.05.ApplicationConformance |
-| 18.Idempotency | outbound / coordination | `IIdempotencyStore` remarks say an unreachable store "throws"; P-615 should have the Redis and EfCore providers throw a `SharedKernelException` carrying `Error.Unavailable` with an `idempotency.*` code (this phase returns that `Error` unchanged) and may add a fault switch to `FakeIdempotencyStore` in `Idempotency.Testing`; nothing in this domain waits for it, and the catch-all for other exceptions stays as the safety net for third-party stores |
-| 13.ServiceDefaults | outbound | P-582 deletes `WithApplicationTelemetry` and replaces its duration view with one seconds-histogram view for `SharedKernel.*`; the Application meter and source names are unchanged. Dashboards keyed on `request.type`/`request.kind`/cache instruments need the renames (release notes) |
-| 14.Presentation | outbound | A failed `Result` with `idempotency.store_unavailable` (Unavailable) maps to 503 through the existing `ErrorType` map; its tests may add the code to the idempotency row |
-| 00.Governance | outbound | `ApplicationPipelineRules`/`PipelineOrderAssertion` assert the request-behavior order only; the stream chain gains `StreamObservabilityBehavior` before `StreamAuthorizationBehavior` (verify the assertion does not enumerate `IStreamPipelineBehavior<,>`); P-583 report-only tests must show zero Application findings for SK.05.ApplicationConformance |
-| 17.Workflows / 19.Scheduling | outbound | `CommandActivity<>`/`ScheduledCommandJob<>` send through `ISender` and now see an Unavailable `Result` instead of a raw store exception for an idempotent command; no code change expected |
+None open.
