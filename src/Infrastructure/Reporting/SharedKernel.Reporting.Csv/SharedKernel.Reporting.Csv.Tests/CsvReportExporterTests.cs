@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -185,7 +186,7 @@ public sealed class CsvReportExporterTests
     {
         var options = new CsvExportOptions { IncludeUtf8Bom = false };
         configure?.Invoke(options);
-        return new CsvReportExporter<TestRow>(new ReportingDependencies(storageFactory: storageFactory), Options.Create(options));
+        return new CsvReportExporter<TestRow>(new ReportingDependencies(NullLogger<ReportingDependencies>.Instance, storageFactory: storageFactory), Options.Create(options));
     }
 
     private static async Task<string> ExportAsync(TestRow[] rows, ReportDefinition<TestRow> definition, Action<CsvExportOptions>? configure = null)

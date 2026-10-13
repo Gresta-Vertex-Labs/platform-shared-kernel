@@ -1,105 +1,118 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Reflection;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Reporting.Internal;
 
 /// <summary>
-/// The <c>SharedKernel.Reporting</c> activity source and meter, shared by every exporter and converter. Wired into
-/// OpenTelemetry by <c>WithReportingTelemetry()</c> in <c>SharedKernel.ServiceDefaults</c>.
+/// The <c>SharedKernel.Reporting</c> spans and instruments, shared by every exporter and converter. Subscribed by the
+/// <c>SharedKernel.*</c> wildcard of <c>AddServiceDefaults</c>.
 /// </summary>
 /// <remarks>
-/// Spans and measurements carry the format, the operation, the store and, on failure, the error code — never row
-/// content, object keys or file names, which often hold personal data.
+/// Spans and measurements carry the format, the operation, the store and the outcome — never row content, object keys
+/// or file names, which often hold personal data. The metric's <c>error.type</c> is bounded (an <see cref="ErrorType"/>
+/// name or a CLR type); the error code is on spans only.
 /// </remarks>
-internal static class ReportingTelemetry
+internal sealed class ReportingTelemetry
 {
-    public const string InstrumentationName = "SharedKernel.Reporting";
-
-    public const string FormatTag = "reporting.format";
-    public const string OperationTag = "reporting.operation";
-    public const string StoreTag = "reporting.store";
-    public const string RowCountTag = "reporting.row_count";
-    public const string SizeTag = "reporting.size_bytes";
-
     public const string ExportOperation = "export";
     public const string ConvertOperation = "convert";
 
-    private const string CancelledErrorType = "cancelled";
+    internal const string DurationInstrumentName = "sharedkernel.reporting.operation.duration";
+    internal const string RowsInstrumentName = "sharedkernel.reporting.rows";
+    internal const string BytesInstrumentName = "sharedkernel.reporting.bytes";
 
-    private static readonly string Version =
-        typeof(ReportingTelemetry).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? "0.0.0";
+    private static readonly string Version = TelemetryVersion.Of(typeof(ReportingTelemetry).Assembly);
 
-    public static ActivitySource Source { get; } = new(InstrumentationName, Version);
+    private readonly Histogram<double> _duration;
+    private readonly Counter<long> _rows;
+    private readonly Counter<long> _bytes;
 
-    private static Meter Meter { get; } = new(InstrumentationName, Version);
+    /// <summary>Creates the instruments on a meter from <paramref name="meterFactory"/>, or a directly created meter when none is registered.</summary>
+    public ReportingTelemetry(IMeterFactory? meterFactory)
+    {
+        var options = new MeterOptions(ReportingDiagnostics.MeterName) { Version = Version };
+        Meter meter = meterFactory?.Create(options) ?? new Meter(options);
 
-    private static Histogram<double> Duration { get; } = Meter.CreateHistogram<double>(
-        "reporting.operation.duration",
-        unit: "s",
-        description: "Duration of report exports and PDF conversions, by format, operation and outcome.");
+        _duration = meter.CreateHistogram<double>(
+            DurationInstrumentName,
+            unit: "s",
+            description: "Duration of report exports and PDF conversions, by format, operation and outcome.");
+        _rows = meter.CreateCounter<long>(
+            RowsInstrumentName,
+            unit: "{row}",
+            description: "Rows written by successful report exports, by format.");
+        _bytes = meter.CreateCounter<long>(
+            BytesInstrumentName,
+            unit: "By",
+            description: "Bytes produced by successful report exports and PDF conversions, by format and operation.");
+    }
 
-    private static Counter<long> Rows { get; } = Meter.CreateCounter<long>(
-        "reporting.rows",
-        unit: "{row}",
-        description: "Rows written by successful report exports, by format.");
-
-    private static Counter<long> Bytes { get; } = Meter.CreateCounter<long>(
-        "reporting.bytes",
-        unit: "By",
-        description: "Bytes produced by successful report exports and PDF conversions, by format and operation.");
+    public static ActivitySource Source { get; } = new(ReportingDiagnostics.ActivitySourceName, Version);
 
     public static Activity? Start(string operation, ReportFormat format, string? store)
     {
         Activity? activity = Source.StartActivity($"reporting {operation}", ActivityKind.Internal);
-        if (activity is not null)
+        if (activity is { IsAllDataRequested: true })
         {
-            activity.SetTag(FormatTag, format.Name);
-            activity.SetTag(OperationTag, operation);
+            activity.SetTag(ReportingTagKeys.Format, format.Name);
+            activity.SetTag(ReportingTagKeys.Operation, operation);
             if (store is not null)
             {
-                activity.SetTag(StoreTag, store);
+                activity.SetTag(ReportingTagKeys.Store, store);
             }
         }
 
         return activity;
     }
 
-    public static void Succeeded(Activity? activity, string operation, ReportFormat format, long startTimestamp, long? rows, long bytes)
+    public void Succeeded(Activity? activity, string operation, ReportFormat format, long startTimestamp, long? rows, long bytes)
     {
-        var tags = Tags(operation, format);
-        Duration.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds, tags);
-        Bytes.Add(bytes, tags);
-        activity?.SetTag(SizeTag, bytes);
+        _duration.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds, Tags(operation, format, WellKnownOutcomes.Success, errorType: null));
+        _bytes.Add(bytes, new TagList { { ReportingTagKeys.Format, format.Name }, { ReportingTagKeys.Operation, operation } });
+        activity?.SetTag(ReportingTagKeys.SizeBytes, bytes);
 
         if (rows is { } rowCount)
         {
-            Rows.Add(rowCount, new KeyValuePair<string, object?>(FormatTag, format.Name));
-            activity?.SetTag(RowCountTag, rowCount);
+            _rows.Add(rowCount, new TagList { { ReportingTagKeys.Format, format.Name } });
+            activity?.SetTag(ReportingTagKeys.RowCount, rowCount);
         }
     }
 
-    public static void Failed(Activity? activity, string operation, ReportFormat format, long startTimestamp, string errorType)
+    /// <summary>Records a returned failure; returns the <c>error.type</c> value (the <see cref="ErrorType"/> name).</summary>
+    public string Failed(Activity? activity, string operation, ReportFormat format, long startTimestamp, Error error)
     {
-        var tags = Tags(operation, format);
-        tags.Add(WellKnownTagKeys.ErrorType, errorType);
-        Duration.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds, tags);
+        string outcome = activity.RecordFailure(error);
+        string errorType = error.Type.ToString();
+        _duration.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds, Tags(operation, format, outcome, errorType));
+        return errorType;
+    }
 
-        if (activity is not null)
+    /// <summary>Records an exception; returns the outcome. Cancellation is <c>canceled</c> and never an error.</summary>
+    public string Faulted(Activity? activity, string operation, ReportFormat format, long startTimestamp, Exception exception)
+    {
+        string outcome = activity.RecordException(exception);
+        string? errorType = outcome == WellKnownOutcomes.Canceled ? null : exception.GetType().FullName ?? exception.GetType().Name;
+        _duration.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds, Tags(operation, format, outcome, errorType));
+        return outcome;
+    }
+
+    private static TagList Tags(string operation, ReportFormat format, string outcome, string? errorType)
+    {
+        var tags = new TagList
         {
-            activity.SetTag(WellKnownTagKeys.ErrorType, errorType);
-            activity.SetStatus(ActivityStatusCode.Error, errorType);
+            { ReportingTagKeys.Format, format.Name },
+            { ReportingTagKeys.Operation, operation },
+            { WellKnownTagKeys.Outcome, outcome },
+        };
+
+        if (errorType is not null)
+        {
+            tags.Add(WellKnownTagKeys.ErrorType, errorType);
         }
+
+        return tags;
     }
-
-    public static void Cancelled(Activity? activity, string operation, ReportFormat format, long startTimestamp) =>
-        Failed(activity, operation, format, startTimestamp, CancelledErrorType);
-
-    private static TagList Tags(string operation, ReportFormat format) => new()
-    {
-        { FormatTag, format.Name },
-        { OperationTag, operation },
-    };
 }

@@ -7,9 +7,12 @@
 //   3. A CSV export is stored with its content type, download file name and a presigned link
 //   4. An Excel export is stored and re-opens with ClosedXML, numbers as numbers
 //   5. A PDF export is stored and re-opens with PDFsharp
+//   6. The instruments are renamed sharedkernel.reporting.* with an outcome tag, and an invalid definition throws the
+//      classified InvalidReportDefinitionException
 // Gotenberg itself (a Docker service) is exercised by SharedKernel.Reporting.Gotenberg.Tests in the Integration lane.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using ClosedXML.Excel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +40,7 @@ Surface2_FactoryPicksTheFormatAtRuntime(host.Services);
 await Surface3_CsvRoundTrip(host.Services, storage, definition);
 await Surface4_SpreadsheetRoundTrip(host.Services, storage, definition);
 await Surface5_PdfRoundTrip(host.Services, storage, definition);
+await Surface6_TelemetryAndDefinitionErrors(host.Services, definition);
 
 await host.StopAsync();
 Console.WriteLine();
@@ -85,7 +89,7 @@ static void Surface2_FactoryPicksTheFormatAtRuntime(IServiceProvider services)
     Verify(factory.Formats.Count == 3, "three formats registered");
     Verify(factory.ParseFormat(".XLSX").Value == ReportFormat.Xlsx, "ParseFormat accepts an extension");
     Verify(factory.ParseFormat("text/csv").Value == ReportFormat.Csv, "ParseFormat accepts a content type");
-    Verify(factory.ParseFormat("docx").Error.Code == ReportingErrorCodes.UnsupportedFormat, "an unknown format is a validation failure");
+    Verify(factory.ParseFormat("docx").Error.Code == ReportingErrorCodes.FormatNotSupported, "an unknown format is a validation failure");
     Verify(factory.GetExporter<Row>(ReportFormat.Pdf) is IPdfReportExporter<Row>, "GetExporter returns the provider's exporter");
     Console.WriteLine("Surface 2 PASS: the factory parses a user-supplied format and picks the exporter");
 }
@@ -149,6 +153,54 @@ static async IAsyncEnumerable<Row> Rows(params Row[] rows)
         await Task.Yield();
         yield return row;
     }
+}
+
+static async Task Surface6_TelemetryAndDefinitionErrors(IServiceProvider services, ReportDefinition<Row> definition)
+{
+    var seen = new ConcurrentDictionary<string, string?>();
+    using var listener = new MeterListener();
+    listener.InstrumentPublished = (instrument, l) =>
+    {
+        if (instrument.Meter.Name == ReportingDiagnostics.MeterName)
+        {
+            seen[instrument.Name] = instrument.Unit;
+            l.EnableMeasurementEvents(instrument);
+        }
+    };
+    var outcomes = new ConcurrentBag<string?>();
+    listener.SetMeasurementEventCallback<double>((instrument, _, tags, _) =>
+    {
+        foreach (KeyValuePair<string, object?> tag in tags)
+        {
+            if (tag.Key == "outcome")
+            {
+                outcomes.Add(tag.Value as string);
+            }
+        }
+    });
+    listener.Start();
+
+    using var stream = new MemoryStream();
+    Result<ReportStreamOutcome> result = await services.GetRequiredService<ICsvReportExporter<Row>>()
+        .ExportToStreamAsync(Rows(new Row(1, "Ada", 1m)), definition, stream);
+    Verify(result.IsSuccess, "the stream export succeeds");
+
+    Verify(seen.GetValueOrDefault("sharedkernel.reporting.operation.duration") == "s", "the duration histogram is in seconds");
+    Verify(seen.GetValueOrDefault("sharedkernel.reporting.rows") == "{row}", "the rows counter is in {row}");
+    Verify(seen.GetValueOrDefault("sharedkernel.reporting.bytes") == "By", "the bytes counter is in By");
+    Verify(outcomes.Contains("success"), "the duration carries the outcome tag");
+
+    try
+    {
+        ReportDefinition.For<Row>().Build();
+        Verify(false, "an empty definition must not build");
+    }
+    catch (InvalidReportDefinitionException exception)
+    {
+        Verify(exception.Error.Code == ReportingErrorCodes.InvalidDefinition, "the exception carries reporting.invalid_definition");
+    }
+
+    Console.WriteLine("Surface 6 PASS: sharedkernel.reporting.* instruments with outcome, and a classified definition error");
 }
 
 static void Verify(bool condition, string label)

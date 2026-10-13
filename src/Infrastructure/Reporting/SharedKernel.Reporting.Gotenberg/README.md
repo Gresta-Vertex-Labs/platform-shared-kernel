@@ -17,7 +17,7 @@
 | Standard HTTP resilience (timeout, retries, circuit breaker) | A slow or restarting converter does not hang or cascade |
 | HTTP status → `Result` mapping | Callers branch on `reporting.conversion_failed` / `converter_unavailable` / `conversion_timeout` |
 | The `gotenberg` readiness probe | Traffic stops when the converter is down |
-| Correlation id sent as `Gotenberg-Trace` | A conversion can be found in Gotenberg's logs |
+| Correlation id sent as `Gotenberg-Trace` (through the shared propagation helper; no tenant, actor or client header ever leaves) | A conversion can be found in Gotenberg's logs without leaking caller identity to a third-party process |
 
 ## Contents
 
@@ -53,13 +53,12 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 ```csharp
 using SharedKernel.Reporting;
 using SharedKernel.ServiceDefaults.HealthChecks;
-using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("invoices");
 builder.Services.AddSharedKernelReporting().AddGotenberg(builder.Configuration);   // SharedKernel:Reporting:Gotenberg
 builder.Services.AddHealthChecks().AddSharedKernelReadiness();                     // includes the "gotenberg" probe
-builder.WithReportingTelemetry();
+// Spans and instruments are subscribed by the SharedKernel.* wildcard of AddServiceDefaults.
 ```
 
 ```json
@@ -184,7 +183,7 @@ host, route, credential hint, status text or response body (the body is engine o
 ### Logging
 
 EventId block 20400–20499. The base class logs the conversion itself (EventIds 20000–20006, including 20006 "PDF
-conversion completed"). The HTTP status code is logged, never the host, route, credentials or body.
+conversion produced N bytes", Debug). The HTTP status code is logged, never the host, route, credentials or body.
 
 | Event id | Level | Template |
 | --- | --- | --- |

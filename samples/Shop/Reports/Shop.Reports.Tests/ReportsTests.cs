@@ -95,7 +95,7 @@ public sealed class SalesExportTests
                 .Handle(new ExportSalesCommand("docx", ReportStores.Downloads), default)
         )
             .Error.Code.Should()
-            .Be("reporting.unsupported_format");
+            .Be("reporting.format_not_supported");
 
     [Fact]
     public async Task CallerWithoutATenant_IsForbidden() =>

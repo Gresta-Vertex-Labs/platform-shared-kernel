@@ -10,6 +10,7 @@ public sealed class RegistrationTests
     public void AddExporter_ServesEveryRowType_ThroughTheFactoryAndAsAKeyedService()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSharedKernelReporting().AddExporter(LineExporter<Row>.Lines, typeof(LineExporter<>));
         using ServiceProvider provider = services.BuildServiceProvider(validateScopes: true);
 
@@ -25,6 +26,7 @@ public sealed class RegistrationTests
     public void AddSharedKernelReporting_AndAddExporter_AreIdempotent()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSharedKernelReporting().AddExporter(LineExporter<Row>.Lines, typeof(LineExporter<>));
         services.AddSharedKernelReporting().AddExporter(LineExporter<Row>.Lines, typeof(LineExporter<>));
         using ServiceProvider provider = services.BuildServiceProvider();
@@ -42,7 +44,7 @@ public sealed class RegistrationTests
         var conflict = () => builder.AddExporter(new ReportFormat("lines", "text/plain", ".txt"), typeof(OtherExporter<>));
         var closed = () => builder.AddExporter(new ReportFormat("x", "text/plain", ".x"), typeof(LineExporter<Row>));
 
-        conflict.Should().Throw<InvalidOperationException>().WithMessage("*already has the exporter*");
+        conflict.Should().Throw<InvalidOperationException>().WithMessage("*already has the exporter*must not also use*");
         closed.Should().Throw<ArgumentException>();
     }
 
@@ -67,7 +69,7 @@ public sealed class RegistrationTests
     {
         Result<ReportFormat> result = Factory().ParseFormat(value);
 
-        result.Error.Code.Should().Be(ReportingErrorCodes.UnsupportedFormat);
+        result.Error.Code.Should().Be(ReportingErrorCodes.FormatNotSupported);
         result.Error.Message.Should().Contain("lines");
     }
 
@@ -82,6 +84,7 @@ public sealed class RegistrationTests
     private static IReportExporterFactory Factory()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSharedKernelReporting().AddExporter(LineExporter<Row>.Lines, typeof(LineExporter<>));
         return services.BuildServiceProvider().GetRequiredService<IReportExporterFactory>();
     }

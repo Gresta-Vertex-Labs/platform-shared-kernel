@@ -61,7 +61,7 @@ internal sealed class EmbeddedRobotoFontResolver : IFontResolver
         var assembly = typeof(EmbeddedRobotoFontResolver).Assembly;
         var resourceName = $"{assembly.GetName().Name}.Fonts.{fileName}";
         using var stream = assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException($"Embedded font resource '{resourceName}' was not found.");
+            ?? throw new InvalidOperationException($"The embedded font resource '{resourceName}' was not found. Reinstall the package.");
         using var memoryStream = new MemoryStream();
         stream.CopyTo(memoryStream);
         return memoryStream.ToArray();

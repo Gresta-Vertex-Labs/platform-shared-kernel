@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Reflection;
 using FluentAssertions;
 using NSubstitute;
@@ -112,7 +113,7 @@ public sealed class ReportAbortedExceptionTests
     {
         IFileStorageFactory factory = InMemoryStorage.CreateFactory(b => b.AddStore(new FileStoreRegistration(
             "reports", tenantScoped: false, _ => store.Substitute, (_, _) => Task.FromResult(Result.Success()))));
-        return new ReportingDependencies(storageFactory: factory);
+        return new ReportingDependencies(NullLogger<ReportingDependencies>.Instance, storageFactory: factory);
     }
 
     /// <summary>A store whose upload reads the body to the end and records the exception the read raised.</summary>

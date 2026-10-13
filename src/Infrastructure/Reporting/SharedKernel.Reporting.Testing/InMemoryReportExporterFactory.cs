@@ -52,7 +52,7 @@ public sealed class InMemoryReportExporterFactory : IReportExporterFactory
             || string.Equals(f.FileExtension, "." + requested, StringComparison.OrdinalIgnoreCase)
             || string.Equals(f.ContentType, requested, StringComparison.OrdinalIgnoreCase));
 
-        return match is not null ? match : ReportingErrors.UnsupportedFormat(value, _formats);
+        return match is not null ? match : ReportingErrors.FormatNotSupported(value, _formats);
     }
 
     /// <inheritdoc />
@@ -68,7 +68,10 @@ public sealed class InMemoryReportExporterFactory : IReportExporterFactory
         ArgumentNullException.ThrowIfNull(format);
         if (!_formats.Contains(format))
         {
-            throw new InvalidOperationException($"The fake factory does not support the format '{format.Name}'.");
+            string registered = _formats.Length == 0 ? "none" : string.Join(", ", _formats.Select(f => f.Name));
+            throw new InvalidOperationException(
+                $"No report exporter is registered for the format '{format.Name}'. Registered formats: {registered}. "
+                + "Create the fake factory with that format.");
         }
 
         return (InMemoryReportExporter<TRow>)_exporters.GetOrAdd((format, typeof(TRow)), key => new InMemoryReportExporter<TRow>(key.Format, _clock));

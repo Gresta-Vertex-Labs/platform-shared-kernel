@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Reporting.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\Storage\SharedKernel.Storage.Testing\SharedKernel.Storage.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -21,5 +22,6 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 </Project>

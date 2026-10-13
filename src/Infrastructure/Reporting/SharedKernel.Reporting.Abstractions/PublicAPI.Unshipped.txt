@@ -10,7 +10,6 @@ const SharedKernel.Reporting.ReportingErrorCodes.InvalidDefinition = "reporting.
 const SharedKernel.Reporting.ReportingErrorCodes.InvalidDestination = "reporting.invalid_destination" -> string!
 const SharedKernel.Reporting.ReportingErrorCodes.InvalidRequest = "reporting.invalid_request" -> string!
 const SharedKernel.Reporting.ReportingErrorCodes.RowLimitExceeded = "reporting.row_limit_exceeded" -> string!
-const SharedKernel.Reporting.ReportingErrorCodes.UnsupportedFormat = "reporting.unsupported_format" -> string!
 override SharedKernel.Reporting.HtmlAsset.Equals(object? obj) -> bool
 override SharedKernel.Reporting.HtmlAsset.GetHashCode() -> int
 override SharedKernel.Reporting.HtmlAsset.ToString() -> string!
@@ -208,7 +207,7 @@ SharedKernel.Reporting.ReportFormat.Name.get -> string!
 SharedKernel.Reporting.ReportFormat.ReportFormat(string! name, string! contentType, string! fileExtension) -> void
 SharedKernel.Reporting.ReportFormat.WithExtension(string! fileName) -> string!
 SharedKernel.Reporting.ReportingDependencies
-SharedKernel.Reporting.ReportingDependencies.ReportingDependencies(Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, SharedKernel.Storage.IFileStorageFactory? storageFactory = null) -> void
+SharedKernel.Reporting.ReportingDependencies.ReportingDependencies(Microsoft.Extensions.Logging.ILogger<SharedKernel.Reporting.ReportingDependencies!>! logger, SharedKernel.Storage.IFileStorageFactory? storageFactory = null, System.Diagnostics.Metrics.IMeterFactory? meterFactory = null) -> void
 SharedKernel.Reporting.ReportingErrorCodes
 SharedKernel.Reporting.ReportingErrors
 SharedKernel.Reporting.ReportingServiceCollectionExtensions
@@ -259,11 +258,9 @@ static SharedKernel.Reporting.ReportFormat.operator ==(SharedKernel.Reporting.Re
 static SharedKernel.Reporting.ReportingErrors.ConversionFailed() -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.ConversionTimeout(System.TimeSpan timeout) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.ConverterUnavailable() -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Reporting.ReportingErrors.InvalidDefinition(string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.InvalidDestination(string! reason) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Reporting.ReportingErrors.InvalidRequest(string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.RowLimitExceeded(SharedKernel.Reporting.ReportFormat! format, long maxRows) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Reporting.ReportingErrors.UnsupportedFormat(string? format, System.Collections.Generic.IEnumerable<SharedKernel.Reporting.ReportFormat!>! supported) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.FormatNotSupported(string? format, System.Collections.Generic.IEnumerable<SharedKernel.Reporting.ReportFormat!>! supported) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingServiceCollectionExtensions.AddExporter(this SharedKernel.Reporting.IReportingBuilder! builder, SharedKernel.Reporting.ReportFormat! format, System.Type! exporterType) -> SharedKernel.Reporting.IReportingBuilder!
 static SharedKernel.Reporting.ReportingServiceCollectionExtensions.AddHtmlToPdfConverter<TConverter>(this SharedKernel.Reporting.IReportingBuilder! builder) -> SharedKernel.Reporting.IReportingBuilder!
 static SharedKernel.Reporting.ReportingServiceCollectionExtensions.AddSharedKernelReporting(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Reporting.IReportingBuilder!
@@ -273,3 +270,10 @@ static SharedKernel.Reporting.ReportValueFormatting.Format(object? value, System
 static SharedKernel.Reporting.ReportValueFormatting.FormatColumnValue<TRow>(SharedKernel.Reporting.ReportColumn<TRow>! column, object? value, System.Globalization.CultureInfo! culture) -> string?
 static SharedKernel.Reporting.ReportValueFormatting.IsNumber(object? value) -> bool
 virtual SharedKernel.Reporting.ReportExporterBase<TRow>.ValidateDefinition(SharedKernel.Reporting.ReportDefinition<TRow>! definition) -> SharedKernel.Primitives.Results.Result
+const SharedKernel.Reporting.ReportingErrorCodes.FormatNotSupported = "reporting.format_not_supported" -> string!
+const SharedKernel.Reporting.ReportingDiagnostics.ActivitySourceName = "SharedKernel.Reporting" -> string!
+const SharedKernel.Reporting.ReportingDiagnostics.MeterName = "SharedKernel.Reporting" -> string!
+SharedKernel.Reporting.ReportingDiagnostics
+SharedKernel.Reporting.InvalidReportDefinitionException
+SharedKernel.Reporting.InvalidReportDefinitionException.InvalidReportDefinitionException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Reporting.InvalidReportDefinitionException.InvalidReportDefinitionException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void

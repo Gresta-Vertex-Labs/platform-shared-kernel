@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
 using SharedKernel.Execution.Context;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting.Gotenberg.Diagnostics;
 
@@ -37,10 +38,13 @@ internal sealed class GotenbergHtmlToPdfConverter(
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, ConvertPath) { Content = Form(html, options) };
-        if (requestContext?.Current?.CorrelationId is { Length: > 0 } correlationId)
-        {
-            request.Headers.TryAddWithoutValidation(TraceHeader, correlationId);
-        }
+        // Only the correlation id leaves the platform: a null context writes no tenant, actor or client header, and the
+        // shared helper validates the id (an invalid or absent one sends nothing).
+        RequestContextPropagation.WriteHeaders(
+            context: null,
+            request,
+            SetVendorHeader,
+            CorrelationIds.Current(requestContext?.Current));
 
         HttpClient client = httpClientFactory.CreateClient(HttpClientName);
         HttpResponseMessage response;
@@ -113,6 +117,14 @@ internal sealed class GotenbergHtmlToPdfConverter(
         Field(form, "preferCssPageSize", Boolean(options.PreferCssPageSize));
         Field(form, "scale", options.Scale.ToString("0.###", CultureInfo.InvariantCulture));
         return form;
+    }
+
+    private static void SetVendorHeader(HttpRequestMessage request, string name, string value)
+    {
+        if (name == WellKnownHeaders.CorrelationId)
+        {
+            request.Headers.TryAddWithoutValidation(TraceHeader, value);
+        }
     }
 
     private static StringContent Html(string html) => new(html, Encoding.UTF8, "text/html");

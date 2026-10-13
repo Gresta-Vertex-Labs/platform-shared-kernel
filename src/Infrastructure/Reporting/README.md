@@ -105,7 +105,7 @@ var definition = ReportDefinition.For<Order>()
 
 Result<ReportFormat> format = exporters.ParseFormat(requestedFormat);   // "csv", "xlsx", "pdf", ".xlsx", "text/csv"
 if (format.IsFailure)
-    return format.Error;                                               // reporting.unsupported_format
+    return format.Error;                                               // reporting.format_not_supported
 
 Result<ReportExportOutcome> export = await exporters.GetExporter<Order>(format.Value).ExportAsync(
     orders.StreamAsync(month, ct),

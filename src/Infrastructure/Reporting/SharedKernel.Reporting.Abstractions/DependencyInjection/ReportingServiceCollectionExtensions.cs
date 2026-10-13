@@ -27,7 +27,7 @@ public static class ReportingServiceCollectionExtensions
     ///     .AddSpreadsheet(builder.Configuration)
     ///     .AddPdf(builder.Configuration)
     ///     .AddGotenberg(builder.Configuration);   // IHtmlToPdfConverter
-    /// builder.WithReportingTelemetry();
+    /// // Spans and instruments (SharedKernel.Reporting) are subscribed by the SharedKernel.* wildcard of AddServiceDefaults.
     /// </code>
     /// </example>
     /// <param name="services">The service collection.</param>
@@ -79,7 +79,7 @@ public static class ReportingServiceCollectionExtensions
             return existing.ExporterType == exporterType
                 ? builder
                 : throw new InvalidOperationException(
-                    $"The report format '{format.Name}' already has the exporter {existing.ExporterType}; it cannot also use {exporterType}.");
+                    $"The report format '{format.Name}' already has the exporter '{existing.ExporterType}' and must not also use '{exporterType}'. Register one exporter per format.");
         }
 
         builder.Services.AddSingleton(new ReportExporterRegistration(format, exporterType));

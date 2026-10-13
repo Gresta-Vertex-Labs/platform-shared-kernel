@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using FluentAssertions;
 using SharedKernel.Primitives.Results;
@@ -65,7 +66,7 @@ public sealed class HtmlConverterBaseTests
         { "<p/>", new HtmlToPdfOptions { Assets = [new HtmlAsset("a.png", Array.Empty<byte>()), new HtmlAsset("A.png", Array.Empty<byte>())] } },
     };
 
-    private ReportingDependencies Dependencies() => new(storageFactory: InMemoryStorage.CreateFactory(_documents));
+    private ReportingDependencies Dependencies() => new(NullLogger<ReportingDependencies>.Instance, storageFactory: InMemoryStorage.CreateFactory(_documents));
 
     private FakeConverter Converter() => new(Dependencies());
 
