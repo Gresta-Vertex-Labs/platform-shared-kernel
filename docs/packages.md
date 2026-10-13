@@ -104,7 +104,7 @@ Reference from the Infrastructure project.
 | [`SharedKernel.Storage.Obs`](../src/Infrastructure/Storage/SharedKernel.Storage.Obs/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Storage.S3` |
 | [`SharedKernel.Storage.S3`](../src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Configuration`, `SharedKernel.Storage.Abstractions` |
 | [`SharedKernel.Validation.FluentValidation`](../src/Foundation/SharedKernel.Validation.FluentValidation/README.md) | `src/Foundation` | `SharedKernel.Application`, `SharedKernel.Validation` |
-| [`SharedKernel.Workflows.Temporal`](../src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/README.md) | `src/Infrastructure/Workflows` | `SharedKernel.Application`, `SharedKernel.Configuration`, `SharedKernel.Cryptography`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Workflows.Temporal`](../src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/README.md) | `src/Infrastructure/Workflows` | `SharedKernel.Application`, `SharedKernel.Configuration`, `SharedKernel.Core`, `SharedKernel.Cryptography`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 
 ## Host
 

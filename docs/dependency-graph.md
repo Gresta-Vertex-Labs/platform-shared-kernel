@@ -76,7 +76,7 @@ flowchart LR
   src_Infrastructure_Search -->|1| src_Model_Contracts
   src_Infrastructure_Storage -->|4| src_Foundation
   src_Infrastructure_Workflows -->|1| src_Application
-  src_Infrastructure_Workflows -->|4| src_Foundation
+  src_Infrastructure_Workflows -->|5| src_Foundation
   src_Model_Contracts -->|1| src_Foundation
   src_Model_Domain -->|3| src_Foundation
   src_Testing -->|4| src_Foundation
@@ -657,11 +657,13 @@ flowchart LR
   end
   SharedKernel_Application(["Application<br/><i>src/Application</i>"])
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Cryptography(["Cryptography<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
   SharedKernel_Workflows_Temporal --> SharedKernel_Application
   SharedKernel_Workflows_Temporal --> SharedKernel_Configuration
+  SharedKernel_Workflows_Temporal --> SharedKernel_Core
   SharedKernel_Workflows_Temporal --> SharedKernel_Cryptography
   SharedKernel_Workflows_Temporal --> SharedKernel_Execution
   SharedKernel_Workflows_Temporal --> SharedKernel_Primitives
