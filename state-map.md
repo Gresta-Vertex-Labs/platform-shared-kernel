@@ -21,7 +21,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | --- | --- | --- | --- | --- |
 | 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ○ | Next: `SK.00.ObservabilityEnforce` (WO-087, after Phase 2) |
 | 01 | [Core](src/Foundation/state-map.md) | 13 (10 Foundation, 3 Adapter) | ● | None |
-| 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ○ | Next: `SK.02.ObservabilityConformance` (WO-087) |
+| 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ● | None |
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ● | None |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
 | 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.ApplicationConformance` (WO-087) |
@@ -258,7 +258,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-601 — Conform Caching to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 02.Caching
 **Depends on:** P-580, P-581, P-583, P-585
 **Phase key:** `SK.02.ObservabilityConformance`
