@@ -1,3 +1,5 @@
+using SharedKernel.Primitives.Propagation;
+
 namespace SharedKernel.Testing.Communication;
 
 /// <summary>
@@ -59,8 +61,8 @@ public sealed class HttpClientHandlerTestFactory
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
-            if (!request.Headers.Contains("x-correlation-id"))
-                request.Headers.Add("x-correlation-id", Guid.NewGuid().ToString("N"));
+            if (!request.Headers.Contains(WellKnownHeaders.CorrelationId))
+                request.Headers.Add(WellKnownHeaders.CorrelationId, Guid.NewGuid().ToString());
 
             return base.SendAsync(request, ct);
         }
@@ -70,8 +72,8 @@ public sealed class HttpClientHandlerTestFactory
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
-            if (tenantId is { } id && !request.Headers.Contains("x-tenant-id"))
-                request.Headers.Add("x-tenant-id", id.ToString("D"));
+            if (tenantId is { } id && !request.Headers.Contains(WellKnownHeaders.TenantId))
+                request.Headers.Add(WellKnownHeaders.TenantId, id.ToString());
 
             return base.SendAsync(request, ct);
         }

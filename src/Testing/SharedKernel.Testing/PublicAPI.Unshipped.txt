@@ -180,6 +180,7 @@ SharedKernel.Testing.Persistence.TenantedAggregateFaker<TAggregate, TId>
 SharedKernel.Testing.Persistence.TenantedAggregateFaker<TAggregate, TId>.TenantedAggregateFaker() -> void
 SharedKernel.Testing.Persistence.WithDeletedSpecification<TAggregate>
 SharedKernel.Testing.Validation.ValidationSampleGenerator
+const SharedKernel.Testing.Communication.AmbientActivityTestHelper.SourceName = "SharedKernel.Testing" -> string!
 static SharedKernel.Testing.Communication.AmbientActivityTestHelper.Start(System.Diagnostics.ActivityTraceId traceId, System.Diagnostics.ActivitySpanId? parentSpanId = null) -> SharedKernel.Testing.Communication.AmbientActivityTestHelper!
 static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldBeEmpty<T>(this SharedKernel.Contracts.Pagination.CursorPagedList<T>! list) -> void
 static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldBeEmpty<T>(this SharedKernel.Contracts.Pagination.PagedList<T>! list) -> void

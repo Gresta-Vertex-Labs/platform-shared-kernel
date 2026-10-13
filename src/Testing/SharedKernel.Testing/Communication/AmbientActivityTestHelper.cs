@@ -12,7 +12,10 @@ namespace SharedKernel.Testing.Communication;
 /// </remarks>
 public sealed class AmbientActivityTestHelper : IDisposable
 {
-    private static readonly ActivitySource Source = new("SharedKernel.Testing.Communication");
+    /// <summary>The name of the <see cref="ActivitySource"/> that ambient test activities are started from.</summary>
+    public const string SourceName = "SharedKernel.Testing";
+
+    private static readonly ActivitySource Source = new(SourceName);
 
     // ActivitySource.StartActivity returns null when no ActivityListener is sampling this source —
     // the default outside an OTel-instrumented host. Registering an always-sampling listener once,
