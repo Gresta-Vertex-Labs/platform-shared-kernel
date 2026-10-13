@@ -101,7 +101,7 @@ public sealed class OrdersHub(ISender sender) : Hub
   | Throws a `ValidationException` | One error: its code and message; several: `validation.failed: {n} validation errors occurred.` |
   | Throws a `TimeoutException`, or is cancelled while the connection is open | `timeout.default: The operation did not complete in time.` |
   | Is refused by the invocation rate limit | `rate_limit.exceeded: Too many requests.` |
-  | Throws anything else | `unexpected.exception: An unexpected error occurred.` (the exception's message in Development) |
+  | Throws anything else | `unexpected.default: An unexpected error occurred.` (the exception's message in Development) |
   | Throws a `HubException` itself | Unchanged |
   | Is cancelled because the connection closed | Rethrown, logged at Debug |
 
@@ -187,7 +187,7 @@ public IAsyncEnumerable<OrderResponse> Orders(Guid customerId) =>
     streams.Stream(customerId).GetValueOrThrow();   // Stream returns Result<IAsyncEnumerable<OrderResponse>>
 ```
 
-A method returning `Result<IAsyncEnumerable<T>>` cannot stream: its success is refused as `unexpected.exception`
+A method returning `Result<IAsyncEnumerable<T>>` cannot stream: its success is refused as `unexpected.default`
 (EventId 14107).
 
 ### 4. Scale out
@@ -224,14 +224,18 @@ SignalR's own settings (message size, keep-alive, timeouts) stay on `HubOptions`
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 14100 | Error | An exception that is not a `SharedKernelException` or a timeout |
 | 14101 | Warning | The invocation rate limit refused an invocation |
-| 14103 | Error | A hub method failed with a server error |
+| 14103 | Error | A hub method failed with a server error, an unclassified exception included (code `unexpected.default`) |
 | 14104 | Debug | A hub method was rejected with a client error |
 | 14106 | Debug | The connection closed before the hub method completed |
-| 14107 | Error | A hub method returned a stream inside a `Result` |
+| 14107 | Error | A hub method returned a stream inside a `Result`. Declare it to return `IAsyncEnumerable<T>` or `ChannelReader<T>` and throw the failure before returning the stream |
+| 14108 | Warning | A hub method returned a server-category failure as a `Result` |
+
+Retired ids 14100, 14102 and 14105 are never reused.
 
 ## Testing
+
+This package's own suite asserts the error a client sees for every `SharedKernelException` other packages of the kernel throw (execution, caching, messaging, storage, search, intelligence, communication, idempotency, persistence, workflows), thrown and returned, in Development and in production, so a rename of one of their error codes fails there.
 
 Run the hub in a `WebApplicationFactory<Program>` host and connect with `HubConnectionBuilder` over the test server's
 handler (`WithUrl(url, o => o.HttpMessageHandlerFactory = _ => server.CreateHandler())`); assert coded failures with

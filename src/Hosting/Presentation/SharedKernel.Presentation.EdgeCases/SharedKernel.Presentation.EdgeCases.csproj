@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Testing</SharedKernelTier>
+    <!--
+      Repo-internal test support, never packed: the edge-mapper conformance catalogue (WO-087 P-612). One case per
+      SharedKernelException that another domain throws or returns, built from that owner's public types and codes so a
+      rename there fails the four protocol suites of this domain (WebApi, gRPC, SignalR, GraphQL) that consume it.
+    -->
+    <IsPackable>false</IsPackable>
+    <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\AI\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Communication\SharedKernel.Communication\SharedKernel.Communication.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Idempotency\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.EfCore.Encryption\SharedKernel.Persistence.EfCore.Encryption.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Linked into the four protocol suites instead of compiled here: a defect on purpose (an exception that exposes an
+         Error without deriving SharedKernelException) is exactly what SK0043 reports in production code. -->
+    <Compile Remove="Controls\**" />
+  </ItemGroup>
+</Project>

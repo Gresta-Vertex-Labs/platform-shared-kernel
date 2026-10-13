@@ -36,16 +36,16 @@ public sealed class HubErrorMessageTests
         },
         {
             // The id of a request Kestrel numbered itself has a colon.
-            "unexpected.exception: An unexpected error occurred. [traceId=0HNABCDEF:00000001; correlationId=flow-1]",
-            "unexpected.exception",
+            "unexpected.default: An unexpected error occurred. [traceId=0HNABCDEF:00000001; correlationId=flow-1]",
+            "unexpected.default",
             "An unexpected error occurred.",
             "0HNABCDEF:00000001",
             "flow-1"
         },
         {
             // A multi-line message keeps its line breaks; only the trailer is cut.
-            "unexpected.exception: First line\nSecond line [traceId=t1; correlationId=c1]",
-            "unexpected.exception",
+            "unexpected.default: First line\nSecond line [traceId=t1; correlationId=c1]",
+            "unexpected.default",
             "First line\nSecond line",
             "t1",
             "c1"
@@ -85,16 +85,16 @@ public sealed class HubErrorMessageTests
         },
         { "http.404: Not Found", "http.404", "Not Found" },
         { "rate_limit.exceeded: Too many requests.", "rate_limit.exceeded", "Too many requests." },
-        { "unexpected.exception: First line: detail\nSecond line", "unexpected.exception", "First line: detail\nSecond line" },
+        { "unexpected.default: First line: detail\nSecond line", "unexpected.default", "First line: detail\nSecond line" },
         {
             // A message that itself contains the marker never moves the code.
-            "unexpected.exception: Wrapped. HubException: inner.code: inner",
-            "unexpected.exception",
+            "unexpected.default: Wrapped. HubException: inner.code: inner",
+            "unexpected.default",
             "Wrapped. HubException: inner.code: inner"
         },
         {
-            "An unexpected error occurred invoking 'M' on the server. HubException: unexpected.exception: Wrapped. HubException: inner.code: inner",
-            "unexpected.exception",
+            "An unexpected error occurred invoking 'M' on the server. HubException: unexpected.default: Wrapped. HubException: inner.code: inner",
+            "unexpected.default",
             "Wrapped. HubException: inner.code: inner"
         },
         {

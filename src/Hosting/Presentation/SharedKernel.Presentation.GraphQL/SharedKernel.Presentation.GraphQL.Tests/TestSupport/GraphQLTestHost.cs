@@ -113,6 +113,14 @@ public sealed class ErrorsQuery
 
     public string Boom() => throw new InvalidOperationException(GraphQLTestHost.Canary);
 
+    /// <summary>Throws the exception of the edge-mapper case named <paramref name="name"/> (the conformance matrix).</summary>
+    public string Edge(string name) => throw SharedKernel.Presentation.EdgeCases.EdgeMapperCatalogue.Find(name).CreateException();
+
+    /// <summary>The negative controls: a plain exception, and one that exposes an Error without being a SharedKernelException.</summary>
+    public string Defect(string kind) => throw (kind == "plain"
+        ? new InvalidOperationException(GraphQLTestHost.Canary)
+        : new SharedKernel.Presentation.EdgeCases.ErrorBearingException());
+
     public string Timeout() => throw new TimeoutException(GraphQLTestHost.Canary);
 
     public string InternalCancellation() => throw new TaskCanceledException(GraphQLTestHost.Canary);
@@ -126,7 +134,7 @@ public sealed class ErrorsQuery
         Field("customer.email_invalid", "Email is invalid.", "Email"),
     ]);
 
-    public string Unavailable() => throw Error.Unavailable("search.unreachable", $"Host {GraphQLTestHost.Canary} is down.").ToException();
+    public string Unavailable() => throw Error.Unavailable("search.unavailable", $"Host {GraphQLTestHost.Canary} is down.").ToException();
 
     private static Error Field(string code, string message, string path) =>
         Error.Validation(code, message) with

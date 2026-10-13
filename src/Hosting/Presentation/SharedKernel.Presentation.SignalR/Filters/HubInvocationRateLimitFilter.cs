@@ -1,11 +1,10 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.SignalR.Diagnostics;
 
 namespace SharedKernel.Presentation.SignalR.Filters;
 
@@ -25,7 +24,7 @@ namespace SharedKernel.Presentation.SignalR.Filters;
 /// invocation passes straight through. The limiter is disposed with the service provider.
 /// </para>
 /// </remarks>
-internal sealed partial class HubInvocationRateLimitFilter : IHubFilter, IDisposable
+internal sealed class HubInvocationRateLimitFilter : IHubFilter, IDisposable
 {
     private const string TooManyRequestsMessage = "Too many requests.";
 
@@ -33,14 +32,14 @@ internal sealed partial class HubInvocationRateLimitFilter : IHubFilter, IDispos
 
     /// <summary>Initializes a new instance of the <see cref="HubInvocationRateLimitFilter"/> class.</summary>
     /// <param name="options">The validated settings.</param>
-    /// <param name="logger">The logger; a missing logging registration never breaks rate limiting.</param>
+    /// <param name="logger">The logger.</param>
     public HubInvocationRateLimitFilter(
         IOptions<SharedKernelSignalROptions> options,
-        ILogger<HubInvocationRateLimitFilter>? logger = null)
+        ILogger<HubInvocationRateLimitFilter> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        _logger = logger ?? NullLogger<HubInvocationRateLimitFilter>.Instance;
+        _logger = logger;
         Limiter = CreateLimiter(options.Value.InvocationRateLimit);
     }
 
@@ -61,7 +60,7 @@ internal sealed partial class HubInvocationRateLimitFilter : IHubFilter, IDispos
         {
             if (!lease.IsAcquired)
             {
-                Log.InvocationRateLimited(_logger, invocationContext.Hub.GetType().Name, invocationContext.HubMethodName);
+                SignalRLog.InvocationRateLimited(_logger, invocationContext.Hub.GetType().Name, invocationContext.HubMethodName);
                 return ValueTask.FromException<object?>(new HubException(GetRejectionMessage(invocationContext.Context)));
             }
         }
@@ -98,13 +97,4 @@ internal sealed partial class HubInvocationRateLimitFilter : IHubFilter, IDispos
     // Translated like every other client message; the rate-limit code is a client error, so it is never redacted.
     private static string GetRejectionMessage(HubCallerContext context) =>
         HubErrorMessage.For(Error.Validation(PresentationErrorCodes.RateLimitExceeded, TooManyRequestsMessage), context);
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 101,
-            Level = LogLevel.Warning,
-            Message = "Rate limiting refused an invocation of hub method {HubName}.{HubMethodName}.")]
-        public static partial void InvocationRateLimited(ILogger logger, string hubName, string hubMethodName);
-    }
 }

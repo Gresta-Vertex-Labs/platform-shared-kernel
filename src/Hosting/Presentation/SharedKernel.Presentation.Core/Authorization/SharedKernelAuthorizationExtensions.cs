@@ -60,7 +60,7 @@ internal static class SharedKernelAuthorizationExtensions
             services,
             static (provider, inner) => new SharedKernelAuthorizationResultHandler(
                 inner,
-                provider.GetService<ILogger<SharedKernelAuthorizationResultHandler>>()));
+                provider.GetRequiredService<ILogger<SharedKernelAuthorizationResultHandler>>()));
 
         services.TryAddEnumerable(ServiceDescriptor.Transient<IAuthorizationHandler, SharedKernelRequirementHandler>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SharedKernelAuthorizationStartupCheck>());

@@ -35,10 +35,11 @@ public sealed class DocumentExposureTests
         document.StatusCode.Should().Be(HttpStatusCode.NotFound);
         reference.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
-        var record = logs.GetLogger(typeof(OpenApiEndpointExtensions).FullName!).Records.Should().ContainSingle().Subject;
+        var record = logs.GetLogger("SharedKernel.Presentation.OpenApi.Startup.OpenApiSetupState").Records.Should().ContainSingle().Subject;
         record.EventId.Id.Should().Be(14300);
         record.LogLevel.Should().Be(LogLevel.Information);
         record.Message.Should().Contain("Production");
+        logs.GetLogger("SharedKernel.Presentation.OpenApi.Startup.OpenApiSetupState").Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(SharedKernel.Primitives.Logging.LoggingEventIdRanges.Presentation, 3);
         UnprotectedDocumentsWarnings(logs).Should().BeEmpty("nothing is served");
     }
 
@@ -52,8 +53,8 @@ public sealed class DocumentExposureTests
         var record = UnprotectedDocumentsWarnings(logs).Should().ContainSingle("one warning covers the documents and the reference").Subject;
         record.LogLevel.Should().Be(LogLevel.Warning);
         record.Message.Should().Contain("Production")
-            .And.Contain("RequireEndpointPermission(\"docs.read\")")
-            .And.Contain("AllowAnonymous()");
+            .And.Contain("without authorization");
+        logs.GetLogger("SharedKernel.Presentation.OpenApi.Startup.OpenApiStartupDiagnostics").Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(SharedKernel.Primitives.Logging.LoggingEventIdRanges.Presentation, 3);
     }
 
     [Theory]

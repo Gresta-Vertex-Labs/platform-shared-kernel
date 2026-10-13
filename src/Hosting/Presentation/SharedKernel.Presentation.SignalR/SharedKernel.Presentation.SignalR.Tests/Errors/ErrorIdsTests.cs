@@ -26,7 +26,7 @@ public sealed class ErrorIdsTests
     public static TheoryData<string, string, string> HubErrors => new()
     {
         { HubPaths.Errors, nameof(ErrorsHub.ThrowNotFound), "order.not_found" },
-        { HubPaths.Errors, nameof(ErrorsHub.ThrowUnavailable), "search.unreachable" },
+        { HubPaths.Errors, nameof(ErrorsHub.ThrowUnavailable), "search.unavailable" },
         { HubPaths.Errors, nameof(ErrorsHub.ThrowUnknown), ErrorCodes.Unexpected.Default },
         { HubPaths.Errors, nameof(ErrorsHub.ThrowTimeout), ErrorCodes.Timeout.Default },
         { HubPaths.Errors, nameof(ErrorsHub.ThrowInternalCancellation), ErrorCodes.Timeout.Default },
@@ -34,7 +34,7 @@ public sealed class ErrorIdsTests
         { HubPaths.Errors, nameof(ErrorsHub.ThrowSingleValidation), "name.required" },
         { HubPaths.Results, nameof(ResultsHub.Fail), "order.already_paid" },
         { HubPaths.Results, nameof(ResultsHub.NumberNotFound), "order.not_found" },
-        { HubPaths.Results, nameof(ResultsHub.Outage), "search.unreachable" },
+        { HubPaths.Results, nameof(ResultsHub.Outage), "search.unavailable" },
         { HubPaths.Results, nameof(ResultsHub.Uninitialized), ErrorCodes.Unexpected.Default },
     };
 

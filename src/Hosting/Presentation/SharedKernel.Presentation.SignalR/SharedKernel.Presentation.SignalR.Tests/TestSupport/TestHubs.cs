@@ -64,7 +64,15 @@ public sealed class ErrorsHub(InvocationCounter counter) : Hub
 {
     public string ThrowNotFound() => throw new NotFoundException(HubMessages.OrderNotFound.ToError(ErrorType.NotFound, 42));
 
-    public string ThrowUnavailable() => throw Error.Unavailable("search.unreachable", HubMessages.InternalDetail).ToException();
+    // The edge-mapper conformance matrix: throws the exception of the named case.
+    public string Edge(string name) => throw SharedKernel.Presentation.EdgeCases.EdgeMapperCatalogue.Find(name).CreateException();
+
+    // The negative controls: a plain exception, and one that exposes an Error without being a SharedKernelException.
+    public string Defect(string kind) => throw (kind == "plain"
+        ? new InvalidOperationException(HubMessages.Secret)
+        : new SharedKernel.Presentation.EdgeCases.ErrorBearingException());
+
+    public string ThrowUnavailable() => throw Error.Unavailable("search.unavailable", HubMessages.InternalDetail).ToException();
 
     public string ThrowUnknown() => throw new InvalidOperationException(HubMessages.Secret);
 
@@ -105,6 +113,9 @@ public sealed class ResultsHub : Hub
 
     public Result Fail() => Error.Conflict("order.already_paid", "The order is already paid.");
 
+    // The edge-mapper conformance matrix: returns the error of the named case as a failed result.
+    public Result EdgeResult(string name) => SharedKernel.Presentation.EdgeCases.EdgeMapperCatalogue.Find(name).CreateError();
+
     public Result<int> Number() => 42;
 
     public Result<int> NumberNotFound() => HubMessages.OrderNotFound.ToError(ErrorType.NotFound, 42);
@@ -121,7 +132,7 @@ public sealed class ResultsHub : Hub
         return Guid.Parse("11111111-2222-3333-4444-555555555555");
     }
 
-    public Result<int> Outage() => Error.Unavailable("search.unreachable", HubMessages.InternalDetail);
+    public Result<int> Outage() => Error.Unavailable("search.unavailable", HubMessages.InternalDetail);
 
     public Result Uninitialized() => default;
 }

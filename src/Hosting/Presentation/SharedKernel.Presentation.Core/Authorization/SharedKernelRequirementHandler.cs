@@ -1,9 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Presentation.Diagnostics;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Primitives.Logging;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.Authorization;
@@ -18,7 +17,7 @@ namespace SharedKernel.Presentation.Authorization;
 /// freshness requirement, or an authentication-method requirement with a maximum age, is evaluated — on every SignalR
 /// hub method call as well, which is what ends a step-up on a connection that stays open.
 /// </remarks>
-internal sealed partial class SharedKernelRequirementHandler : IAuthorizationHandler
+internal sealed class SharedKernelRequirementHandler : IAuthorizationHandler
 {
     private const string NoAuthenticationType = "(none)";
 
@@ -29,11 +28,11 @@ internal sealed partial class SharedKernelRequirementHandler : IAuthorizationHan
     public SharedKernelRequirementHandler(
         IEnumerable<IUserContextMapper> mappers,
         IServiceProvider services,
-        ILogger<SharedKernelRequirementHandler>? logger = null)
+        ILogger<SharedKernelRequirementHandler> logger)
     {
         _mappers = mappers;
         _services = services;
-        _logger = logger ?? NullLogger<SharedKernelRequirementHandler>.Instance;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -53,7 +52,7 @@ internal sealed partial class SharedKernelRequirementHandler : IAuthorizationHan
             // asking it to sign in again, which could never help, and say why — the response cannot.
             if (context.User.Identities.FirstOrDefault(identity => identity.IsAuthenticated) is { } identity)
             {
-                Log.NoUserContextMapper(_logger, identity.AuthenticationType ?? NoAuthenticationType);
+                PresentationCoreLog.PrincipalWithoutMapper(_logger, identity.AuthenticationType ?? NoAuthenticationType);
                 context.Fail(new AuthorizationFailureReason(this, "No IUserContextMapper handles the caller's authentication scheme."));
             }
 
@@ -72,15 +71,4 @@ internal sealed partial class SharedKernelRequirementHandler : IAuthorizationHan
     }
 
     private DateTimeOffset Now() => (_services.GetService<IClock>() ?? new SystemClock()).UtcNow;
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 9,
-            Level = LogLevel.Warning,
-            Message = "Refused a caller authenticated as {AuthenticationType}: no IUserContextMapper handles that "
-                + "authentication type, so its roles and permissions cannot be read. Register the mapper of the "
-                + "authentication package in use.")]
-        public static partial void NoUserContextMapper(ILogger logger, string authenticationType);
-    }
 }

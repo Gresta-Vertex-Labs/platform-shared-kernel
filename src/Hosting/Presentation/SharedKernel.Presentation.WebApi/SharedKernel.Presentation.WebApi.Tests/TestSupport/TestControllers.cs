@@ -22,7 +22,7 @@ public static class TestErrors
     public static readonly Error StaleVersion = Error.Conflict(ConcurrencyConflictCode, "Order 42 was changed by someone else.");
 
     public static readonly Error SearchUnreachable =
-        Error.Unavailable("search.unreachable", "Search engine at http://search.internal:7700 did not answer.");
+        Error.Unavailable("search.unavailable", "Search engine at http://search.internal:7700 did not answer.");
 }
 
 /// <summary>An API controller (<c>[ApiController]</c>) returning the same typed results as minimal APIs.</summary>

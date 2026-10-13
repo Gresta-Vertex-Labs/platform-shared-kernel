@@ -74,6 +74,7 @@ public sealed class ExceptionHandlerTests
         record.EventId.Id.Should().Be(LoggingEventIdRanges.Presentation + 1);
         record.LogLevel.Should().Be(LogLevel.Error);
         record.Exception.Should().BeSameAs(exception);
+        logger.Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
     }
 
     [Fact]

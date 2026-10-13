@@ -82,7 +82,7 @@ every environment; HotChocolate's own policy would otherwise disable it outside 
 - **Errors.** `SharedKernelErrorFilter` is the GraphQL form of the REST exception handler. A resolver's exception is
   classified as the handler does: a `ValidationException` (one error is itself, several are `validation.failed`), any
   other `SharedKernelException` by its error, a `TimeoutException` or a cancellation the client did not cause as
-  `timeout.default`, anything else as the generic `unexpected.exception`. An error HotChocolate raised itself for a
+  `timeout.default`, anything else as the generic `unexpected.default`. An error HotChocolate raised itself for a
   request it rejected (syntax, unknown field, bad argument) has no exception and is a client error: 400
   `graphql.request_invalid` (`GraphQLErrorCodes.RequestInvalid`), its own `code` kept. The filter also runs over the
   errors of a request HotChocolate rejects before executing it, which it does not filter itself.
@@ -214,7 +214,7 @@ that do not need the platform conventions.
 | Register `FilterInputType<T>`/`SortInputType<T>` directly | Extend `FilterBase<T>`/`SortBase<T>` | The platform convention and naming apply through the bases |
 | Call `AddGraphQL()` before `AddSharedKernelGraphQL()` | Call `AddSharedKernelGraphQL()` first | Types registered earlier miss the conventions |
 | Leave `AllowIntrospection` on in production | Set it from the environment | Introspection publishes the whole schema |
-| Throw a plain exception to say "not found" | Throw a `SharedKernelException` (`error.ToException()`, `GetValueOrThrow()`) | Only a classified exception gets its status and code; anything else is a 500 `unexpected.exception` with a generic message |
+| Throw a plain exception to say "not found" | Throw a `SharedKernelException` (`error.ToException()`, `GetValueOrThrow()`) | Only a classified exception gets its status and code; anything else is a 500 `unexpected.default` with a generic message |
 | Read `extensions.title` or `detail` as the error code | Branch on `extensions.errorCode` | `title` is the status reason phrase and `detail` the (localized) message |
 | Unpack `.Items`/`.TotalCount` in a resolver | Use `PagedResponseType<T>.FromPagedList` | Keeps the shape identical to REST pages |
 

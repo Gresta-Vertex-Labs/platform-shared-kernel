@@ -7,6 +7,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.Grpc.csproj" />
+    <!-- The edge-mapper conformance catalogue every protocol suite of this domain asserts (P-612). -->
+    <ProjectReference Include="..\..\SharedKernel.Presentation.EdgeCases\SharedKernel.Presentation.EdgeCases.csproj" />
+    <!-- The negative-control defect, compiled here (see the EdgeCases project). -->
+    <Compile Include="../../SharedKernel.Presentation.EdgeCases/Controls/ErrorBearingException.cs" Link="TestSupport/ErrorBearingException.cs" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- TestServerCallContext for the interceptor unit tests. -->
     <ProjectReference Include="..\..\SharedKernel.Presentation.Testing\SharedKernel.Presentation.Testing.csproj" />

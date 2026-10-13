@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.Grpc.Errors;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.Grpc.Diagnostics;
 
 namespace SharedKernel.Presentation.Grpc.Interceptors;
 
@@ -43,19 +43,15 @@ namespace SharedKernel.Presentation.Grpc.Interceptors;
 ///   <item>A <see cref="TimeoutException"/>, or an <see cref="OperationCanceledException"/> while the call is not
 ///   cancelled (a timeout inside the service): <see cref="StatusCode.DeadlineExceeded"/> <c>timeout.default</c>, the
 ///   status a returned <see cref="Error.Timeout"/> gets — as over HTTP, which answers these with 504.</item>
-///   <item>Anything else: <see cref="StatusCode.Internal"/> <c>unexpected.exception</c> with a generic message; in
+///   <item>Anything else: <see cref="StatusCode.Internal"/> <c>unexpected.default</c> with a generic message; in
 ///   Development the exception message instead.</item>
 /// </list>
 /// Server categories are logged at Error with the exception, client categories at Debug. The status message is the
 /// one an HTTP client would get (translated, server errors redacted outside Development), and nothing about the
 /// exception reaches the client outside Development.
 /// </remarks>
-internal sealed partial class GrpcExceptionInterceptor : Interceptor
+internal sealed class GrpcExceptionInterceptor : Interceptor
 {
-    private const string UnexpectedMessage = "An unexpected error occurred.";
-
-    private const string TimeoutMessage = "The operation did not complete in time.";
-
     private const string CancelledMessage = "The call was cancelled.";
 
     private readonly ILogger<GrpcExceptionInterceptor> _logger;
@@ -144,7 +140,7 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
     {
         if (context.CancellationToken.IsCancellationRequested)
         {
-            Log.CallCancelled(_logger, context.Method, exception);
+            GrpcLog.CallCancelled(_logger, context.Method, exception);
             return new RpcException(new Status(StatusCode.Cancelled, CancelledMessage));
         }
 
@@ -160,7 +156,7 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
                 // Exactly what a returned error produces, as over HTTP: one error is itself, several are
                 // Error.Validation(errors); the field violations are the error's Details.
                 var error = validation.Errors.Count == 1 ? validation.Errors[0] : Error.Validation(validation.Errors);
-                Log.ClientError(_logger, context.Method, StatusCode.InvalidArgument, error.Code, exception);
+                GrpcLog.ClientError(_logger, context.Method, StatusCode.InvalidArgument, error.Code, exception);
 
                 // InvalidArgument whatever the type of a single error: a client category, only the code is tagged.
                 EdgeFailureRecording.RecordClientCode(error.Code);
@@ -175,7 +171,7 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
             case OperationCanceledException:
                 // Not the client: the call is still open, so something inside the service ran out of time. The status
                 // of a returned Error.Timeout, as HTTP answers the same exception with 504 timeout.default.
-                var timeout = Error.Timeout(ErrorCodes.Timeout.Default, TimeoutMessage);
+                var timeout = EdgeErrors.Timeout;
                 LogFailure(context, timeout, exception);
 
                 // A real timeout of the service: recorded as a failure, not as an exception event.
@@ -183,8 +179,8 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
                 return RpcStatusFactory.CreateException(timeout, httpContext, domain);
 
             default:
-                Log.UnhandledException(_logger, context.Method, exception);
-                var unexpected = Error.Unexpected(ErrorCodes.Unexpected.Default, UnexpectedMessage);
+                var unexpected = EdgeErrors.Unexpected;
+                LogFailure(context, unexpected, exception);
                 EdgeFailureRecording.Record(unexpected, exception);
                 return RpcStatusFactory.CreateException(
                     unexpected,
@@ -202,14 +198,14 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         var code = GrpcErrorCodes.ForStatus(statusCode);
         var detail = exception.Status.Detail;
 
-        if (ServerErrorType(statusCode) is not { } serverErrorType)
+        if (GrpcStatusCodeMap.ServerCategory(statusCode) is not { } serverErrorType)
         {
-            Log.ClientError(_logger, context.Method, statusCode, code, exception);
+            GrpcLog.ClientError(_logger, context.Method, statusCode, code, exception);
             EdgeFailureRecording.RecordClientCode(code);
             return RpcStatusFactory.CreateExceptionForStatus(statusCode, detail, httpContext, domain);
         }
 
-        Log.ServerError(_logger, context.Method, statusCode, code, exception);
+        GrpcLog.ServerError(_logger, context.Method, statusCode, code, exception);
 
         // Presented like an error of the same category: the generic sentence outside Development, the detail in it.
         var foreignError = new Error(code, detail, serverErrorType);
@@ -220,27 +216,17 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         return RpcStatusFactory.CreateExceptionForStatus(statusCode, message, httpContext, domain);
     }
 
-    // The error type a status of a server category is presented as; null for a client category, whose detail is the
-    // service's (or another service's) deliberate answer and is shown.
-    private static ErrorType? ServerErrorType(StatusCode statusCode) => statusCode switch
-    {
-        StatusCode.Unknown or StatusCode.Internal or StatusCode.DataLoss => ErrorType.Unexpected,
-        StatusCode.Unavailable => ErrorType.Unavailable,
-        StatusCode.DeadlineExceeded => ErrorType.Timeout,
-        _ => null,
-    };
-
     private void LogFailure(ServerCallContext context, Error error, Exception exception)
     {
         var statusCode = GrpcStatusCodeMap.Resolve(error.Type);
 
         if (ErrorPresentation.IsServerError(error.Type))
         {
-            Log.ServerError(_logger, context.Method, statusCode, error.Code, exception);
+            GrpcLog.ServerError(_logger, context.Method, statusCode, error.Code, exception);
         }
         else
         {
-            Log.ClientError(_logger, context.Method, statusCode, error.Code, exception);
+            GrpcLog.ClientError(_logger, context.Method, statusCode, error.Code, exception);
         }
     }
 
@@ -256,34 +242,5 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             return null;
         }
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 200,
-            Level = LogLevel.Error,
-            Message = "Unhandled exception in gRPC method {GrpcMethod}.")]
-        public static partial void UnhandledException(ILogger logger, string grpcMethod, Exception exception);
-
-        // 14201 was the refusal log of the deleted authorization interceptor; refusals are logged by
-        // SharedKernel.Presentation.Core's authorization (14002) now. Not reused.
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 202,
-            Level = LogLevel.Error,
-            Message = "gRPC method {GrpcMethod} failed with {StatusCode} {ErrorCode}.")]
-        public static partial void ServerError(ILogger logger, string grpcMethod, StatusCode statusCode, string errorCode, Exception exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 203,
-            Level = LogLevel.Debug,
-            Message = "gRPC method {GrpcMethod} was rejected with {StatusCode} {ErrorCode}.")]
-        public static partial void ClientError(ILogger logger, string grpcMethod, StatusCode statusCode, string errorCode, Exception exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 204,
-            Level = LogLevel.Debug,
-            Message = "The call to gRPC method {GrpcMethod} was cancelled before it completed.")]
-        public static partial void CallCancelled(ILogger logger, string grpcMethod, Exception exception);
     }
 }

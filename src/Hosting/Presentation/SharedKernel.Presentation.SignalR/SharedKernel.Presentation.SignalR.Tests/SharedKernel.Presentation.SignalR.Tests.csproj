@@ -7,6 +7,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.SignalR.csproj" />
+    <!-- The edge-mapper conformance catalogue every protocol suite of this domain asserts (P-612). -->
+    <ProjectReference Include="..\..\SharedKernel.Presentation.EdgeCases\SharedKernel.Presentation.EdgeCases.csproj" />
+    <!-- The negative-control defect, compiled here (see the EdgeCases project). -->
+    <Compile Include="../../SharedKernel.Presentation.EdgeCases/Controls/ErrorBearingException.cs" Link="TestSupport/ErrorBearingException.cs" />
     <ProjectReference Include="..\..\..\..\Foundation\SharedKernel.Localization\SharedKernel.Localization.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- The request context every host composes first (P-579): the connection's caller, tenant and correlation id. -->

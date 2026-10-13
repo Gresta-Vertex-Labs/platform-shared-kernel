@@ -56,4 +56,25 @@ internal static class GrpcStatusCodeMap
         ErrorType.Timeout => StatusCode.DeadlineExceeded,
         _ => StatusCode.Unknown,
     };
+
+    /// <summary>
+    /// The inverse of <see cref="Resolve"/> for the statuses of the server category: the error type a status is
+    /// presented as, or <see langword="null"/> for a client category whose detail is the service's (or another
+    /// service's) deliberate answer and is shown.
+    /// </summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>
+    /// <see cref="ErrorType.Unexpected"/> for <see cref="StatusCode.Unknown"/>, <see cref="StatusCode.Internal"/> and
+    /// <see cref="StatusCode.DataLoss"/>; <see cref="ErrorType.Unavailable"/> for <see cref="StatusCode.Unavailable"/>;
+    /// <see cref="ErrorType.Timeout"/> for <see cref="StatusCode.DeadlineExceeded"/>; otherwise <see langword="null"/>.
+    /// It holds for exactly the error types the HTTP side calls server errors, which a test proves over every
+    /// <see cref="ErrorType"/>.
+    /// </returns>
+    public static ErrorType? ServerCategory(StatusCode statusCode) => statusCode switch
+    {
+        StatusCode.Unknown or StatusCode.Internal or StatusCode.DataLoss => ErrorType.Unexpected,
+        StatusCode.Unavailable => ErrorType.Unavailable,
+        StatusCode.DeadlineExceeded => ErrorType.Timeout,
+        _ => null,
+    };
 }

@@ -210,6 +210,7 @@
     <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/SharedKernel.Presentation.OpenApi.Tests/SharedKernel.Presentation.OpenApi.Tests.csproj" />
     <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.Testing/SharedKernel.Presentation.Testing.Tests/SharedKernel.Presentation.Testing.Tests.csproj" />
     <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.Testing/SharedKernel.Presentation.Testing.csproj" />
+    <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.EdgeCases/SharedKernel.Presentation.EdgeCases.csproj" />
     <Project Path="src/Hosting/Presentation/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Integration/">

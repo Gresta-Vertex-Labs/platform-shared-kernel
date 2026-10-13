@@ -38,7 +38,7 @@ public sealed class GrpcExceptionInterceptorTests
         new ObjectDisposedException("HttpResponseStream"),
         new RpcException(new Status(StatusCode.Cancelled, "Call canceled by the client.")),
         new RpcException(new Status(StatusCode.Unavailable, "Error connecting to subchannel.")),
-        new DomainException(Error.Unavailable("search.unreachable", "Cluster 10.0.0.5 is down.")),
+        new DomainException(Error.Unavailable("search.unavailable", "Cluster 10.0.0.5 is down.")),
     };
 
     [Theory]
@@ -218,7 +218,7 @@ public sealed class GrpcExceptionInterceptorTests
             "test-method", "localhost", DateTime.MaxValue, new Metadata(), CancellationToken.None, "peer", null, null,
             _ => Task.CompletedTask, () => null, _ => { });
 
-        var exception = await ThrowsFromUnaryAsync(context, () => throw new DomainException(Error.Unavailable("search.unreachable", "Cluster 10.0.0.5 is down.")));
+        var exception = await ThrowsFromUnaryAsync(context, () => throw new DomainException(Error.Unavailable("search.unavailable", "Cluster 10.0.0.5 is down.")));
 
         var status = exception.ShouldHaveRichStatus(StatusCode.Unavailable);
         status.Message.Should().Be("The service is temporarily unavailable. Try again later.");

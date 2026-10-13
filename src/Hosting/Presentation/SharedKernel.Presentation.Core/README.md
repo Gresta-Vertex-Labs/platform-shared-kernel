@@ -116,11 +116,13 @@ public override Task<Reply> CloseAccount(CloseRequest request, ServerCallContext
 
 ### Logging
 
+Sub-block 5 of the presentation range (14500-14599). Retired ids 14002, 14009 and 14010 (the same statements, moved here when this package got its own sub-block) are never reused.
+
 | Event id | Level | Event |
 | --- | --- | --- |
-| 14002 | Warning | Authorization refused — endpoint and code, never principal data |
-| 14009 | Warning | A principal no `IUserContextMapper` understands |
-| 14010 | Warning | An authentication scheme without a mapper (at startup) |
+| 14500 | Warning | Authorization refused the request: endpoint and code, never principal data |
+| 14501 | Warning | A signed-in principal no `IUserContextMapper` handles was refused. Register the mapper of the authentication package in use |
+| 14502 | Warning | An authentication scheme has no `IUserContextMapper` (at startup). Register the mapper of the authentication package; until then every caller it authenticates is refused by the four requirements |
 
 ## Testing
 

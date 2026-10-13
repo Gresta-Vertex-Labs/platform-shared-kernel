@@ -88,7 +88,7 @@ public sealed class ResultHubMethodTests : IAsyncLifetime
     {
         var error = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.Outage));
 
-        error.Should().Be(new HubError("search.unreachable", "The service is temporarily unavailable. Try again later."));
+        error.Should().Be(new HubError("search.unavailable", "The service is temporarily unavailable. Try again later."));
     }
 
     [Fact]

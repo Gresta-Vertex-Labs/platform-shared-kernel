@@ -14,7 +14,7 @@ namespace SharedKernel.Presentation.GraphQL.Tests;
 /// </summary>
 public sealed class SharedKernelErrorFilterTests
 {
-    private readonly SharedKernelErrorFilter _filter = new(new FakeHttpContextAccessor(), NullLogger<SharedKernelErrorFilter>.Instance);
+    private readonly SharedKernelErrorFilter _filter = new(() => null, NullLogger<SharedKernelErrorFilter>.Instance);
 
     private static IError BuildError(
         string message = "Test error",
@@ -89,7 +89,7 @@ public sealed class SharedKernelErrorFilterTests
     {
         System.Diagnostics.Activity.Current = null;
         var accessor = new FakeHttpContextAccessor(new DefaultHttpContext { TraceIdentifier = "kestrel-id" });
-        var filter = new SharedKernelErrorFilter(accessor, NullLogger<SharedKernelErrorFilter>.Instance);
+        var filter = new SharedKernelErrorFilter(() => accessor.HttpContext, NullLogger<SharedKernelErrorFilter>.Instance);
 
         var result = filter.OnError(BuildError());
 
@@ -109,7 +109,7 @@ public sealed class SharedKernelErrorFilterTests
         System.Diagnostics.ActivitySource.AddActivityListener(listener);
         using var activity = source.StartActivity("request");
         var accessor = new FakeHttpContextAccessor(new DefaultHttpContext { TraceIdentifier = "kestrel-id" });
-        var filter = new SharedKernelErrorFilter(accessor, NullLogger<SharedKernelErrorFilter>.Instance);
+        var filter = new SharedKernelErrorFilter(() => accessor.HttpContext, NullLogger<SharedKernelErrorFilter>.Instance);
 
         var result = filter.OnError(BuildError());
 
@@ -123,7 +123,7 @@ public sealed class SharedKernelErrorFilterTests
         using var aborted = new CancellationTokenSource();
         aborted.Cancel();
         var context = new DefaultHttpContext { RequestAborted = aborted.Token };
-        var filter = new SharedKernelErrorFilter(new FakeHttpContextAccessor(context), NullLogger<SharedKernelErrorFilter>.Instance);
+        var filter = new SharedKernelErrorFilter(() => context, NullLogger<SharedKernelErrorFilter>.Instance);
         var error = BuildError("The operation was canceled.", new OperationCanceledException());
 
         filter.OnError(error).Should().BeSameAs(error);
@@ -133,7 +133,7 @@ public sealed class SharedKernelErrorFilterTests
     public void Constructor_RequiresItsDependencies()
     {
         var accessor = () => new SharedKernelErrorFilter(null!, NullLogger<SharedKernelErrorFilter>.Instance);
-        var logger = () => new SharedKernelErrorFilter(new FakeHttpContextAccessor(), null!);
+        var logger = () => new SharedKernelErrorFilter(() => null, null!);
 
         accessor.Should().Throw<ArgumentNullException>();
         logger.Should().Throw<ArgumentNullException>();

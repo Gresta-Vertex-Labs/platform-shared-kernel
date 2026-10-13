@@ -29,7 +29,8 @@ internal static class ServiceDecoration
             return;
         }
 
-        throw new InvalidOperationException($"No {typeof(TService).Name} is registered to decorate.");
+        throw new InvalidOperationException(
+            $"No '{typeof(TService).Name}' is registered to decorate. Register it before this call.");
     }
 
     private static object CreateInner(IServiceProvider provider, ServiceDescriptor descriptor) =>

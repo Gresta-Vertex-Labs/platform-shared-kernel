@@ -104,8 +104,9 @@ public static class ServiceCollectionExtensions
             {
                 // The factory gets the schema services; the request and the logger are the host's.
                 var hostServices = schemaServices.GetRootServiceProvider();
+                var accessor = hostServices.GetRequiredService<IHttpContextAccessor>();
                 return new SharedKernelErrorFilter(
-                    hostServices.GetRequiredService<IHttpContextAccessor>(),
+                    () => accessor.HttpContext,
                     hostServices.GetRequiredService<ILogger<SharedKernelErrorFilter>>());
             })
             // Outermost, ahead of the default pipeline: shapes the errors of a request rejected before it ran.

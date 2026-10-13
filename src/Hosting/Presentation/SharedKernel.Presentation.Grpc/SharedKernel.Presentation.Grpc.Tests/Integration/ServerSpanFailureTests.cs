@@ -40,12 +40,12 @@ public sealed class ServerSpanFailureTests
     {
         using var recorder = ServerSpans.Record();
         await using var app = await GrpcTestHost.StartAsync();
-        var expected = Error.Unavailable("search.unreachable", "x").ToException();
+        var expected = Error.Unavailable("search.unavailable", "x").ToException();
 
         var (exception, span) = await FailAsync(app, recorder, shape, Failures.UnavailableException);
 
         exception.StatusCode.Should().Be(StatusCode.Unavailable);
-        span.ShouldBeRecordedException(expected.GetType(), "search.unreachable");
+        span.ShouldBeRecordedException(expected.GetType(), "search.unavailable");
         span.Events.Count(e => e.Name == "exception").Should().Be(1);
     }
 

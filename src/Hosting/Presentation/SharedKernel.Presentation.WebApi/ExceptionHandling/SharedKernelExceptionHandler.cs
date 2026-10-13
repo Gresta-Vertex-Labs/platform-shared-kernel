@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.WebApi.Diagnostics;
 
 namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 
@@ -30,7 +30,7 @@ namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 ///   <item><see cref="ValidationException"/>: 400, with exactly the body a returned <c>Error.Validation</c> of the same
 ///   errors produces.</item>
 ///   <item>Any other <see cref="SharedKernelException"/>: its <see cref="Error"/>, presented like a returned one.</item>
-///   <item>Anything else: 500 <c>unexpected.exception</c> with a generic message; the exception itself only in
+///   <item>Anything else: 500 <c>unexpected.default</c> with a generic message; the exception itself only in
 ///   Development or when <c>Problems:IncludeExceptionDetails</c> is set.</item>
 /// </list>
 /// <para>
@@ -45,7 +45,7 @@ namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 /// <c>error.code</c>, and a request the client abandoned (499) records nothing.
 /// </para>
 /// </remarks>
-internal sealed partial class SharedKernelExceptionHandler
+internal sealed class SharedKernelExceptionHandler
 {
     /// <summary>The <see cref="HttpContext.Items"/> key marking an exception this handler handled.</summary>
     private static readonly object HandledKey = new();
@@ -100,7 +100,7 @@ internal sealed partial class SharedKernelExceptionHandler
 
         if (httpContext.RequestAborted.IsCancellationRequested)
         {
-            Log.RequestAborted(_logger, RequestFacts.GetEndpointDisplayName(httpContext), exception);
+            WebApiLog.RequestAborted(_logger, RequestFacts.GetEndpointDisplayName(httpContext), exception);
 
             if (!httpContext.Response.HasStarted)
             {
@@ -120,11 +120,11 @@ internal sealed partial class SharedKernelExceptionHandler
 
         if (statusCode >= StatusCodes.Status500InternalServerError)
         {
-            Log.ServerError(_logger, statusCode, errorCode, RequestFacts.GetEndpointDisplayName(httpContext), exception);
+            WebApiLog.ServerError(_logger, RequestFacts.GetEndpointDisplayName(httpContext), statusCode, errorCode, exception);
         }
         else
         {
-            Log.ClientError(_logger, statusCode, errorCode, RequestFacts.GetEndpointDisplayName(httpContext), exception);
+            WebApiLog.ClientError(_logger, RequestFacts.GetEndpointDisplayName(httpContext), statusCode, errorCode, exception);
         }
 
         if (RequestFacts.IsGrpcRequest(httpContext))
@@ -189,26 +189,5 @@ internal sealed partial class SharedKernelExceptionHandler
                 EdgeFailureRecording.Record(classified.Error, exception);
                 break;
         }
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 1,
-            Level = LogLevel.Error,
-            Message = "Request to {EndpointDisplayName} failed with {StatusCode} {ErrorCode}.")]
-        public static partial void ServerError(ILogger logger, int statusCode, string errorCode, string endpointDisplayName, Exception exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 7,
-            Level = LogLevel.Debug,
-            Message = "Request to {EndpointDisplayName} was rejected with {StatusCode} {ErrorCode}.")]
-        public static partial void ClientError(ILogger logger, int statusCode, string errorCode, string endpointDisplayName, Exception exception);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 8,
-            Level = LogLevel.Debug,
-            Message = "The client closed the request to {EndpointDisplayName} before it completed.")]
-        public static partial void RequestAborted(ILogger logger, string endpointDisplayName, Exception exception);
     }
 }

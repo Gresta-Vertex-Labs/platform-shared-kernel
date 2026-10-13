@@ -32,18 +32,18 @@ public static class SignalRHostBuilderExtensions
     ///   localized and, for server errors outside Development, replaced by a generic sentence, exactly like an HTTP
     ///   problem response. A <c>TimeoutException</c>, or an <c>OperationCanceledException</c> while the connection is
     ///   open, becomes <c>"timeout.default: The operation did not complete in time."</c>, as HTTP answers it with 504.
-    ///   Any other exception becomes <c>"unexpected.exception: An unexpected error occurred."</c> (in
+    ///   Any other exception becomes <c>"unexpected.default: An unexpected error occurred."</c> (in
     ///   Development, the exception's message). A <see cref="HubException"/> the hub throws itself passes unchanged. A
     ///   successful <c>Result&lt;T&gt;</c> returns its value to the client. Server errors are logged at Error, client
     ///   errors at Debug. SignalR puts its own sentence in front of the message it sends, so a client receives
     ///   <c>"An unexpected error occurred invoking '{method}' on the server. HubException: {code}: {message}"</c>;
-    ///   <see cref="HubErrorMessage.TryParse"/> reads the code and the message back, and <see cref="HubErrorMessage"/>
+    ///   <see cref="HubErrorMessage.TryParse(string?, out string?, out string?)"/> reads the code and the message back, and <see cref="HubErrorMessage"/>
     ///   lists what a client receives in every case, with the equivalent JavaScript pattern.</item>
     ///   <item>Streams. SignalR streams only a hub method declared to return <c>IAsyncEnumerable&lt;T&gt;</c> or
     ///   <c>ChannelReader&lt;T&gt;</c> (optionally inside <c>Task</c> or <c>ValueTask</c>), so a
     ///   <c>Result&lt;IAsyncEnumerable&lt;T&gt;&gt;</c> or <c>Result&lt;ChannelReader&lt;T&gt;&gt;</c> method is an
     ///   ordinary invocation that cannot stream: its failure is the coded <see cref="HubException"/>, and its success is
-    ///   refused as <c>unexpected.exception</c> and logged at Error with the fix, where the stream would otherwise close
+    ///   refused as <c>unexpected.default</c> and logged at Error with the fix, where the stream would otherwise close
     ///   the connection. To stream with a failure that can happen before the first item, declare the stream type and
     ///   throw the failure before returning the stream, with <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c>:
     ///   <c>public IAsyncEnumerable&lt;Order&gt; Orders() =&gt; _orders.Stream().GetValueOrThrow();</c>. A

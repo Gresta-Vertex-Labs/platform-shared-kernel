@@ -66,6 +66,12 @@ public sealed class WebApiSetupTests
             "persistence.concurrency_conflict",
             "storage.precondition_failed",
             "storage.already_exists");
+
+        // This domain may not reference 06 or 08, so the defaults are literals pinned to the owners' public constants.
+        options.Problems.PreconditionFailedErrorCodes.Should().Equal(
+            SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict,
+            SharedKernel.Storage.StorageErrorCodes.PreconditionFailed,
+            SharedKernel.Storage.StorageErrorCodes.AlreadyExists);
     }
 
     [Theory]
@@ -223,6 +229,7 @@ public sealed class WebApiSetupTests
 
         logs.GetLogger(typeof(WebApiStartupDiagnostics).FullName!).Records.Should().ContainSingle(record =>
             record.EventId.Id == LoggingEventIdRanges.Presentation + 11 && record.LogLevel == LogLevel.Warning);
+        logs.GetLogger(typeof(WebApiStartupDiagnostics).FullName!).Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
     }
 
     [Fact]
@@ -251,6 +258,7 @@ public sealed class WebApiSetupTests
 
         logs.GetLogger(typeof(WebApiStartupDiagnostics).FullName!).Records
             .Any(record => record.EventId.Id == LoggingEventIdRanges.Presentation + 12).Should().Be(warns);
+        logs.GetLogger(typeof(WebApiStartupDiagnostics).FullName!).Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
     }
 
     [Fact]
@@ -412,9 +420,10 @@ public sealed class WebApiSetupTests
 
         await response.ShouldBeProblemAsync(StatusCodes.Status403Forbidden, ErrorCodes.Forbidden.InsufficientPermission);
         var runtime = logs.GetLogger(typeof(SharedKernelRequirementHandler).FullName!).Records
-            .Should().ContainSingle(record => record.EventId.Id == LoggingEventIdRanges.Presentation + 9).Subject;
+            .Should().ContainSingle(record => record.EventId.Id == LoggingEventIdRanges.Presentation + 501).Subject;
         runtime.LogLevel.Should().Be(LogLevel.Warning);
         runtime.Message.Should().Contain(TestAuthentication.Scheme);
+        logs.GetLogger(typeof(SharedKernelRequirementHandler).FullName!).Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 5);
     }
 
     [Fact]
@@ -432,9 +441,10 @@ public sealed class WebApiSetupTests
             loggerFactory: logs);
 
         var warnings = logs.GetLogger(typeof(SharedKernelAuthorizationStartupCheck).FullName!).Records
-            .Where(record => record.EventId.Id == LoggingEventIdRanges.Presentation + 10)
+            .Where(record => record.EventId.Id == LoggingEventIdRanges.Presentation + 502)
             .ToArray();
         warnings.Should().ContainSingle().Which.Message.Should().Contain("Unmapped");
+        warnings.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 5);
     }
 
     [Fact]

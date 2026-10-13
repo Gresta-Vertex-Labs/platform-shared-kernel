@@ -3,8 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.Diagnostics;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.Authorization;
@@ -27,7 +26,7 @@ namespace SharedKernel.Presentation.Authorization;
 /// policy schemes are skipped: they never authenticate a request themselves.
 /// </para>
 /// </remarks>
-internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLifecycleService
+internal sealed class SharedKernelAuthorizationStartupCheck : IHostedLifecycleService
 {
     /// <summary>A platform policy name used only to probe the registered policy provider.</summary>
     internal static readonly string ProbePolicyName = SharedKernelPolicyNames.ForPermissions(["sharedkernel.startup-probe"]);
@@ -35,10 +34,10 @@ internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLif
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<SharedKernelAuthorizationStartupCheck> _logger;
 
-    public SharedKernelAuthorizationStartupCheck(IServiceScopeFactory scopes, ILogger<SharedKernelAuthorizationStartupCheck>? logger = null)
+    public SharedKernelAuthorizationStartupCheck(IServiceScopeFactory scopes, ILogger<SharedKernelAuthorizationStartupCheck> logger)
     {
         _scopes = scopes;
-        _logger = logger ?? NullLogger<SharedKernelAuthorizationStartupCheck>.Instance;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -76,10 +75,9 @@ internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLif
         }
 
         throw new InvalidOperationException(
-            $"The IAuthorizationPolicyProvider in use ({provider.GetType().FullName}) does not resolve the policies of "
-            + "[RequireEndpointPermission], [RequireRole], [RequireFreshAuthentication] and [RequireAuthenticationMethod]: it was "
-            + "registered after AddSharedKernelWebApi() or AddSharedKernelAuthorization() and replaced the platform's. "
-            + "Register it before those calls, and the platform decorates it, passing every other policy name to it.");
+            $"The IAuthorizationPolicyProvider '{provider.GetType().FullName}' does not resolve the policies of the SharedKernel "
+            + "authorization attributes because it was registered after AddSharedKernelWebApi() or AddSharedKernelAuthorization(). "
+            + "Register it before those calls so that the platform decorates it.");
     }
 
     internal static void EnsureResultHandler(IAuthorizationMiddlewareResultHandler handler)
@@ -90,10 +88,9 @@ internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLif
         }
 
         throw new InvalidOperationException(
-            $"The IAuthorizationMiddlewareResultHandler in use ({handler.GetType().FullName}) replaced the platform's: "
-            + "it was registered after AddSharedKernelWebApi() or AddSharedKernelAuthorization(), so refused requests "
-            + "lose their problem bodies and step-up challenges. Register it before those calls, and the platform "
-            + "decorates it.");
+            $"The IAuthorizationMiddlewareResultHandler '{handler.GetType().FullName}' replaced the platform's because it was "
+            + "registered after AddSharedKernelWebApi() or AddSharedKernelAuthorization(), so refused requests lose their problem "
+            + "bodies and step-up challenges. Register it before those calls so that the platform decorates it.");
     }
 
     private async Task WarnAboutUnmappedSchemesAsync(IServiceProvider services)
@@ -111,7 +108,7 @@ internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLif
         {
             if (!mapped.Contains(scheme.Name) && AuthenticatesRequests(scheme))
             {
-                Log.SchemeWithoutMapper(_logger, scheme.Name);
+                PresentationCoreLog.SchemeWithoutMapper(_logger, scheme.Name);
             }
         }
     }
@@ -121,15 +118,4 @@ internal sealed partial class SharedKernelAuthorizationStartupCheck : IHostedLif
     private static bool AuthenticatesRequests(AuthenticationScheme scheme) =>
         !typeof(IAuthenticationRequestHandler).IsAssignableFrom(scheme.HandlerType)
         && scheme.HandlerType != typeof(PolicySchemeHandler);
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 10,
-            Level = LogLevel.Warning,
-            Message = "Authentication scheme {SchemeName} has no IUserContextMapper: callers it authenticates are refused "
-                + "by every [RequireEndpointPermission], [RequireRole], [RequireFreshAuthentication] and "
-                + "[RequireAuthenticationMethod] requirement. Register the mapper of the authentication package.")]
-        public static partial void SchemeWithoutMapper(ILogger logger, string schemeName);
-    }
 }

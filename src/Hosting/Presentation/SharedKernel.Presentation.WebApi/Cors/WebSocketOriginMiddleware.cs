@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.WebApi.Diagnostics;
 
 namespace SharedKernel.Presentation.WebApi.Cors;
 
@@ -17,7 +17,7 @@ namespace SharedKernel.Presentation.WebApi.Cors;
 /// is covered this way, while its negotiate request and other transports are ordinary CORS requests. A request
 /// without <c>Origin</c> does not come from a browser page and is let through, as CORS itself would.
 /// </remarks>
-internal sealed partial class WebSocketOriginMiddleware
+internal sealed class WebSocketOriginMiddleware
 {
     private const string WebSocketProtocol = "websocket";
 
@@ -55,7 +55,7 @@ internal sealed partial class WebSocketOriginMiddleware
             return;
         }
 
-        Log.WebSocketOriginRefused(_logger, RequestFacts.GetEndpointDisplayName(context));
+        WebApiLog.WebSocketOriginRefused(_logger, RequestFacts.GetEndpointDisplayName(context));
 
         await ProblemResponseWriter.WriteAsync(
                 context,
@@ -81,14 +81,5 @@ internal sealed partial class WebSocketOriginMiddleware
         }
 
         return false;
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 13,
-            Level = LogLevel.Warning,
-            Message = "Refused a WebSocket request to {EndpointDisplayName} from an origin the CORS policy does not allow.")]
-        public static partial void WebSocketOriginRefused(ILogger logger, string endpointDisplayName);
     }
 }

@@ -115,7 +115,7 @@ public sealed class ServerSpanExactlyOnceTests
         using var unavailable = await app.GetAsync(recorder, "/unavailable");
         using var unexpected = await app.GetAsync(recorder, "/unexpected");
 
-        await unavailable.Response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unreachable");
+        await unavailable.Response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unavailable");
         unavailable.Span.ShouldBeRecordedFailure(TestErrors.SearchUnreachable);
         await unexpected.Response.ShouldBeProblemAsync(StatusCodes.Status500InternalServerError, "order.broken");
         unexpected.Span.ShouldBeRecordedFailure(Unexpected);

@@ -1,63 +1,57 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Presentation.SignalR.Filters;
+using SharedKernel.Presentation.SignalR.Diagnostics;
+using SharedKernel.Primitives.Logging;
 using Xunit;
 
 namespace SharedKernel.Presentation.SignalR.Tests.Logging;
 
 /// <summary>
-/// Pins every <c>[LoggerMessage]</c> EventId of the package (sub-block 14100–14199), read from the compiled attribute
-/// so a renumbering fails immediately. 14100 keeps its number from before P-562. Retired ids are never reused: 14102
-/// belonged to the deleted CORS diagnostic, 14105 to the deleted hub-method authorization filter (SignalR itself
-/// authorizes hub methods now that the WebApi attributes are <c>[Authorize]</c> attributes). 14107 (P-562 R35) logs the
-/// refusal of a stream returned inside a <c>Result</c>.
+/// Pins every <c>[LoggerMessage]</c> of this package to an explicit <see cref="EventId"/> and level in its sub-block
+/// (index 1 of <c>14.Presentation</c>'s block, 14100 onwards), read from the compiled attributes so a renumbering
+/// fails immediately. Retired ids are asserted absent and are never reused.
 /// </summary>
 public sealed class LoggerMessageEventIdTests
 {
-    private const int RetiredCorsDiagnosticEventId = 14102;
-
-    private const int RetiredHubMethodAuthorizationEventId = 14105;
+    private static readonly int[] RetiredIds = [14100, 14102, 14105];
 
     [Theory]
-    [InlineData(typeof(HubExceptionMappingFilter), "UnhandledHubException", 14100, LogLevel.Error)]
-    [InlineData(typeof(HubInvocationRateLimitFilter), "InvocationRateLimited", 14101, LogLevel.Warning)]
-    [InlineData(typeof(HubExceptionMappingFilter), "ServerError", 14103, LogLevel.Error)]
-    [InlineData(typeof(HubExceptionMappingFilter), "ClientError", 14104, LogLevel.Debug)]
-    [InlineData(typeof(HubExceptionMappingFilter), "ConnectionAborted", 14106, LogLevel.Debug)]
-    [InlineData(typeof(HubExceptionMappingFilter), "StreamInResult", 14107, LogLevel.Error)]
-    public void LogMethod_HasItsAssignedEventId(Type containingType, string method, int eventId, LogLevel level)
+    [InlineData(nameof(SignalRLog.InvocationRateLimited), 14101, LogLevel.Warning)]
+    [InlineData(nameof(SignalRLog.ServerError), 14103, LogLevel.Error)]
+    [InlineData(nameof(SignalRLog.ClientError), 14104, LogLevel.Debug)]
+    [InlineData(nameof(SignalRLog.ConnectionAborted), 14106, LogLevel.Debug)]
+    [InlineData(nameof(SignalRLog.StreamInResult), 14107, LogLevel.Error)]
+    [InlineData(nameof(SignalRLog.ServerFailure), 14108, LogLevel.Warning)]
+    public void LogMethod_HasItsAssignedEventIdAndLevel(string method, int eventId, LogLevel level)
     {
-        var attribute = GetAttribute(containingType, method);
+        var attribute = typeof(SignalRLog).GetMethod(method, BindingFlags.Public | BindingFlags.Static)!
+            .GetCustomAttribute<LoggerMessageAttribute>();
 
-        attribute.EventId.Should().Be(eventId);
+        attribute.Should().NotBeNull();
+        attribute!.EventId.Should().Be(eventId);
         attribute.Level.Should().Be(level);
     }
 
     [Fact]
     public void EveryLogMethod_IsInThePackageSubBlock_Unique_AndNeverARetiredId()
     {
-        var ids = typeof(SignalRHostBuilderExtensions).Assembly.GetTypes()
-            .Where(type => type.Name == "Log" && type.IsNested)
-            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
+        var ids = typeof(SignalRLog).Assembly.GetTypes()
+            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             .Select(method => method.GetCustomAttribute<LoggerMessageAttribute>())
             .OfType<LoggerMessageAttribute>()
             .Select(attribute => attribute.EventId)
             .ToArray();
 
         ids.Should().HaveCount(6).And.OnlyHaveUniqueItems();
-        ids.Should().OnlyContain(id => id >= 14100 && id <= 14199);
-        ids.Should().NotContain([RetiredCorsDiagnosticEventId, RetiredHubMethodAuthorizationEventId]);
+        ids.Should().OnlyContain(id => LoggingEventIdRanges.IsInSubBlock(id, LoggingEventIdRanges.Presentation, 1));
+        ids.Should().NotIntersectWith(RetiredIds);
     }
 
-    private static LoggerMessageAttribute GetAttribute(Type containingType, string methodName)
+    [Fact]
+    public void TheIdConstants_AreBuiltFromTheRangeRegistry()
     {
-        var logType = containingType.GetNestedType("Log", BindingFlags.NonPublic | BindingFlags.Static);
-        logType.Should().NotBeNull($"{containingType.Name} declares a nested Log class");
-
-        var method = logType!.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
-        method.Should().NotBeNull($"{containingType.Name}.Log.{methodName} exists");
-
-        return method!.GetCustomAttribute<LoggerMessageAttribute>()!;
+        SignalRLoggingEventIds.Base.Should().Be(LoggingEventIdRanges.SubBlockStart(LoggingEventIdRanges.Presentation, 1));
+        SignalRLoggingEventIds.Base.Should().Be(14100);
     }
 }

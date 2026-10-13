@@ -19,7 +19,7 @@ namespace SharedKernel.Presentation.GraphQL.Errors;
 /// <c>ValidationException</c> is a validation error (one error is itself, several are <c>Error.Validation(errors)</c>),
 /// any other <c>SharedKernelException</c> is its own <see cref="Error"/>, a <see cref="TimeoutException"/> or an
 /// <see cref="OperationCanceledException"/> the client did not cause is <c>timeout.default</c>, and any other
-/// exception is the generic <c>unexpected.exception</c>. An <see cref="IError"/> with no exception — HotChocolate's own
+/// exception is the generic <c>unexpected.default</c>. An <see cref="IError"/> with no exception — HotChocolate's own
 /// syntax, validation and binding errors — is a client error: status 400, code
 /// <see cref="GraphQLErrorCodes.RequestInvalid"/>, HotChocolate's own <c>code</c> extension kept as <c>code</c>.
 /// </para>
@@ -56,25 +56,25 @@ internal sealed class SharedKernelErrorFilter : IErrorFilter
     // Logged only: an exception thrown because the client went away answers nobody.
     private const string RequestAbortedCode = "graphql.request_aborted";
 
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly Func<HttpContext?> _currentHttpContext;
     private readonly ILogger<SharedKernelErrorFilter> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="SharedKernelErrorFilter"/> class.</summary>
-    /// <param name="httpContextAccessor">Gives the current request, when there is one.</param>
+    /// <param name="currentHttpContext">Gives the current request, when there is one.</param>
     /// <param name="logger">The logger.</param>
-    public SharedKernelErrorFilter(IHttpContextAccessor httpContextAccessor, ILogger<SharedKernelErrorFilter> logger)
+    public SharedKernelErrorFilter(Func<HttpContext?> currentHttpContext, ILogger<SharedKernelErrorFilter> logger)
     {
-        ArgumentNullException.ThrowIfNull(httpContextAccessor);
+        ArgumentNullException.ThrowIfNull(currentHttpContext);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _httpContextAccessor = httpContextAccessor;
+        _currentHttpContext = currentHttpContext;
         _logger = logger;
     }
 
     /// <inheritdoc />
     public IError OnError(IError error)
     {
-        var httpContext = _httpContextAccessor.HttpContext;
+        var httpContext = _currentHttpContext();
         var exception = error.Exception;
 
         if (exception is OperationCanceledException && httpContext?.RequestAborted.IsCancellationRequested == true)

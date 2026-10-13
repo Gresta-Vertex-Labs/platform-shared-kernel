@@ -124,7 +124,7 @@ A gRPC-only host (no `UseSharedKernelWebApi()`) calls `UseSharedKernelRequestCon
   | Any other `SharedKernelException` (incl. `GetValueOrThrow()`/`ThrowIfFailure()`) | Its error's status | Debug (14203); Error (14202) for `Unexpected`/`Unavailable`/`Timeout` |
   | `RpcException` (own, or from a downstream call) | Rebuilt: its code, this service's `ErrorInfo` (`grpc.{status}`), none of its trailers; generic text outside Development for `Unknown`, `Internal`, `DataLoss`, `Unavailable`, `DeadlineExceeded`; a thrown `OK` becomes `Unknown` | Debug (14203); Error (14202) for those five |
   | `TimeoutException`, or a cancellation while the call is open | `DeadlineExceeded`, `timeout.default` | Error (14202) |
-  | Anything else | `Internal`, `unexpected.exception`, generic message (the exception's in Development) | Error (14200) |
+  | Anything else | `Internal`, `unexpected.default`, generic message (the exception's in Development) | Error (14202) |
 
 - **Capped violations.** Status travels in HTTP/2 trailers, which many clients cap at 8 KB. A `BadRequest` lists at most
   50 violations in about 3 KB; a last violation `grpc.more_field_violations` says how many were left out (translated
@@ -177,21 +177,22 @@ Reading the status on the client: `exception.GetRpcStatus()` (`Grpc.Core`) and `
 | `grpc.{status}` (`grpc.resource_exhausted`, `grpc.unavailable`, …) | `ErrorInfo.reason` of a rebuilt `RpcException` |
 | `grpc.more_field_violations` | The last violation of a capped `BadRequest` |
 | `timeout.default` | A `TimeoutException`, or a cancellation while the call is open |
-| `unexpected.exception` | An exception that is neither a `SharedKernelException` nor an `RpcException` |
+| `unexpected.default` | An exception that is neither a `SharedKernelException` nor an `RpcException` |
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 14200 | Error | An exception that is neither a `SharedKernelException`, an `RpcException` nor a timeout |
-| 14202 | Error | A server error: `Unexpected`, `Unavailable`, `Timeout`, or a rebuilt `RpcException` of a server category |
+| 14202 | Error | A server error: `Unexpected` (an unclassified exception included, code `unexpected.default`), `Unavailable`, `Timeout`, or a rebuilt `RpcException` of a server category |
 | 14203 | Debug | A client error: every other error, `ValidationException` and rebuilt `RpcException` |
 | 14204 | Debug | Any exception after the call was cancelled |
 
 Every entry carries the exception and the gRPC method; 14202 and 14203 add the status and error code. Authorization
-refusals are logged by `Presentation.Core` (14002).
+refusals are logged by `Presentation.Core` (14500). Retired ids 14200 and 14201 are never reused.
 
 ## Testing
+
+This package's own suite asserts the error a client sees for every `SharedKernelException` other packages of the kernel throw (execution, caching, messaging, storage, search, intelligence, communication, idempotency, persistence, workflows), thrown and returned, in Development and in production, so a rename of one of their error codes fails there.
 
 Call a method directly with [`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md)'s
 `TestServerCallContext` (namespace `SharedKernel.Testing.Grpc`). It runs without the interceptor, so a failed result

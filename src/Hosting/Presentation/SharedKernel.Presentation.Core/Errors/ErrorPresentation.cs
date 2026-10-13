@@ -16,12 +16,6 @@ namespace SharedKernel.Presentation;
 /// </remarks>
 internal static class ErrorPresentation
 {
-    private const string UnexpectedMessage = "An unexpected error occurred.";
-
-    private const string UnavailableMessage = "The service is temporarily unavailable. Try again later.";
-
-    private const string TimeoutMessage = "The operation did not complete in time.";
-
     /// <summary>Returns the message a client may see for <paramref name="error"/>.</summary>
     /// <param name="error">The error.</param>
     /// <param name="httpContext">The current request, or <see langword="null"/> outside a request.</param>
@@ -49,14 +43,7 @@ internal static class ErrorPresentation
 
         if (IsServerError(error.Type) && !RequestFacts.IsDevelopment(httpContext))
         {
-            var (code, message) = error.Type switch
-            {
-                ErrorType.Unavailable => (ErrorCodes.Unavailable.Default, UnavailableMessage),
-                ErrorType.Timeout => (ErrorCodes.Timeout.Default, TimeoutMessage),
-                _ => (ErrorCodes.Unexpected.Default, UnexpectedMessage),
-            };
-
-            return Localize(catalog, Error.Unexpected(code, message), culture);
+            return Localize(catalog, EdgeErrors.GenericFor(error.Type), culture);
         }
 
         return Localize(catalog, error, culture);

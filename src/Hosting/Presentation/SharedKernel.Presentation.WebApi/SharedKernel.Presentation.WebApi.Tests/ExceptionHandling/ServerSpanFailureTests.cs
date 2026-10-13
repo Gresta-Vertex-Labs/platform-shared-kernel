@@ -47,8 +47,8 @@ public sealed class ServerSpanFailureTests
 
         using var call = await app.GetAsync(recorder, "/unavailable");
 
-        await call.Response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unreachable");
-        call.Span.ShouldBeRecordedException(exception.GetType(), "search.unreachable");
+        await call.Response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unavailable");
+        call.Span.ShouldBeRecordedException(exception.GetType(), "search.unavailable");
         call.Span.Events.Count(e => e.Name == "exception").Should().Be(1);
     }
 

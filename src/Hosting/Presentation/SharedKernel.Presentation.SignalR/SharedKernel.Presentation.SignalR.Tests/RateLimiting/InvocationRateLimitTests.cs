@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.SignalR.Filters;
 using SharedKernel.Presentation.SignalR.Tests.TestSupport;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Testing.Logging;
 using Xunit;
 
@@ -50,6 +51,8 @@ public sealed class InvocationRateLimitTests
         counter.Count.Should().Be(1);
         loggerFactory.GetLogger(typeof(HubInvocationRateLimitFilter).FullName!).Records
             .ShouldHaveLogged(new EventId(14101), LogLevel.Warning);
+        loggerFactory.GetLogger(typeof(HubInvocationRateLimitFilter).FullName!).Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 1);
+        loggerFactory.ShouldHaveCategory(typeof(HubInvocationRateLimitFilter));
     }
 
     [Fact]

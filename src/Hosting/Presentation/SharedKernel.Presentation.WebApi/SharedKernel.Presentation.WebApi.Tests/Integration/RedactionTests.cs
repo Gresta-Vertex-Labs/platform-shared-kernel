@@ -27,7 +27,7 @@ public sealed class RedactionTests
 
         using var response = await app.GetTestClient().GetAsync("/unreachable");
 
-        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unreachable");
+        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unavailable");
         problem.Detail().Should().Be("The service is temporarily unavailable. Try again later.");
         problem.Detail().Should().NotContain("search.internal");
     }
@@ -39,7 +39,7 @@ public sealed class RedactionTests
 
         using var response = await app.GetTestClient().GetAsync("/unreachable-thrown");
 
-        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unreachable");
+        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unavailable");
         problem.Detail().Should().NotContain("search.internal");
     }
 
@@ -50,7 +50,7 @@ public sealed class RedactionTests
 
         using var response = await app.GetTestClient().GetAsync("/unreachable");
 
-        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unreachable");
+        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status503ServiceUnavailable, "search.unavailable");
         problem.Detail().Should().Be(TestErrors.SearchUnreachable.Message);
     }
 

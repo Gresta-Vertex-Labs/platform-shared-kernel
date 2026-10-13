@@ -5,19 +5,18 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using SharedKernel.Presentation.OpenApi.Documents;
 using SharedKernel.Presentation.OpenApi.Routing;
 using SharedKernel.Presentation.OpenApi.Startup;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.OpenApi.Diagnostics;
 
 namespace SharedKernel.Presentation.OpenApi;
 
 /// <summary>Serves the OpenAPI documents and the Scalar API reference of a SharedKernel HTTP API.</summary>
-public static partial class OpenApiEndpointExtensions
+public static class OpenApiEndpointExtensions
 {
     /// <summary>
     /// Maps one OpenAPI document per API version at <c>/openapi/{documentName}.json</c> (<c>/openapi/v1.json</c>,
@@ -68,8 +67,8 @@ public static partial class OpenApiEndpointExtensions
 
         if (!environment.IsDevelopment() && !options.ExposeInProduction)
         {
-            var logger = services.GetService<ILoggerFactory>()?.CreateLogger(typeof(OpenApiEndpointExtensions)) ?? NullLogger.Instance;
-            Log.DocumentsNotMapped(logger, environment.EnvironmentName);
+            var logger = services.GetRequiredService<ILogger<OpenApiSetupState>>();
+            OpenApiLog.DocumentsNotMapped(logger, environment.EnvironmentName);
 
             return new CompositeEndpointConventionBuilder();
         }
@@ -111,14 +110,5 @@ public static partial class OpenApiEndpointExtensions
                 version.IsDeprecated ? $"{version.GroupName} (deprecated)" : version.GroupName,
                 isDefault: ReferenceEquals(version, preferred));
         }
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 300,
-            Level = LogLevel.Information,
-            Message = "The OpenAPI documents and API reference are not served in the {EnvironmentName} environment; set ExposeInProduction to serve them.")]
-        public static partial void DocumentsNotMapped(ILogger logger, string environmentName);
     }
 }

@@ -155,6 +155,8 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
         var record = logger.Records.Last(r => r.EventId.Id == LoggingEventIdRanges.Presentation + 3);
         record.LogLevel.Should().Be(Microsoft.Extensions.Logging.LogLevel.Warning);
         record.Message.Should().Contain(PresentationErrorCodes.IdempotencyKeyInvalid).And.NotContain(SecretKey);
+        logger.Records.ShouldFollowLogConvention().ShouldNotLeak(SecretKey).ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
+        _host.Logs.ShouldHaveCategory(typeof(IdempotencyKeyGuard));
     }
 
     [Fact]

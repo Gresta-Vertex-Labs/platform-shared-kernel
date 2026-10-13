@@ -137,6 +137,7 @@
       "src/Hosting/Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.csproj",
       "src/Hosting/Presentation/SharedKernel.Presentation.WebApi.Generators/SharedKernel.Presentation.WebApi.Generators.Tests/SharedKernel.Presentation.WebApi.Generators.Tests.csproj",
       "src/Hosting/Presentation/SharedKernel.Presentation.WebApi.Generators/SharedKernel.Presentation.WebApi.Generators.csproj",
+      "src/Hosting/Presentation/SharedKernel.Presentation.EdgeCases/SharedKernel.Presentation.EdgeCases.csproj",
       "src/Hosting/Presentation/consumer-verify/consumer-verify.csproj",
       "src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Abstractions/SharedKernel.Integration.Notifications.Abstractions.Tests/SharedKernel.Integration.Notifications.Abstractions.Tests.csproj",
       "src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Abstractions/SharedKernel.Integration.Notifications.Abstractions.csproj",

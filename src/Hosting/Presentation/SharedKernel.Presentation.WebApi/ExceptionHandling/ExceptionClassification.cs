@@ -39,10 +39,6 @@ internal sealed record ClassifiedException(ExceptionKind Kind, Error Error, int?
 /// </remarks>
 internal static class ExceptionClassification
 {
-    private const string UnexpectedMessage = "An unexpected error occurred.";
-
-    private const string TimeoutMessage = "The operation did not complete in time.";
-
     private const int ValidationStatusCode = 400;
 
     private const string ExceptionTypeKey = "type";
@@ -73,13 +69,13 @@ internal static class ExceptionClassification
                 // Not the client: the request is still open, so something inside the service ran out of time.
                 return new ClassifiedException(
                     ExceptionKind.Timeout,
-                    Error.Timeout(ErrorCodes.Timeout.Default, TimeoutMessage),
+                    EdgeErrors.Timeout,
                     StatusCode: null);
 
             default:
                 return new ClassifiedException(
                     ExceptionKind.Unclassified,
-                    Error.Unexpected(ErrorCodes.Unexpected.Default, UnexpectedMessage),
+                    EdgeErrors.Unexpected,
                     StatusCode: null);
         }
     }

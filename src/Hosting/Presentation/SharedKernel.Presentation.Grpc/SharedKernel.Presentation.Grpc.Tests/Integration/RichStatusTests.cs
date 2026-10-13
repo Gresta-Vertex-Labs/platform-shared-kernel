@@ -101,8 +101,8 @@ public sealed class RichStatusTests
     [Theory]
     [InlineData(Failures.ConflictException, StatusCode.Aborted, "order.version_conflict")]
     [InlineData(Failures.ConflictTaskResult, StatusCode.Aborted, "order.version_conflict")]
-    [InlineData(Failures.UnavailableException, StatusCode.Unavailable, "search.unreachable")]
-    [InlineData(Failures.UnavailableTaskResult, StatusCode.Unavailable, "search.unreachable")]
+    [InlineData(Failures.UnavailableException, StatusCode.Unavailable, "search.unavailable")]
+    [InlineData(Failures.UnavailableTaskResult, StatusCode.Unavailable, "search.unavailable")]
     [InlineData(Failures.TimeoutResult, StatusCode.DeadlineExceeded, "search.timeout")]
     public async Task ErrorType_MapsToItsStatusCode(string failure, StatusCode expected, string code)
     {
@@ -325,18 +325,20 @@ public sealed class RichStatusTests
         records.Records.Select(record => (record.EventId.Id, record.LogLevel)).Should().Equal(
             (14202, LogLevel.Error),
             (14203, LogLevel.Debug),
-            (14200, LogLevel.Error),
+            (14202, LogLevel.Error),
             (14202, LogLevel.Error),
             (14203, LogLevel.Debug),
             (14202, LogLevel.Error));
         records.Records.Should().OnlyContain(record => record.Exception != null);
         records.Records.Select(record => record.TryGetProperty("ErrorCode", out var code) ? code : null).Should().Equal(
-            "search.unreachable",
+            "search.unavailable",
             "order.not_found",
-            null,
+            "unexpected.default",
             "search.timeout",
             "grpc.resource_exhausted",
             "grpc.internal");
+records.Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(SharedKernel.Primitives.Logging.LoggingEventIdRanges.Presentation, 2);        logs.ShouldHaveCategory(typeof(GrpcExceptionInterceptor));
+records.Records.Should().OnlyContain(record => !record.Message.Contains("10.0.0.5") && !record.Message.Contains("Password"), "the exception's detail is the exception's, never the message of the line");
     }
 
     private static async Task<RpcException> FailAsync(WebApplication app, string failure, string? correlationId = null)

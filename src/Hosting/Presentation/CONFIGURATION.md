@@ -103,7 +103,7 @@ The example shows the defaults, except `Cors:AllowedOrigins` and `Problems:Unava
 | `AllowCredentials` | `bool` | `false` | Requires explicit origins (no empty list, no `*`); outside Development, no `http://` origin | Browsers may send cookies and HTTP authentication |
 | `PreflightMaxAge` | `TimeSpan` | `00:10:00` | Not negative | How long a browser caches a preflight response |
 
-The two `AllowCredentials` failures and the `null` origin are also logged at Critical (EventId 14004). When origins
+The two `AllowCredentials` failures and the `null` origin are also logged at Warning (EventId 14004). When origins
 are configured, a WebSocket request from an origin the policy does not allow is refused with 403
 `forbidden.origin_not_allowed`.
 

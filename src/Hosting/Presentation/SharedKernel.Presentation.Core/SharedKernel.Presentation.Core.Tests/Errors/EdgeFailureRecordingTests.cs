@@ -15,7 +15,7 @@ namespace SharedKernel.Presentation.Core.Tests.Errors;
 /// </summary>
 public sealed class EdgeFailureRecordingTests : IDisposable
 {
-    private static readonly Error ServerError = Error.Unavailable("search.unreachable", "Host 10.0.0.5 is down.");
+    private static readonly Error ServerError = Error.Unavailable("search.unavailable", "Host 10.0.0.5 is down.");
 
     private static readonly Error ClientError = Error.NotFound("order.not_found", "Order 42 was not found.");
 

@@ -9,6 +9,7 @@ using SharedKernel.Localization;
 using SharedKernel.Presentation.SignalR.Filters;
 using SharedKernel.Presentation.SignalR.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Testing.Logging;
 using Xunit;
 
@@ -49,7 +50,7 @@ public sealed class ErrorMappingTests
         var failure = await connection.InvokeExpectingFailureAsync(nameof(ErrorsHub.ThrowUnavailable));
 
         SignalRTestHost.ReadCodedError(failure, nameof(ErrorsHub.ThrowUnavailable))
-            .Should().Be(new HubError("search.unreachable", GenericUnavailable));
+            .Should().Be(new HubError("search.unavailable", GenericUnavailable));
         failure.Message.Should().NotContain("search.internal");
     }
 
@@ -61,7 +62,7 @@ public sealed class ErrorMappingTests
 
         var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnavailable));
 
-        error.Should().Be(new HubError("search.unreachable", HubMessages.InternalDetail));
+        error.Should().Be(new HubError("search.unavailable", HubMessages.InternalDetail));
     }
 
     [Fact]
@@ -105,7 +106,6 @@ public sealed class ErrorMappingTests
 
         var records = loggerFactory.GetLogger(MappingCategory).Records;
         records.ShouldHaveLogged(new EventId(14103), LogLevel.Error).Exception.Should().BeOfType(thrown);
-        records.ShouldNotHaveLogged(new EventId(14100));
     }
 
     [Fact]
@@ -166,8 +166,10 @@ public sealed class ErrorMappingTests
 
         var records = loggerFactory.GetLogger(MappingCategory).Records;
         records.ShouldHaveLogged(new EventId(14104), LogLevel.Debug).Exception.Should().BeOfType<SharedKernel.Core.Exceptions.NotFoundException>();
-        records.ShouldHaveLogged(new EventId(14103), LogLevel.Error).Exception.Should().NotBeNull();
-        records.ShouldHaveLogged(new EventId(14100), LogLevel.Error).Exception.Should().BeOfType<InvalidOperationException>();
+        records.ShouldHaveLoggedCount(new EventId(14103), 2);
+        records.Should().Contain(record => record.EventId.Id == 14103 && record.Exception is InvalidOperationException);
+        records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 1);
+        loggerFactory.ShouldHaveCategory(typeof(HubExceptionMappingFilter));
     }
 
     [Fact]
@@ -183,6 +185,7 @@ public sealed class ErrorMappingTests
         error.Should().Be(new HubError("order.not_found", "42 numaralı sipariş bulunamadı."));
     }
 
+[Fact]    public async Task UnexpectedDefault_GenericMessage_IsTranslatedIntoTheConnectionsCulture()    {        await using var app = await StartLocalizedAsync();        await using var connection = await app.ConnectAsync(            HubPaths.Errors,            new Dictionary<string, string> { [HeaderNames.AcceptLanguage] = "tr-TR" });        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnknown));        error.Should().Be(new HubError(ErrorCodes.Unexpected.Default, "Beklenmeyen bir hata oluştu."));    }
     [Fact]
     public async Task ErrorMessage_WithoutATranslation_KeepsItsOwnText()
     {
@@ -213,7 +216,6 @@ public sealed class ErrorMappingTests
         await SignalRTestHost.WaitUntilAsync(() => logger.Records.Any(record => record.EventId.Id == 14106));
 
         logger.Records.ShouldHaveLogged(new EventId(14106), LogLevel.Debug);
-        logger.Records.ShouldNotHaveLogged(new EventId(14100));
     }
 
     private static Task<WebApplication> StartAsync(
@@ -236,6 +238,7 @@ public sealed class ErrorMappingTests
                 builder.Services.AddSingleton<ILocalizationCatalog>(
                     new LocalizationCatalogBuilder()
                         .Add("order.not_found", new CultureInfo("tr-TR"), "{orderId} numaralı sipariş bulunamadı.")
+                        .Add(ErrorCodes.Unexpected.Default, new CultureInfo("tr-TR"), "Beklenmeyen bir hata oluştu.")
                         .Build());
                 builder.Services.AddRequestLocalization(options =>
                 {
