@@ -9,8 +9,7 @@ proven-by:
   - samples/Shop/Inventory/Shop.Inventory.Tests/InventoryTests.cs
   - samples/Shop/Shop.TestSupport/ServiceShape.cs
   - samples/Shop/Shop.E2E/Infrastructure/ShopPlatform.cs
-unproven:
-  - The real-PostgreSQL helpers of the persistence test package: the reference platform runs its database flows through its Aspire AppHost instead
+  - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogTenantIsolationPostgresTests.cs
 ---
 # Write tests
 
@@ -189,8 +188,34 @@ Testing packages go only into Tests projects. A production project that referenc
 5. **Tests: integration against real containers.** Keep these in a separate test project that is skipped unless an
    environment variable turns it on. The reference platform starts its whole Aspire AppHost once per run with
    `DistributedApplicationTestingBuilder.CreateAsync<Projects.Shop_AppHost>(…)`, waits for each resource to be
-   healthy, and calls the services over HTTP and gRPC. The persistence test package also ships a real-PostgreSQL
-   helper with the production role split; it is not exercised by the reference platform, so read its README first.
+   healthy, and calls the services over HTTP and gRPC.
+
+   **One database, real row-level security:** `PostgresTestServer` (`SharedKernel.Persistence.Testing`) runs
+   PostgreSQL with the production roles, the application as the non-owner runtime role. Register the context exactly
+   as production does (row-level security **on**), create the schema, then enable the policies:
+
+```csharp
+using SharedKernel.Execution.Transactions;
+using SharedKernel.Persistence;
+using SharedKernel.Persistence.Testing;
+using SharedKernel.Testing.Execution;
+
+await using var database = await fixture.Server.CreateDatabaseAsync();   // fixture: PostgresTestServer.StartAsync()
+services.AddSharedKernelPostgres<CatalogDbContext>(
+    database.BuildConfiguration(CatalogDatabase.ConnectionName),
+    CatalogDatabase.ConnectionName,
+    persistence => CatalogDatabase.Configure(persistence)                  // UseMultiTenancy(rowLevelSecurity: true)
+);
+var caller = services.AddTestRequestContext(TestRequestContext.ForTenant(Contoso));
+// ...build the provider, then in a scope:
+await database.CreateSchemaAsync(context);          // as the migrator role, like a migration
+await database.EnableRowLevelSecurityAsync(context); // the tenant policies: never skip them
+// write as Contoso; set caller.TenantId = Fabrikam; a raw-SQL count inside
+// IUnitOfWork.ExecuteInTransactionAsync must be 0
+```
+
+   Never turn row-level security off in a test to save a setup line: the test then proves nothing about isolation.
+   Gate the class behind an environment variable (the reference platform uses `SHOP_POSTGRES=1`): it needs Docker.
 
 6. **Configuration.** Unit tests read no configuration: build the options in code or let the fakes default.
 

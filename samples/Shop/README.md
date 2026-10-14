@@ -120,11 +120,12 @@ as a test user with a password grant against Keycloak's `shop` realm (client `sh
 ```bash
 samples/Shop/build.sh --test               # unit tests: architecture, the use cases over the kernel's fakes
 samples/Shop/build.sh --e2e                # end-to-end flows against the running platform (SHOP_E2E=1)
+SHOP_POSTGRES=1 dotnet test samples/Shop/Catalog/Shop.Catalog.Tests   # row-level security on a real PostgreSQL (Docker)
 ```
 
 | Project | What it proves |
 | --- | --- |
-| `Shop.Catalog.Tests` | The four-project shape over the real restore graph, the kernel's architecture rules, the use cases through the real pipeline with the `*.Testing` fakes |
+| `Shop.Catalog.Tests` | The four-project shape over the real restore graph, the kernel's architecture rules, the use cases through the real pipeline with the `*.Testing` fakes; with `SHOP_POSTGRES=1`, tenant isolation by row-level security on a real PostgreSQL (`PostgresTestServer`) |
 | `Shop.Inventory.Tests` | Inventory's dependency graph, the service-only tenant strategy, the certificate allow-list, the SKU locks and the job schedule, over the kernel's Security, Caching and Scheduling fakes, and the gRPC service over Presentation.Testing's `TestServerCallContext` |
 | `Shop.Ordering.Tests` | Ordering's four-project shape, idempotent placement, auditing, validation and cancellation (with its refund), the charge step through the real pipeline over the Persistence, Messaging and Application fakes, the gRPC adapter's error mapping (Communication fakes), the TOTP stores over the fake Redis services | the fulfilment consumer over the Workflows fakes |
 | `Shop.Billing.Tests` | Billing's dependency graph, the API-key store and the key-only tenant strategy, invoices signed with the Cryptography fakes and read back verified (and a forged one refused), profile validation (IBAN checksum, VAT per country), payment rules, webhook subscriptions per tenant and the payment announcement over the Integration fakes |
