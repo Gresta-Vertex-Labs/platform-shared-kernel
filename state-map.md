@@ -91,8 +91,8 @@ A Claude Code skill, `consumer/skill/sharedkernel/`, shipped with every release 
 | Phase | What | Status |
 | --- | --- | --- |
 | P-619 | Scaffold: `consumer/README.md`, `SKILL.md` index and needs table | ● |
-| P-620 | README callout audit (first sentence stands alone) | ○ |
-| P-621 | `generate-package-index.cs`: catalog region and skill checks under `--check` | ○ |
+| P-620 | README callout audit (first sentence stands alone): all 104 callouts parse and stand alone; no README changed | ● |
+| P-621 | `generate-package-index.cs`: catalog region and skill checks under `--check` | ● |
 | P-622 | The 17 recipes, each with `proven-by` | ○ |
 | P-623 | Release asset `sharedkernel-skill-v<version>.zip` | ○ |
 | P-624 | Maintenance rules (`_common.md`, root `CLAUDE.md`, `/sync-brain`, README standard) | ○ |
