@@ -27,6 +27,8 @@
     -->
     <PackageReference Include="PDFsharp" />
     <PackageReference Include="PDFsharp-MigraDoc" />
+    <!-- Overrides PDFsharp's vulnerable Pkcs 8.0.1 (CVE-2026-84008); see Directory.Packages.props. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
