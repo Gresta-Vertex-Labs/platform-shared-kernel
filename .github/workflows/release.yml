@@ -194,8 +194,9 @@ jobs:
           SK_VERSION: ${{ needs.verify.outputs.version }}
         run: bash eng/pack-consumer-skill.sh "$SK_VERSION" release-skill
 
-      # A pre-release tag (-rc.N) ships a pre-release skill. Re-running the job replaces the asset
-      # on the existing release instead of failing.
+      # A tag with a SemVer pre-release part (v1.0.0-rc.4) is a pre-release; a plain vX.Y.Z is not.
+      # Re-runnable on its own ("Re-run failed jobs" after publish has pushed the packages): an
+      # existing release is reused and its pre-release flag corrected, an existing asset replaced.
       - name: Attach to the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -203,13 +204,27 @@ jobs:
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
+          case "$tag" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag exists: replacing the asset, prerelease=$prerelease."
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --prerelease="$prerelease"
             gh release upload "$tag" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
           else
-            prerelease=()
-            case "$tag" in *-*) prerelease=(--prerelease) ;; esac
-            gh release create "$tag" "$ASSET" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "${prerelease[@]}"
+            echo "Creating release $tag, prerelease=$prerelease."
+            gh release create "$tag" "$ASSET" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+              --prerelease="$prerelease"
           fi
+          actual="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+          if [ "$actual" != "$prerelease" ]; then
+            echo "::error::Release $tag has isPrerelease=$actual, expected $prerelease."
+            exit 1
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | grep -qx "$(basename "$ASSET")" \
+            || { echo "::error::$(basename "$ASSET") is not attached to release $tag."; exit 1; }
 
       - name: Job summary
         if: always()
