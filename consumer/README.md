@@ -136,7 +136,9 @@ each release and after any large change to `SKILL.md`:
    interpreter.
 2. **Baseline build:** `dotnet build <Service>.slnx` in the workspace. Note its warnings (today: NU1903
    audit warnings for a transitive test dependency); "build clean" means no new diagnostic against them.
-3. **Run each prompt in a fresh Claude Code session** started in the workspace. After scoring it, return to
+3. **Run each prompt in a fresh Claude Code session** started in the workspace, using the staged service's variant
+   from `eval/tasks.md` ("Prompts for a staged service") where there is one. Headless (`claude -p`), end every
+   prompt with the assume-and-proceed sentence given there. After scoring it, return to
    the baseline with `git reset --hard && git clean -fdx`.
 4. **Score** three things per task: the package choice, the project placement, and whether the build stays
    clean (`git diff` shows what the assistant changed). Record the date, version and score in the Runs

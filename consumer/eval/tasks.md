@@ -35,8 +35,31 @@ Packages are named without the `SharedKernel.` prefix. Projects: **D** Domain ·
 | 18 | "Export all shipments of a month as an Excel file that the user downloads from a link." | `Reporting.Abstractions` → A; `Reporting.Spreadsheet`, `Storage.S3` → I | add-report-export.md |
 | 19 | "Unit-test the create-shipment command without a database or broker, then add one integration test against real PostgreSQL." | `Testing`, `Application.Testing`, `Persistence.Testing`, `Messaging.Testing` → T | write-tests.md |
 
+## Prompts for a staged service
+
+The prompts above are written for a new "Shipping" service. A run on a staged Shop service uses the variant below,
+phrased in that service's own vocabulary and asking for something it does not do yet; a task without a variant uses
+its generic prompt. A prompt that names a concept the service lacks, or asks for something it already does, scores
+the eval set, not the skill.
+
+Headless runs (`claude -p`) cannot answer a question, so every prompt ends with: *"Implement it in this service. If
+something is ambiguous, make the most reasonable assumption, state it, and proceed; then make sure the solution
+builds."*
+
+### Ordering
+
+| # | Variant | Expected packages → project |
+| ---: | --- | --- |
+| 4 | "When an order is cancelled, also publish a new `OrderRefundRequested` integration event for Billing, without losing it if the broker is down." | contract in the contracts project; `Messaging.Abstractions` → A (already referenced); the outbox (`Messaging.MassTransit.EfCore`) is already wired → I |
+| 6 | "Cache `GetOrderQuery` for five minutes per tenant and clear it whenever the order changes." | `Application` markers and `Caching.Abstractions` (`CachePolicy`) → A; `Application.Pipeline.Caching` → H; `Caching.FusionCache` (+ `Caching.Redis`) → I |
+| 8 | "Let the warehouse system read an order (`GET /orders/{id}`) with an API key instead of an OIDC token; keys must be revocable." | `Security.ApiKey` → H |
+| 11 | the generic prompt | `Scheduling`, `Caching.Redis.DistributedLocking` → I |
+| 14 | "Let clients upload an order's invoice PDF directly to storage with a presigned URL, without the file passing through this API, per tenant." | `Storage.Abstractions` → A; `Storage.S3` → I; `CreateUploadUrlAsync` on a tenant store |
+| 19 | "Unit-test the cancel-order command without a database or broker, then add one integration test against real PostgreSQL." | `Testing`, `Persistence.Testing` (already referenced) → T; `FakeRepository`, `PostgresTestServer` |
+
 ## Runs
 
 | Date | Skill version | Packages | Placement | Build | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| _not run yet_ | | | | | |
+| 2026-10-14 | 1.0.0-rc.4 | 4/6 | 4/6 | 6/6 | Ordering, tasks 4, 6, 8, 11, 14, 19 only, headless `claude -p`. 6 and 8 stopped to ask (the prompts name shipments; Ordering has none). Per-task table and fault analysis: commit f9e60ea0 (root `state-map.md`, P-625). |
+| 2026-10-14 | 1.0.0-rc.4 + fixes | 6/6 | 6/6 | 6/6 | Second run, same six tasks with the Ordering variants and the assume-and-proceed suffix, after the recipe-folder wording in SKILL.md and the proven presigned upload in add-file-storage.md. Every run opened the right recipe first; 14 now uses `CreateUploadUrlAsync`. The other 13 tasks have not been run headless yet. |

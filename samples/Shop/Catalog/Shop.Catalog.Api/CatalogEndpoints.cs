@@ -16,6 +16,15 @@ public sealed record ChangePriceRequest(decimal Price, string Currency);
 /// <summary>Where the product image can be downloaded for the next few minutes.</summary>
 public sealed record ImageUrlResponse(Uri Url);
 
+public sealed record ImageUploadRequest(string ContentType);
+
+public sealed record ImageUploadResponse(
+    Uri Url,
+    string Method,
+    IReadOnlyDictionary<string, string> Headers,
+    DateTimeOffset ExpiresAt
+);
+
 /// <summary>The catalog's HTTP surface. Every route requires an authenticated caller; permissions are checked by the pipeline.</summary>
 public sealed class CatalogEndpoints : IEndpointModule
 {
@@ -71,6 +80,30 @@ public sealed class CatalogEndpoints : IEndpointModule
                         .ToNoContent()
             )
             .WithName("UploadProductImage");
+
+        // Direct upload: the browser PUTs the file to the returned URL with the returned headers, then confirms.
+        products
+            .MapPost(
+                "/{id:guid}/image-upload",
+                (Guid id, ImageUploadRequest body, ISender sender, CancellationToken ct) =>
+                    sender
+                        .Send(new RequestProductImageUploadCommand(id, body.ContentType), ct)
+                        .ToOk(upload => new ImageUploadResponse(
+                            upload.Url,
+                            upload.Method,
+                            upload.Headers,
+                            upload.ExpiresAt
+                        ))
+            )
+            .WithName("RequestProductImageUpload");
+
+        products
+            .MapPost(
+                "/{id:guid}/image-upload/confirm",
+                (Guid id, ISender sender, CancellationToken ct) =>
+                    sender.Send(new ConfirmProductImageUploadCommand(id), ct).ToNoContent()
+            )
+            .WithName("ConfirmProductImageUpload");
 
         products
             .MapGet(

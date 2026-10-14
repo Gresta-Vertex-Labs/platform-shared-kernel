@@ -196,6 +196,34 @@ public sealed class CatalogPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task DirectUpload_IssuesAPresignedPut_AndAttachesTheImageOnlyOnceItExists()
+    {
+        var harness = Build(Merchant(Contoso));
+        Guid id = (await harness.SendAsync(Keyboard())).Value;
+
+        var upload = await harness.SendAsync(new RequestProductImageUploadCommand(id, "image/png"));
+        var early = await harness.SendAsync(new ConfirmProductImageUploadCommand(id));
+
+        upload
+            .IsSuccess.Should()
+            .BeTrue(upload.IsFailure ? upload.Error.Message : "the product exists");
+        upload.Value.Method.Should().Be("PUT");
+        early.IsFailure.Should().BeTrue("nothing was uploaded yet");
+        early.Error.Type.Should().Be(ErrorType.NotFound);
+
+        // Stands in for the browser's PUT to the presigned URL.
+        using var png = new MemoryStream([0x89, 0x50, 0x4E, 0x47]);
+        (await harness.SendAsync(new UploadProductImageCommand(id, png, "image/png")))
+            .IsSuccess.Should()
+            .BeTrue();
+
+        (await harness.SendAsync(new ConfirmProductImageUploadCommand(id)))
+            .IsSuccess.Should()
+            .BeTrue();
+        (await harness.SendAsync(new GetProductQuery(id))).Value.HasImage.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task PriceChangedEvent_IsBroadcast()
     {
         var handler = new BroadcastPriceChange(_broadcaster);

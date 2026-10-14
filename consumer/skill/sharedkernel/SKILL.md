@@ -51,7 +51,8 @@ The README wins over anything you remember: names and options change between ver
 
 ## 3. Needs
 
-"Reference from" names the service project. Open the recipe for anything that spans packages.
+"Reference from" names the service project. Open the recipe for anything that spans packages; every recipe
+file is in the `recipes/` folder next to this file.
 
 | Need | Package(s) | Reference from | Entry point | Recipe |
 | --- | --- | --- | --- | --- |
@@ -242,9 +243,9 @@ sentence of the package README.
 | `SharedKernel.Linter` | Tooling | the build | A CSharpier format check that fails CI on unformatted code and stays silent locally, a one-command local format, and the platform's shared .editorconfig. |
 <!-- END GENERATED: package-catalog -->
 
-## 5. Recipes
+## 5. Recipes (in `recipes/` next to this file)
 
-Open the one that matches the task, then read the READMEs it names.
+Open the one that matches the task, for example `recipes/add-caching.md`, then read the READMEs it names.
 
 | Recipe | Open it when |
 | --- | --- |
