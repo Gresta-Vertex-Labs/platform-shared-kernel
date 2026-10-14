@@ -27,7 +27,7 @@ with `-- --check`, which fails when:
 - a `SharedKernel.*` id outside a code block is not a real package;
 - a recipe named in `SKILL.md` does not exist, or a recipe file is not named there;
 - a `proven-by` path does not exist, or an `unproven` entry has no reason;
-- a shipped file uses maintainer vocabulary: a domain id (`06.Persistence`), `CLAUDE.md`,
+- a shipped file uses maintainer vocabulary: a domain id (two digits, a dot and a capability name), `CLAUDE.md`,
   `state-map`, a phase key or a work-order id.
 
 Changing the routing is part of normal work: a change that adds, removes or renames a package, or
