@@ -52,7 +52,7 @@ public sealed class UploadProductImageHandler(
             );
         }
 
-        string key = $"{product.Id.Value:D}/main";
+        string key = ProductImageKeys.Main(product.Id);
         var uploaded = await images
             .ForTenant(tenant.Value)
             .UploadAsync(
@@ -69,6 +69,116 @@ public sealed class UploadProductImageHandler(
         product.AttachImage(key);
         return Result<string>.Success(key);
     }
+}
+
+/// <summary>
+/// A short-lived presigned <c>PUT</c> the browser uploads the product image to directly, so the file never passes
+/// through the service. The client sends the returned headers with the upload, then confirms it with
+/// <see cref="ConfirmProductImageUploadCommand"/>.
+/// </summary>
+[RequirePermission(CatalogPermissions.Manage)]
+public sealed record RequestProductImageUploadCommand(Guid ProductId, string ContentType)
+    : ICommand<PresignedRequest>;
+
+public sealed class RequestProductImageUploadHandler(
+    IRequestContext caller,
+    IReadRepository<Product, ProductId> products,
+    [FromKeyedServices(CatalogIndexes.ImageStore)] ITenantFileStorage images
+) : ICommandHandler<RequestProductImageUploadCommand, PresignedRequest>
+{
+    public async Task<Result<PresignedRequest>> Handle(
+        RequestProductImageUploadCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        var tenant = CallerTenant.Of(caller);
+        if (tenant.IsFailure)
+        {
+            return Result<PresignedRequest>.Failure(tenant.Error);
+        }
+
+        var product = await products.GetByIdAsync(
+            new ProductId(command.ProductId),
+            cancellationToken
+        );
+        if (product is null)
+        {
+            return Result<PresignedRequest>.Failure(
+                CatalogMessages.ProductNotFound.ToError(ErrorType.NotFound, command.ProductId)
+            );
+        }
+
+        return await images
+            .ForTenant(tenant.Value)
+            .CreateUploadUrlAsync(
+                ProductImageKeys.Main(product.Id),
+                new PresignedUploadOptions
+                {
+                    ContentType = command.ContentType,
+                    Expiry = TimeSpan.FromMinutes(5),
+                },
+                cancellationToken
+            );
+    }
+}
+
+/// <summary>Attaches an image the browser uploaded with a presigned URL, once the object exists.</summary>
+[RequirePermission(CatalogPermissions.Manage)]
+public sealed record ConfirmProductImageUploadCommand(Guid ProductId) : ICommand, IInvalidatesCache
+{
+    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate =>
+        [CacheKeyRef.For<GetProductQuery>(ProductId.ToString("D", CultureInfo.InvariantCulture))];
+}
+
+public sealed class ConfirmProductImageUploadHandler(
+    IRequestContext caller,
+    IRepository<Product, ProductId> products,
+    [FromKeyedServices(CatalogIndexes.ImageStore)] ITenantFileStorage images
+) : ICommandHandler<ConfirmProductImageUploadCommand>
+{
+    public async Task<Result> Handle(
+        ConfirmProductImageUploadCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        var tenant = CallerTenant.Of(caller);
+        if (tenant.IsFailure)
+        {
+            return Result.Failure(tenant.Error);
+        }
+
+        var product = await products.GetByIdAsync(
+            new ProductId(command.ProductId),
+            cancellationToken
+        );
+        if (product is null)
+        {
+            return Result.Failure(
+                CatalogMessages.ProductNotFound.ToError(ErrorType.NotFound, command.ProductId)
+            );
+        }
+
+        string key = ProductImageKeys.Main(product.Id);
+        var exists = await images.ForTenant(tenant.Value).ExistsAsync(key, cancellationToken);
+        if (exists.IsFailure)
+        {
+            return Result.Failure(exists.Error);
+        }
+
+        if (!exists.Value)
+        {
+            return Result.Failure(CatalogMessages.NoImage.ToError(ErrorType.NotFound));
+        }
+
+        product.AttachImage(key);
+        return Result.Success();
+    }
+}
+
+/// <summary>The object key of a product's image inside the tenant's image store.</summary>
+public static class ProductImageKeys
+{
+    public static string Main(ProductId productId) => $"{productId.Value:D}/main";
 }
 
 /// <summary>A short-lived URL the browser downloads the product image from directly.</summary>

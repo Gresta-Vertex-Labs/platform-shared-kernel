@@ -4,17 +4,19 @@ proven-by:
   - samples/Shop/Catalog/Shop.Catalog.Application/Search/CatalogIndexes.cs
   - samples/Shop/Catalog/Shop.Catalog.Infrastructure/CatalogInfrastructure.cs
   - samples/Shop/Catalog/Shop.Catalog.Api/Program.cs
+  - samples/Shop/Catalog/Shop.Catalog.Api/CatalogEndpoints.cs
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogPipelineTests.cs
   - samples/Shop/Reports/Shop.Reports.Api/Program.cs
 unproven:
   - Shared store (AddStore and IFileStorage): every store of the reference platform is a tenant store
-  - Presigned uploads (CreateUploadUrlAsync, CreateUploadFormAsync): the reference platform uploads through the service and presigns downloads only
+  - Presigned POST forms (CreateUploadFormAsync): the reference platform's direct uploads use a presigned PUT
   - Multipart uploads: the reference platform's files fit one request
 ---
 # Add file storage
 
 **Use when:** a use case uploads, downloads, lists or presigns files in S3, an S3-compatible store (MinIO) or
-Huawei OBS, usually one key prefix per tenant. **Not when:** the file is a generated export (CSV, Excel, PDF);
+Huawei OBS, usually one key prefix per tenant. When the client uploads "directly" (the file must not pass through
+the service), use a presigned upload: step 3. **Not when:** the file is a generated export (CSV, Excel, PDF);
 add-report-export.md streams it into a store for you.
 
 ## Packages
@@ -107,7 +109,54 @@ return url.IsFailure ? Result<Uri>.Failure(url.Error) : Result<Uri>.Success(url.
    Every storage call returns `Result`/`Result<T>`; a missing object, a refused write or an outage is a failure value,
    not an exception.
 
-3. **Infrastructure: register the provider and the store.** One `AddSharedKernelStorage()`, one provider call per
+3. **Application: let the client upload directly with a presigned `PUT`.** The file never passes through the
+   service. One command hands out the URL; a second one attaches the file once it exists:
+
+```csharp
+using SharedKernel.Application.Messaging;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Storage;
+
+public sealed record RequestProductImageUploadCommand(Guid ProductId, string ContentType)
+    : ICommand<PresignedRequest>;
+
+// In its handler, after the tenant and product checks of step 1:
+return await images
+    .ForTenant(tenant.Value)
+    .CreateUploadUrlAsync(
+        ProductImageKeys.Main(product.Id),
+        new PresignedUploadOptions { ContentType = command.ContentType, Expiry = TimeSpan.FromMinutes(5) },
+        cancellationToken
+    );
+```
+
+```csharp
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+
+// ConfirmProductImageUploadHandler: attach only what was really uploaded.
+string key = ProductImageKeys.Main(product.Id);
+var exists = await images.ForTenant(tenant.Value).ExistsAsync(key, cancellationToken);
+if (exists.IsFailure)
+{
+    return Result.Failure(exists.Error);
+}
+
+if (!exists.Value)
+{
+    return Result.Failure(CatalogMessages.NoImage.ToError(ErrorType.NotFound));
+}
+
+product.AttachImage(key);
+return Result.Success();
+```
+
+   The endpoint returns the `PresignedRequest`'s `Url`, `Method`, `Headers` and `ExpiresAt`; the client must send
+   those headers with its `PUT`. Size and type limits for browser uploads need a presigned `POST` form
+   (`CreateUploadFormAsync`), and large files need multipart uploads: neither is exercised by the reference
+   platform, so read the `SharedKernel.Storage.Abstractions` README first.
+
+4. **Infrastructure: register the provider and the store.** One `AddSharedKernelStorage()`, one provider call per
    connection, one `AddTenantStore` per store:
 
 ```csharp
@@ -131,11 +180,9 @@ storage.AddObs(builder.Configuration).AddTenantStore(ReportStores.Archive);
 
    A store shared by the whole service (not per tenant) is registered with `AddStore("name")` and injected as
    `[FromKeyedServices("name")] IFileStorage`. The reference platform does not use one; the
-   `SharedKernel.Storage.Abstractions` README shows it. Presigned uploads (`CreateUploadUrlAsync`,
-   `CreateUploadFormAsync`) and multipart uploads are not exercised by the reference platform either: read the README
-   before using them.
+   `SharedKernel.Storage.Abstractions` README shows it.
 
-4. **Api/Worker: map readiness.** Each store registers its own readiness probe; the host maps them all:
+5. **Api/Worker: map readiness.** Each store registers its own readiness probe; the host maps them all:
 
 ```csharp
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -143,7 +190,7 @@ using SharedKernel.ServiceDefaults.HealthChecks;
 builder.Services.AddHealthChecks().AddSharedKernelReadiness();
 ```
 
-5. **Configuration:** the provider connection is `SharedKernel:Storage:S3` (or `SharedKernel:Storage:Obs`), and each
+6. **Configuration:** the provider connection is `SharedKernel:Storage:S3` (or `SharedKernel:Storage:Obs`), and each
    store is `SharedKernel:Storage:Stores:{name}`. The keys (bucket, prefix, encryption, credentials) are in the
    provider package's README.
 
@@ -167,6 +214,10 @@ var url = await harness.SendAsync(new GetProductImageUrlQuery(id));
 
 uploaded.IsSuccess.Should().BeTrue();
 url.IsSuccess.Should().BeTrue();
+
+var upload = await harness.SendAsync(new RequestProductImageUploadCommand(id, "image/png"));
+upload.Value.Method.Should().Be("PUT");
+(await harness.SendAsync(new ConfirmProductImageUploadCommand(id))).IsSuccess.Should().BeTrue();
 ```
 
 The in-memory store keeps the tenant views apart and issues presigned URLs, so a cross-tenant read fails in the
