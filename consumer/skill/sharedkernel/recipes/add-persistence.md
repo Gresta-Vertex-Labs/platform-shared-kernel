@@ -149,6 +149,7 @@ public static class OrderingDatabase
 }
 ```
 
+   The tenant filter and row-level security read the caller's tenant claim: wire authentication (add-multi-tenancy.md).
 4. **Infrastructure: registration.** One call registers the context, the open-generic repositories and
    `IUnitOfWork`. The audit ledger signs with the HMAC signer of `SharedKernel.Cryptography`, so register
    cryptography too.
@@ -230,8 +231,7 @@ builder
 - Unit: `services.AddFakeRepository<Order, OrderId>()` and `services.AddFakeAuditTrailWriter()`
   (`SharedKernel.Persistence.Testing`) under `ApplicationPipelineTestHarness` (`SharedKernel.Application.Testing`)
   with `app.WithTransactions().WithAuditing()`; assert on `Items` and `Recorded`. The fakes never roll back.
-- Integration: `PostgresTestServer` (`SharedKernel.Persistence.Testing`) runs real PostgreSQL with the
-  production role split, for migrations, row-level security, concurrency and encryption. See write-tests.md.
+- Integration: `PostgresTestServer` (`SharedKernel.Persistence.Testing`), real PostgreSQL with RLS on: write-tests.md.
 
 ## Check
 

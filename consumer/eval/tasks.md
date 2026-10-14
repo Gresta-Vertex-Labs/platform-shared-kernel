@@ -57,9 +57,32 @@ builds."*
 | 14 | "Let clients upload an order's invoice PDF directly to storage with a presigned URL, without the file passing through this API, per tenant." | `Storage.Abstractions` → A; `Storage.S3` → I; `CreateUploadUrlAsync` on a tenant store |
 | 19 | "Unit-test the cancel-order command without a database or broker, then add one integration test against real PostgreSQL." | `Testing`, `Persistence.Testing` (already referenced) → T; `FakeRepository`, `PostgresTestServer` |
 
+## Greenfield
+
+The service template's real situation: an empty folder with only the skill, a `Directory.Packages.props` pinning
+`SharedKernelVersion` to a published version, and a `NuGet.Config` on GitHub Packages. Stage it with
+`eng/stage-consumer-skill-eval.sh --empty <out-dir>`. The four steps run in order, one fresh session each, and every
+step builds on the previous one's output (no reset between steps). Each prompt ends with the assume-and-proceed
+sentence above.
+
+Besides packages, placement and build, score the analyzer warnings left and whether the projects would pass the
+reference platform's service-shape rules: Domain → no project and only Foundation/Model packages; Application →
+Domain only, no Adapter or Host package and no MediatR; Infrastructure → Application only, direct kernel packages
+Adapter or Foundation; Api → Application and Infrastructure, direct kernel packages Host only; no production
+project reaches a Testing package.
+
+| Step | Prompt | Expected packages → project |
+| --- | --- | --- |
+| a | "Create a new service named Shipping using SharedKernel: Domain, Application, Infrastructure and Api projects, a Shipment aggregate, health checks and telemetry." | `Domain` → D; `Application` → A; `ServiceDefaults`, `Application.Pipeline`, `Application.Mediator.MediatR` → H; `Analyzers` in every project; new-service.md |
+| b | "Add EF Core on PostgreSQL for Shipment, with multi-tenancy enforced by row-level security." | `Persistence.Abstractions` → A; `Persistence.EfCore` → I; `ServiceDefaults.Persistence`, `ServiceDefaults.Security` and an authentication package (the tenant claim's source, e.g. `Security.Oidc`) → H, `MultiTenancy` optional; tenanted aggregate base in D; add-persistence.md, add-multi-tenancy.md |
+| c | "Add HTTP endpoints to create a shipment and to get one by id; they send through ISender." | `Presentation.WebApi` → H; commands and queries in A; `IEndpointModule`; add-http-endpoint.md |
+| d | "Add one unit test for creating a shipment and one integration test against real PostgreSQL." | `Testing`, `Application.Testing`, `Persistence.Testing` → T; the integration test keeps row-level security on (`EnableRowLevelSecurityAsync`); write-tests.md |
+
 ## Runs
 
 | Date | Skill version | Packages | Placement | Build | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
 | 2026-10-14 | 1.0.0-rc.4 | 4/6 | 4/6 | 6/6 | Ordering, tasks 4, 6, 8, 11, 14, 19 only, headless `claude -p`. 6 and 8 stopped to ask (the prompts name shipments; Ordering has none). Per-task table and fault analysis: commit f9e60ea0 (root `state-map.md`, P-625). |
 | 2026-10-14 | 1.0.0-rc.4 + fixes | 6/6 | 6/6 | 6/6 | Second run, same six tasks with the Ordering variants and the assume-and-proceed suffix, after the recipe-folder wording in SKILL.md and the proven presigned upload in add-file-storage.md. Every run opened the right recipe first; 14 now uses `CreateUploadUrlAsync`. The other 13 tasks have not been run headless yet. |
+| 2026-10-14 | 1.0.0-rc.4 (feed) + main skill | 3/4 | 4/4 | 4/4 | Greenfield, run 1 (empty folder, packages restored from GitHub Packages, one `claude -p` per step). a pass. b: EF Core with `TenantedDbContext` and RLS on, but no tenant source (no authentication), so every request would fail closed; recipe fault. c pass. d: the integration test turned RLS off; recipe fault (`write-tests.md` had no proven PostgreSQL step). ServiceShape 11/11. Warnings left: 8 NU1903 in the test project (SSH.NET via `Persistence.Testing` → Testcontainers; packaging fault). |
+| 2026-10-14 | 1.0.0-rc.4 (feed) + fixes | 3/4 | 4/4 | 4/4 | Greenfield, b–d re-run twice from step a's output after the fixes: `add-multi-tenancy.md`/`add-persistence.md` say tenancy needs authentication; `write-tests.md` gains a proven RLS-on `PostgresTestServer` step (Shop: `CatalogTenantIsolationPostgresTests`). d now keeps RLS on (`EnableRowLevelSecurityAsync`); c pass. b still adds no authentication: it quotes the recipe and defers authentication as out of scope (not a routing, recipe or README fault any more). ServiceShape 11/11; the same 8 NU1903 warnings. |
