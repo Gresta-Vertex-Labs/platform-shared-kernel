@@ -71,7 +71,6 @@ SharedKernel.Persistence.EfCore.Vectors.VectorIndexMethod.Hnsw = 0 -> SharedKern
 SharedKernel.Persistence.EfCore.Vectors.VectorIndexMethod.IvfFlat = 1 -> SharedKernel.Persistence.EfCore.Vectors.VectorIndexMethod
 SharedKernel.Persistence.EfCore.VectorOrderingExpressions
 abstract SharedKernel.Persistence.EfCore.Migrations.PostgresDesignTimeDbContextFactory<TContext>.Create(Microsoft.EntityFrameworkCore.DbContextOptions<TContext!>! options, SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies! dependencies) -> TContext!
-const SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.ConflictErrorCode = "persistence.concurrency_conflict" -> string!
 const SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.SoftDelete = "SoftDelete" -> string!
 const SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.Tenant = "Tenant" -> string!
 override SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.ConfigureConventions(Microsoft.EntityFrameworkCore.ModelConfigurationBuilder! configurationBuilder) -> void

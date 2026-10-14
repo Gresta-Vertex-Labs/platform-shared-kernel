@@ -1,7 +1,10 @@
 using SharedKernel.Application.Commands;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using SharedKernel.Application.Pipeline.Diagnostics;
 using SharedKernel.Application.Pipeline.Shared;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Application.Pipeline.Commands;
 
@@ -35,7 +38,7 @@ namespace SharedKernel.Application.Pipeline.Commands;
 /// always reset by exactly one, regardless of outcome.
 /// </para>
 /// </remarks>
-internal sealed partial class CommandScopeBehavior<TRequest, TResponse>(
+internal sealed class CommandScopeBehavior<TRequest, TResponse>(
     CommandScope scope,
     ILogger<CommandScopeBehavior<TRequest, TResponse>> logger)
     : IPipelineBehavior<TRequest, TResponse>
@@ -62,9 +65,12 @@ internal sealed partial class CommandScopeBehavior<TRequest, TResponse>(
                 {
                     await callback(cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
-                    LogCallbackFailed(logger, ex);
+                    // Documented catch-all (rule 13): the work is already committed, so a failing callback never
+                    // changes the response. The caller's own cancellation is not caught and propagates.
+                    PipelineLog.CommandCallbackFailed(logger, typeof(TRequest).FullName ?? typeof(TRequest).Name, ex);
+                    Activity.Current.AddExceptionEvents(ex);
                 }
             }
 
@@ -77,10 +83,4 @@ internal sealed partial class CommandScopeBehavior<TRequest, TResponse>(
         }
     }
 
-    /// <summary>A post-commit <see cref="ICommandScope.OnCompleted"/> callback threw (Error) — the response is unaffected.</summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogCommandScopeCallbackFailed,
-        Level = LogLevel.Error,
-        Message = "A post-commit ICommandScope.OnCompleted callback threw")]
-    private static partial void LogCallbackFailed(ILogger logger, Exception exception);
 }

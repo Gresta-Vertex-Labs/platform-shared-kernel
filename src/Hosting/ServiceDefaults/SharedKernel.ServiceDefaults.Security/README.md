@@ -100,12 +100,21 @@ public sealed class PlaceOrderHandler(IRequestContext caller) : ICommandHandler<
 
   | Inbound `X-Correlation-Id` | Result |
   | --- | --- |
-  | Absent or whitespace | A new id, `CorrelationIds.New()` (EventId 13006) |
+  | Absent or whitespace | A new id, `CorrelationIds.New()` (EventId 13200) |
   | Accepted by `CorrelationIds.IsValid` (≤ 128 characters of `[A-Za-z0-9-_:.]`) | Kept unchanged |
-  | Anything else | A new id; only the rejected value's **length** is logged (EventId 13007), never its content |
+  | Anything else | A new id; only the rejected value's **length** is logged (EventId 13201), never its content |
 
   The id is set as `Activity` baggage (`WellKnownBaggageKeys.CorrelationId`) for log enrichment and forwarded by every
   outbound adapter through `RequestContextPropagation` (REST, gRPC, the message bus, Temporal).
+- **Headers.** The request-context headers are parsed once, through `RequestContextPropagation.ReadHeaders`, and only the
+  correlation id is taken from the result. The tenant, actor id, actor kind and client id they may carry are never
+  applied to `IRequestContext`, a span tag, a log or baggage: an inbound HTTP header is forgeable by any external
+  caller. The caller is whoever the credential says; an anonymous request stays `Anonymous`, never `System`.
+- **Server span.** When something listens to the `Microsoft.AspNetCore` source (the OpenTelemetry ASP.NET Core
+  instrumentation does), the server span gets `correlation.id` (the validated id, never the raw header) and `tenant.id`
+  (the credential-asserted tenant; with `SharedKernel.MultiTenancy` the resolved tenant replaces it, and for an inactive
+  tenant the span keeps the asserted one while the request runs with no tenant). Both tags are written before
+  `UseExceptionHandler()`, so a handled exception cannot remove them. This package starts no span.
 - **Inbound baggage.** `AddSharedKernelRequestContext()` decorates the `DistributedContextPropagator` ASP.NET Core
   hosting reads requests with, so hosting takes no baggage from the request (trace context is read as before).
   `UseSharedKernelRequestContext()` removes any item still on the request's `Activity` before adding the correlation
@@ -157,8 +166,10 @@ whatever this setting says.
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13006 | Debug | Created a correlation id for an inbound request that carried none |
-| 13007 | Warning | Rejected a caller-supplied correlation id of length `{CorrelationIdLength}`; created a new one |
+| 13200 | Debug | Created a correlation id for a request that carried none |
+| 13201 | Warning | Replaced an inbound correlation id of length `{CorrelationIdLength}` that failed validation |
+
+Event ids before this release: 13006 → 13200, 13007 → 13201. The package owns the sub-block 13200-13299 of the ServiceDefaults EventId block (13000-13999).
 
 ## Testing
 

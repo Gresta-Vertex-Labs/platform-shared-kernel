@@ -3,16 +3,12 @@ using SharedKernel.Primitives.Errors;
 namespace SharedKernel.Search.ElasticSearch.Errors;
 
 /// <summary>The ElasticSearch-exclusive <see cref="Error"/> factory, for failure modes with no Meilisearch analogue.</summary>
-public static class ElasticSearchErrors
+internal static class ElasticSearchErrors
 {
-    private const string InvalidCursorCode = "search.elasticsearch.invalid_cursor";
-    private const string CursorExpiredCode = "search.elasticsearch.cursor_expired";
-    private const string AggregationFailedCode = "search.elasticsearch.aggregation_failed";
-    private const string SourceSerializerContextMissingCode = "search.elasticsearch.source_serializer_context_missing";
-
     /// <summary>A <see cref="ElasticSearch.Cursors.SearchCursor"/> token is malformed.</summary>
+    /// <param name="reason">Kernel-authored text only: never the decoder exception message or any part of the token.</param>
     public static Error InvalidCursor(string reason) =>
-        Error.Validation(InvalidCursorCode, $"The search cursor is invalid: {reason}");
+        Error.Validation(ElasticSearchErrorCodes.InvalidCursor, $"The search cursor is invalid: {reason}");
 
     /// <summary>
     /// The point-in-time backing a <see cref="ElasticSearch.Cursors.SearchCursor"/> lapsed. The token
@@ -20,11 +16,13 @@ public static class ElasticSearchErrors
     /// <see cref="ErrorType.Conflict"/>, not a <see cref="ErrorType.Validation"/>.
     /// </summary>
     public static Error CursorExpired(DateTimeOffset expiredAt) =>
-        Error.Conflict(CursorExpiredCode, $"The search cursor's point-in-time expired at {expiredAt:O}.");
+        Error.Conflict(ElasticSearchErrorCodes.CursorExpired, $"The search cursor's point-in-time expired at {expiredAt:O}.");
 
     /// <summary>An aggregation request failed.</summary>
+    /// <param name="aggregationName">The aggregation or index name.</param>
+    /// <param name="reason">Kernel-authored text, never engine, response-body or exception text.</param>
     public static Error AggregationFailed(string aggregationName, string reason) =>
-        Error.Unexpected(AggregationFailedCode, $"Aggregation '{aggregationName}' failed: {reason}");
+        Error.Unexpected(ElasticSearchErrorCodes.AggregationFailed, $"Aggregation '{aggregationName}' failed: {reason}");
 
     /// <summary>
     /// No source-generated <c>JsonSerializerContext</c> was registered via
@@ -33,6 +31,6 @@ public static class ElasticSearchErrors
     /// </summary>
     public static Error SourceSerializerContextMissing(string documentTypeName) =>
         Error.Unexpected(
-            SourceSerializerContextMissingCode,
+            ElasticSearchErrorCodes.SourceSerializerContextMissing,
             $"No JsonSerializerContext was registered via WithSourceSerializerContext(...) for document type '{documentTypeName}'.");
 }

@@ -10,8 +10,8 @@
 
 | Counter | Next free | Note |
 | --- | --- | --- |
-| Next phase id | P-580 | Highest used: P-579 (WO-086) |
-| Next work order | WO-087 | Highest used: WO-086 |
+| Next phase id | P-619 | Highest used: P-618 (WO-087) |
+| Next work order | WO-088 | Highest used: WO-087 |
 
 Phases written by `arch-lead` take the next phase id; a user-directed phase without a work order still takes one, so no id is ever reused.
 
@@ -25,7 +25,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ● | None |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
 | 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ● | None |
-| 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ● | None — never published; first release is P-577 |
+| 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ● | None |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
@@ -50,7 +50,7 @@ Every package ships at one repo-wide version through the release train (`CONTRIB
 
 **Status:** `○` Not started
 **Domain:** cross-domain (every packable project)
-**Depends on:** P-562–P-576, P-579 (all ●)
+**Depends on:** P-562–P-576, P-579 (all ●), P-580–P-618 (WO-087: wire-visible renames land before the first release)
 
 **What is needed**
 

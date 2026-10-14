@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.AI.SemanticKernel.Embeddings;
+using SharedKernel.AI.SemanticKernel.Tests.Support;
 
 namespace SharedKernel.AI.SemanticKernel.Tests.Embeddings;
 
@@ -18,6 +19,7 @@ public sealed class SemanticKernelEmbeddingGeneratorNoIoTests
         modelId: "text-embedding-3-small",
         dimension: 1536,
         maxBatchSize: maxBatchSize,
+        TestMeterFactory.NewTelemetry(),
         NullLogger<SemanticKernelEmbeddingGenerator>.Instance);
 
     [Fact]
@@ -46,17 +48,14 @@ public sealed class SemanticKernelEmbeddingGeneratorNoIoTests
     [Fact]
     public async Task EmbedManyAsync_ValidatedInputs_ReachesClient_ProvingTheGuardStoppedTheRejectedCases()
     {
-        // Companion to the two rejection tests above: the adapter's own catch-all exception handler
-        // maps the null-client dereference into a Result.Failure(CompletionFailed) rather than letting
-        // NullReferenceException propagate — so the proof here is that the FAILURE CODE differs from
-        // the earlier validation-specific codes (invalid_query / batch_size_exceeded), showing the
-        // identical call path genuinely reached the client once every validation passed.
+        // Companion to the two rejection tests above: the identical call path genuinely reaches the client once every
+        // validation passes. The null client then faults with a NullReferenceException, which is a defect and not a
+        // provider fault, so it is not classified: it propagates instead of becoming a soft failure.
         var generator = CreateGenerator();
 
-        var result = await generator.EmbedManyAsync(["hello world"]);
+        var act = () => generator.EmbedManyAsync(["hello world"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("intelligence.completion_failed");
+        await act.Should().ThrowAsync<NullReferenceException>();
     }
 
     [Fact]

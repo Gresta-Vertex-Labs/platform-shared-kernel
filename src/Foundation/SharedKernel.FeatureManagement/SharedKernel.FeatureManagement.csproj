@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\SharedKernel.Core\SharedKernel.Core.csproj" />
     <PackageReference Include="OpenFeature" />
     <PackageReference Include="OpenFeature.Hosting" />
     <PackageReference Include="Microsoft.FeatureManagement" />

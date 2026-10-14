@@ -122,8 +122,8 @@ public sealed class SynchronousAesGcmEncryptionServiceTests
     {
         var service = new SynchronousAesGcmEncryptionService(TestKeys.SingleKeyProvider("short", keyLength));
 
-        Assert.Throws<CryptographicException>(() => service.Encrypt([1], AssociatedData));
-        Assert.Throws<CryptographicException>(() => service.EncryptToString("x", AssociatedData));
+        Assert.Throws<InvalidOperationException>(() => service.Encrypt([1], AssociatedData));
+        Assert.Throws<InvalidOperationException>(() => service.EncryptToString("x", AssociatedData));
     }
 
     [Theory]
@@ -134,7 +134,7 @@ public sealed class SynchronousAesGcmEncryptionServiceTests
         EncryptedPayload payload = new SynchronousAesGcmEncryptionService(TestKeys.SingleKeyProvider("k")).Encrypt([1], AssociatedData);
         var decryptor = new SynchronousAesGcmEncryptionService(TestKeys.SingleKeyProvider("k", keyLength));
 
-        Assert.Throws<CryptographicException>(() => decryptor.Decrypt(payload, AssociatedData));
+        Assert.Throws<InvalidOperationException>(() => decryptor.Decrypt(payload, AssociatedData));
     }
 
     [Fact]

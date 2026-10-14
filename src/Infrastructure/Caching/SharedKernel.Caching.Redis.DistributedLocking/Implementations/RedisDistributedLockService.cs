@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Caching.Redis.DistributedLocking.Diagnostics;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.DistributedLocking.Implementations;
@@ -14,7 +14,7 @@ namespace SharedKernel.Caching.Redis.DistributedLocking.Implementations;
 /// Guarantees assume one authoritative Redis primary. After a failover, a replica that had not yet
 /// received a lock key can grant it again; fencing tokens are what protect the resource then.
 /// </remarks>
-internal sealed partial class RedisDistributedLockService : IDistributedLockService
+internal sealed class RedisDistributedLockService : IDistributedLockService
 {
     private readonly IConnectionMultiplexer _multiplexer;
     private readonly TimeProvider _timeProvider;
@@ -43,7 +43,7 @@ internal sealed partial class RedisDistributedLockService : IDistributedLockServ
         options ??= DistributedLockOptions.Default;
 
         IDatabase database = _multiplexer.GetDatabase();
-        string owner = Guid.NewGuid().ToString("N");
+        string owner = Guid.NewGuid().ToString("D");
         long startedAt = _timeProvider.GetTimestamp();
 
         while (true)
@@ -56,14 +56,14 @@ internal sealed partial class RedisDistributedLockService : IDistributedLockServ
             {
                 var handle = new RedisDistributedLock(database, resource, owner, fencingToken, options.Expiry, requestedAt, _timeProvider, _logger);
                 handle.StartKeepAlive();
-                Log.LockAcquired(_logger, resource, fencingToken);
+                DistributedLockingLog.LockAcquired(_logger, resource, fencingToken);
                 return handle;
             }
 
             TimeSpan remaining = options.WaitTime - _timeProvider.GetElapsedTime(startedAt);
             if (remaining <= TimeSpan.Zero)
             {
-                Log.LockContended(_logger, resource);
+                DistributedLockingLog.LockContended(_logger, resource);
                 return null;
             }
 
@@ -82,16 +82,16 @@ internal sealed partial class RedisDistributedLockService : IDistributedLockServ
         ct.ThrowIfCancellationRequested();
 
         DateTimeOffset requestedAt = _timeProvider.GetUtcNow();
-        string owner = "lease:" + Guid.NewGuid().ToString("N");
+        string owner = "lease:" + Guid.NewGuid().ToString("D");
 
         long fencingToken = await ClaimAsync(_multiplexer.GetDatabase(), resource, owner, duration).ConfigureAwait(false);
         if (fencingToken == 0)
         {
-            Log.LeaseContended(_logger, resource);
+            DistributedLockingLog.LeaseContended(_logger, resource);
             return null;
         }
 
-        Log.LeaseAcquired(_logger, resource, fencingToken, duration);
+        DistributedLockingLog.LeaseAcquired(_logger, resource, fencingToken, duration);
         return new DistributedLease(resource, fencingToken, requestedAt + duration);
     }
 
@@ -110,24 +110,5 @@ internal sealed partial class RedisDistributedLockService : IDistributedLockServ
         {
             throw DistributedLockUnavailableException.ForResource(resource, ex);
         }
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 300, Level = LogLevel.Debug,
-            Message = "Distributed lock acquired on '{Resource}' (fencing token {FencingToken})")]
-        internal static partial void LockAcquired(ILogger logger, string resource, long fencingToken);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 301, Level = LogLevel.Debug,
-            Message = "Distributed lock on '{Resource}' is held by another owner")]
-        internal static partial void LockContended(ILogger logger, string resource);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 302, Level = LogLevel.Debug,
-            Message = "Lease acquired on '{Resource}' for {Duration} (fencing token {FencingToken})")]
-        internal static partial void LeaseAcquired(ILogger logger, string resource, long fencingToken, TimeSpan duration);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 303, Level = LogLevel.Debug,
-            Message = "Lease on '{Resource}' is held by another owner")]
-        internal static partial void LeaseContended(ILogger logger, string resource);
     }
 }

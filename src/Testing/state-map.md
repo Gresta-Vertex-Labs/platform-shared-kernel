@@ -12,7 +12,7 @@ Every package is Testing tier and referenced only by test projects (`TestingNeve
 
 | Package | Tier | Status | Notes |
 | --- | --- | :---: | --- |
-| `SharedKernel.Testing` | Testing | ● | Lightweight packable core (Foundation + Model references only): `FakeClock`, in-memory `ILogger`/`ILoggerFactory`, `TestRequestContext`, fakers, assertions, `CultureScope`, `ActivityRecorder`. |
+| `SharedKernel.Testing` | Testing | ● | Lightweight packable core (Foundation + Model references only): `FakeClock`, in-memory `ILogger`/`ILoggerFactory`, `TestRequestContext`, fakers, assertions, `CultureScope`; `SharedKernel.Testing.Telemetry` (`ActivityRecorder`, `MetricRecorder`, `ActivityAssertions`, `MetricAssertions`); log template, exception, leak, convention, sub-block and category assertions. |
 | `SharedKernel.Testing.Internal` | Testing | ● | Not packable. Testcontainers fixtures (PostgreSQL, Redis, RabbitMQ, MinIO, Meilisearch, Elasticsearch, Qdrant), EF Core/Npgsql/audit helpers, MassTransit `TestHarnessFactory` — this repo's own tests only. |
 | `SharedKernel.AI.Testing` | Testing | ● | In-memory embedding generator, vector collection and kernel doubles. |
 | `SharedKernel.Application.Testing` | Testing | ● | `ApplicationPipelineTestHarness.Build()` and local-seam doubles for the pipeline. |
@@ -36,15 +36,15 @@ Every package is Testing tier and referenced only by test projects (`TestingNeve
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+No open phase keys. Closed keys live in git log: check a new key is unused with git log --oneline -S"SK.NN.Key".
 
 ## Open Work
 
-None — every phase in this domain is complete. (The last rows still marked open — D-217, D-218, S-56, T-91, DO-49, the P-450/WO-068 async `FakeEncryptionKeyProvider` + `FakeEnvelopeEncryptionProvider` work — were verified on disk 2026-09-28: both types, their async members and their tests ship in `SharedKernel.Cryptography.Testing`.)
+None — every phase in this domain is complete.
 
 ## Blocked
 
-None. Every historical "fake designed ahead of its upstream interface" blocker has cleared; each upstream type now exists.
+None.
 
 ## Cross-Domain Dependencies
 

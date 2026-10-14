@@ -25,8 +25,8 @@ THINGS WORTH KNOWING BEFORE YOU ADOPT IT
 - Authorization checks only requests carrying [RequirePermission]: 401 (unauthorized.default) for an unauthenticated caller, 403 (forbidden.insufficient_permission) for a missing permission. Permission names never appear in the message a caller sees.
 - The idempotency fingerprint defaults to a hash of the serialized request, which changes whenever the command type gains a property. Set IIdempotentRequest.Fingerprint on any command you expect to be retried across a deploy, or a legitimate retry comes back as idempotency.key_reused. A key is released on a business failure, so a corrected command can be resubmitted with the same key.
 - Auditing records an attempt that throws as well as one that succeeds or is rejected; AuditEntry.ErrorCode carries the error code in the first case and the exception type name in the second. A failed audit write blocks the commit, except while handling a handler exception, where the original exception still wins.
-- The request-duration histogram is in SECONDS (sharedkernel.application.request.duration, via IMeterFactory). A dashboard built on millisecond values needs retuning; 13.ServiceDefaults' WithApplicationTelemetry() registers matching buckets.
-- EventIds 5100-5199. Spans are named after the request type and carry error.type/error.code on failure.
+- The request-duration histogram is in SECONDS (sharedkernel.application.request.duration, via IMeterFactory). A dashboard built on millisecond values needs retuning; AddServiceDefaults registers matching buckets.
+- EventIds 5100-5199. The request span is named 'application send' and carries error.type/error.code on failure.
 
 See the package README for the pipeline diagram, the failure matrix and the full reference.</PackageReleaseNotes>
     <PackageTags>cqrs;pipeline-behavior;validation;logging;metrics;tracing;transaction;authorization;idempotency;auditing;shared-kernel</PackageTags>
@@ -67,6 +67,8 @@ See the package README for the pipeline diagram, the failure matrix and the full
     <!-- The behaviors are internal (P-563 A5, merged in P-579): the public surface is the registration call, its
          builder and the options. The tests construct them directly. -->
     <InternalsVisibleTo Include="SharedKernel.Application.Pipeline.Tests" />
+    <!-- Pipeline.Caching shares ApplicationTagKeys with the request span and the duration histogram, so one spelling exists. -->
+    <InternalsVisibleTo Include="SharedKernel.Application.Pipeline.Caching" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

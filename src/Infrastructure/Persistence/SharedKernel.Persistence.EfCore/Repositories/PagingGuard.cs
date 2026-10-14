@@ -16,7 +16,7 @@ internal static class PagingGuard
         if (spec.OrderBy is null && spec.OrderByDescending is null)
         {
             throw new InvalidOperationException(
-                $"'{spec.GetType().Name}' has no primary sort, so '{method}' cannot return stable pages. Order by a "
+                $"'{spec.GetType().Name}' has no primary sort, so '{method}' does not return stable pages. Order by a "
                 + "key that ends in a unique column, such as .OrderByDescending(o => o.CreatedOn).ThenBy(o => o.Id).");
         }
     }

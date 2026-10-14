@@ -97,7 +97,7 @@ public sealed class InMemorySemanticKernel : ISemanticKernel
         return Task.FromResult(_responseQueue.TryDequeue(out var result)
             ? SharedKernel.Primitives.Results.Result<CompletionResult>.Success(result)
             : SharedKernel.Primitives.Results.Result<CompletionResult>.Failure(
-                IntelligenceErrors.CompletionFailed(_providerName, "no canned response enqueued")));
+                IntelligenceErrors.CompletionFailed(_providerName, "No canned response is enqueued.")));
     }
 
     /// <inheritdoc />

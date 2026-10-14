@@ -80,7 +80,7 @@ public sealed class AsymmetricSignatureService : IAsymmetricSignatureService
         ArgumentNullException.ThrowIfNull(keyId);
 
         return await _keyProvider.GetSigningKeyAsync(keyId, cancellationToken).ConfigureAwait(false)
-            ?? throw new KeyNotFoundException($"No signing key has the id '{keyId}'.");
+            ?? throw new InvalidOperationException($"No signing key named '{keyId}' is registered. Register it with the signing key provider.");
     }
 
     private static async ValueTask<bool> VerifyHashAsync(

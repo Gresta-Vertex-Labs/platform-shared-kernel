@@ -3,13 +3,18 @@ SharedKernel.Search.Abstractions.Abstractions.ISearchDocument
 SharedKernel.Search.Abstractions.Abstractions.ISearchDocument.DocumentId.get -> string!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.ClearAsync(SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.CountAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchCount>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteAsync(string! documentId, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteByFilterAsync(SharedKernel.Search.Abstractions.Models.SearchFilter! filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteManyAsync(System.Collections.Generic.IReadOnlyCollection<string!>! documentIds, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions! bulkOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteManyAsync(System.Collections.Generic.IReadOnlyCollection<string!>! documentIds, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.EnumerateAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, int batchSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TDocument!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.GetAsync(string! documentId, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TDocument!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexAsync(TDocument! document, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexManyAsync(System.Collections.Generic.IReadOnlyCollection<TDocument!>! documents, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions! bulkOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexManyAsync(System.Collections.Generic.IReadOnlyCollection<TDocument!>! documents, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexName.get -> string!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.SearchAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.WaitUntilSearchableAsync(SharedKernel.Search.Abstractions.Models.SearchWriteReceipt! receipt, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.CutoverAsync(SharedKernel.Search.Abstractions.Models.IndexCutoverRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
@@ -23,10 +28,14 @@ SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.MaxTotal
 SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.ProviderName.get -> string!
 SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.RegisteredIndexes.get -> System.Collections.Generic.IReadOnlyList<string!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.Validate(string! indexName, SharedKernel.Search.Abstractions.Models.SearchRequest! request) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.Name.get -> string!
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Health.ReadinessReport!>!
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SearchIndexReadinessProbe(string! providerName, string! indexName, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexHealth!>!>!>! probe) -> void
 SharedKernel.Search.Abstractions.Constants.SearchWellKnown
+SharedKernel.Search.Abstractions.Errors.SearchErrorCodes
 SharedKernel.Search.Abstractions.Errors.SearchErrors
 SharedKernel.Search.Abstractions.Exceptions.SearchStreamException
-SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.Error.get -> SharedKernel.Primitives.Errors.Error!
 SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.SearchStreamException(SharedKernel.Primitives.Errors.Error! error) -> void
 SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.SearchStreamException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
 SharedKernel.Search.Abstractions.Models.AndFilter
@@ -342,7 +351,20 @@ SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.SearchQueryBuilder(
 SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.SearchingIn(params string![]! fields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
 SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Where(SharedKernel.Search.Abstractions.Models.SearchFilter! filter) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
 SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.WithNumericFacetStats(params string![]! facetFields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Telemetry.SearchInstrumentNames
+SharedKernel.Search.Abstractions.Telemetry.SearchOperations
+SharedKernel.Search.Abstractions.Telemetry.SearchTagKeys
 abstract SharedKernel.Search.Abstractions.Models.SearchFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.DocumentCountKey = "DocumentCount" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.EngineVersionKey = "EngineVersion" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ErrorCodeKey = "ErrorCode" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.IndexAddressableKey = "IndexAddressable" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.IndexKey = "Index" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.PendingWriteCountKey = "PendingWriteCount" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProviderKey = "Provider" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ReachableKey = "Reachable" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SchemaFingerprintKey = "SchemaFingerprint" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SearchableKey = "Searchable" -> string!
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.ActivitySourceName = "SharedKernel.Search" -> string!
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultHighlightPostTag = "</em>" -> string!
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultHighlightPreTag = "<em>" -> string!
@@ -350,15 +372,67 @@ const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultMaxFacet
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultMaxTotalHits = 1000 -> int
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultPageSize = 20 -> int
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultPrimaryKeyField = "documentId" -> string!
-const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DocumentsMetricName = "search.client.documents" -> string!
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.ElasticSearchProviderName = "elasticsearch" -> string!
-const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.IndexTagName = "search.index" -> string!
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.MaxPageSize = 1000 -> int
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.MeilisearchProviderName = "meilisearch" -> string!
 const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.MeterName = "SharedKernel.Search" -> string!
-const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.OperationDurationMetricName = "search.client.operation.duration" -> string!
-const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.OperationTagName = "search.operation" -> string!
-const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.ProviderTagName = "search.provider" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.BulkPartiallyFailed = "search.bulk_partially_failed" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.CutoverFailed = "search.cutover_failed" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.DocumentNotFound = "search.document_not_found" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.EngineFault = "search.engine_fault" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.EngineUnauthorized = "search.engine_unauthorized" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.EngineVersionNotSupported = "search.engine_version_not_supported" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.FacetLimitExceeded = "search.facet_limit_exceeded" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.FieldNotFacetable = "search.field_not_facetable" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.FieldNotFilterable = "search.field_not_filterable" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.FieldNotSearchable = "search.field_not_searchable" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.FieldNotSortable = "search.field_not_sortable" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.IndexAlreadyExists = "search.index_already_exists" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.IndexDefinitionConflict = "search.index_definition_conflict" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.IndexNotFound = "search.index_not_found" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.InvalidDocumentId = "search.invalid_document_id" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.InvalidFilter = "search.invalid_filter" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.InvalidIndexDefinition = "search.invalid_index_definition" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.InvalidRequest = "search.invalid_request" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.NotSupported = "search.not_supported" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.PaginationLimitExceeded = "search.pagination_limit_exceeded" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.ProbeFailed = "search.probe_failed" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.SchemaFingerprintMismatch = "search.schema_fingerprint_mismatch" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.TenantScopeMissing = "search.tenant_scope_missing" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.Timeout = "search.timeout" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.TotalHitsNotExact = "search.total_hits_not_exact" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.Unavailable = "search.unavailable" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.WriteRejected = "search.write_rejected" -> string!
+const SharedKernel.Search.Abstractions.Errors.SearchErrorCodes.WriteTimeout = "search.write_timeout" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchInstrumentNames.Documents = "sharedkernel.search.documents" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchInstrumentNames.OperationDuration = "sharedkernel.search.operation.duration" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Aggregate = "aggregate" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Clear = "clear" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.CloseCursor = "close_cursor" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Count = "count" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Cutover = "cutover" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Delete = "delete" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.DeleteByFilter = "delete_by_filter" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.DeleteIndex = "delete_index" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.DeleteMany = "delete_many" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.EnsureIndex = "ensure_index" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Enumerate = "enumerate" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Get = "get" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Index = "index" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.IndexExists = "index_exists" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.IndexMany = "index_many" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.InstantSearch = "instant_search" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.IssueTenantToken = "issue_tenant_token" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.OpenCursor = "open_cursor" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.ReadCursor = "read_cursor" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Search = "search" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Stream = "stream" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.Suggest = "suggest" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.VerifyIndexes = "verify_indexes" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.WaitUntilSearchable = "wait_until_searchable" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchTagKeys.Index = "search.index" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchTagKeys.Operation = "search.operation" -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchTagKeys.Provider = "search.provider" -> string!
 override SharedKernel.Search.Abstractions.Models.AndFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.AndFilter!
 override SharedKernel.Search.Abstractions.Models.AndFilter.Equals(object? obj) -> bool
 override SharedKernel.Search.Abstractions.Models.AndFilter.GetHashCode() -> int
@@ -448,11 +522,13 @@ override sealed SharedKernel.Search.Abstractions.Models.NotEqualFilter.Equals(Sh
 override sealed SharedKernel.Search.Abstractions.Models.NotFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
 override sealed SharedKernel.Search.Abstractions.Models.OrFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
 override sealed SharedKernel.Search.Abstractions.Models.RangeFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+static SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProbeNameFor(string! providerName, string! indexName) -> string!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.BulkPartiallyFailed(int failedCount, int totalCount) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.CutoverFailed(string! stagingIndexName, string! liveIndexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.DocumentNotFound(string! indexName, string! documentId) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineFault(string! providerName, string! operation, string! detail) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineVersionUnsupported(string! actual, string! supportedRange) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineFault(string! providerName, string! operation, string? engineErrorCode = null) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineUnauthorized(string! indexName, string! operation) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineVersionNotSupported(string! actual, string! supportedRange) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.FacetLimitExceeded(int requested, int ceiling) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.FieldNotFacetable(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.FieldNotFilterable(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
@@ -465,15 +541,14 @@ static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidDocumentId(st
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidFilter(string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidIndexDefinition(string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidSearchRequest(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.NotSupported(string! capability, string! providerName) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.PaginationLimitExceeded(int page, int pageSize, int ceiling, string! providerName) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.ProbeFailed(string! indexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.SchemaFingerprintMismatch(string! indexName, string! expected, string! actual) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.TenantScopeMissing(string! indexName) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.Timeout(string! operation, System.TimeSpan elapsed) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.Timeout(string! operation) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.TotalHitsNotExact() -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unauthorized(string! indexName, string! operation) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unreachable(string! providerName, string! endpoint) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.UnsupportedCapability(string! capability, string! providerName) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unavailable(string! providerName) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.WriteRejected(string! indexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.WriteTimeout(string! indexName, System.TimeSpan elapsed) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Models.AndFilter.operator !=(SharedKernel.Search.Abstractions.Models.AndFilter? left, SharedKernel.Search.Abstractions.Models.AndFilter? right) -> bool
@@ -575,23 +650,4 @@ virtual SharedKernel.Search.Abstractions.Models.SearchFilter.PrintMembers(System
 ~static SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.operator ==(SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>? left, SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>? right) -> bool
 ~static SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.operator !=(SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? left, SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? right) -> bool
 ~static SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.operator ==(SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? left, SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? right) -> bool
-SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.CountAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchCount>!>!
-SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteByFilterAsync(SharedKernel.Search.Abstractions.Models.SearchFilter! filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!>!>!
-SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.EnumerateAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, int batchSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TDocument!>!
-SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.GetAsync(string! documentId, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TDocument!>!>!
-SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.SearchAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!>!>!
-SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe
-SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.Name.get -> string!
-SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Health.ReadinessReport!>!
-SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SearchIndexReadinessProbe(string! providerName, string! indexName, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexHealth!>!>!>! probe) -> void
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.DocumentCountKey = "DocumentCount" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.EngineVersionKey = "EngineVersion" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ErrorCodeKey = "ErrorCode" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.IndexAddressableKey = "IndexAddressable" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.IndexKey = "Index" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.PendingWriteCountKey = "PendingWriteCount" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProviderKey = "Provider" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ReachableKey = "Reachable" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SchemaFingerprintKey = "SchemaFingerprint" -> string!
-const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SearchableKey = "Searchable" -> string!
-static SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProbeNameFor(string! providerName, string! indexName) -> string!
+const SharedKernel.Search.Abstractions.Telemetry.SearchOperations.SearchFacetValues = "search_facet_values" -> string!

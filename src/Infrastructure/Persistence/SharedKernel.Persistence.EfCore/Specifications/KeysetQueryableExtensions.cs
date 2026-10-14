@@ -98,7 +98,7 @@ internal static class KeysetQueryableExtensions
 
         var compareTo = left.Type.GetMethod(nameof(IComparable<int>.CompareTo), [left.Type])
             ?? throw new InvalidOperationException(
-                $"Type '{left.Type.Name}' is not comparable and is not a StronglyTypedId<TValue>; it cannot be "
+                $"Type '{left.Type.Name}' is not comparable and is not a StronglyTypedId<TValue>; it must not be "
                 + "a keyset sort key or identity tiebreak. Nullable keys are not supported.");
 
         var comparison = Expression.Call(left, compareTo, right);

@@ -91,7 +91,22 @@ public sealed class LocalizationCatalogBuilderTests : IDisposable
         FormatException ex = Assert.Throws<FormatException>(
             () => new LocalizationCatalogBuilder().AddJson(Json(json), Turkish));
 
-        Assert.Contains(expected, ex.Message, StringComparison.Ordinal);
+        // A template or JSON syntax problem is reported by the inner exception; the wrapper's own text never repeats it.
+        string described = ex.Message + " " + ex.InnerException?.Message;
+        Assert.Contains(expected, described, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{ "a": "{0}" }""")]
+    [InlineData("""{ "a": "x" """)]
+    public void AddJson_WrapsTheParseFailure_WithoutCopyingItsText(string json)
+    {
+        FormatException ex = Assert.Throws<FormatException>(
+            () => new LocalizationCatalogBuilder().AddJson(Json(json), Turkish));
+
+        Exception inner = Assert.IsAssignableFrom<Exception>(ex.InnerException);
+        Assert.DoesNotContain(inner.Message, ex.Message, StringComparison.Ordinal);
+        Assert.EndsWith(".", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

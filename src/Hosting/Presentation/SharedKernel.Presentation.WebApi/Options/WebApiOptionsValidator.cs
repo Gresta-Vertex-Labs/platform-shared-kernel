@@ -1,8 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.WebApi.Diagnostics;
 
 namespace SharedKernel.Presentation.WebApi;
 
@@ -10,7 +9,7 @@ namespace SharedKernel.Presentation.WebApi;
 /// Validates <see cref="SharedKernelWebApiOptions"/> before the service handles a request, so a misconfiguration
 /// stops the host instead of a request.
 /// </summary>
-internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKernelWebApiOptions>
+internal sealed class WebApiOptionsValidator : IValidateOptions<SharedKernelWebApiOptions>
 {
     internal const string WildcardOrigin = "*";
 
@@ -21,13 +20,13 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKe
     private readonly IHostEnvironment? _environment;
 
     /// <summary>Initializes a new instance of the <see cref="WebApiOptionsValidator"/> class.</summary>
-    /// <param name="logger">The logger; a missing logging registration never prevents validation.</param>
+    /// <param name="logger">The logger.</param>
     /// <param name="environment">
     /// The host environment; without one the environment is treated as production, the strict choice.
     /// </param>
-    public WebApiOptionsValidator(ILogger<WebApiOptionsValidator>? logger = null, IHostEnvironment? environment = null)
+    public WebApiOptionsValidator(ILogger<WebApiOptionsValidator> logger, IHostEnvironment? environment = null)
     {
-        _logger = logger ?? NullLogger<WebApiOptionsValidator>.Instance;
+        _logger = logger;
         _environment = environment;
     }
 
@@ -38,36 +37,43 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKe
 
         List<string> failures = [];
 
-        ValidateCors(options.Cors, failures);
+        var unsafeCors = ValidateCors(options.Cors, failures);
         ValidateSecurityHeaders(options.SecurityHeaders, failures);
         ValidateLimits(options.Limits, failures);
         ValidateProblems(options.Problems, failures);
 
+        if (unsafeCors > 0)
+        {
+            WebApiLog.CorsConfigurationInvalid(_logger, unsafeCors);
+        }
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 
-    private void ValidateCors(WebApiCorsOptions options, List<string> failures)
+    private int ValidateCors(WebApiCorsOptions options, List<string> failures)
     {
         if (options.AllowedOrigins.Any(string.IsNullOrWhiteSpace))
         {
             failures.Add("Cors:AllowedOrigins must not contain an empty entry.");
         }
 
+        var unsafeCount = 0;
+
         var noExplicitOrigin = options.AllowedOrigins.Count == 0
             || options.AllowedOrigins.Any(origin => string.Equals(origin, WildcardOrigin, StringComparison.Ordinal));
 
         if (options.AllowCredentials && noExplicitOrigin)
         {
-            FailCors(
-                failures,
+            unsafeCount++;
+            failures.Add(
                 "Cors:AllowCredentials requires explicit Cors:AllowedOrigins; browsers reject credentials with no origin "
                 + "or with '*'. List the origins, or set AllowCredentials to false.");
         }
 
         if (options.AllowedOrigins.Any(origin => string.Equals(origin?.Trim(), NullOrigin, StringComparison.OrdinalIgnoreCase)))
         {
-            FailCors(
-                failures,
+            unsafeCount++;
+            failures.Add(
                 "Cors:AllowedOrigins must not contain \"null\": sandboxed frames and file:// pages send that origin, so "
                 + "allowing it allows every one of them.");
         }
@@ -76,8 +82,8 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKe
             && _environment?.IsDevelopment() != true
             && options.AllowedOrigins.Any(origin => origin?.Trim().StartsWith(Uri.UriSchemeHttp + Uri.SchemeDelimiter, StringComparison.OrdinalIgnoreCase) == true))
         {
-            FailCors(
-                failures,
+            unsafeCount++;
+            failures.Add(
                 "Cors:AllowCredentials with an http:// origin is allowed only in the Development environment: a page "
                 + "served over plain HTTP can be altered on the network and would call the API with the user's "
                 + "credentials. Use https:// origins.");
@@ -87,6 +93,7 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKe
         {
             failures.Add("Cors:PreflightMaxAge must not be negative.");
         }
+return unsafeCount;
     }
 
     private static void ValidateSecurityHeaders(WebApiSecurityHeadersOptions options, List<string> failures)
@@ -130,20 +137,5 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKe
         {
             failures.Add("Problems:PreconditionFailedErrorCodes must not contain an empty entry.");
         }
-    }
-
-    private void FailCors(List<string> failures, string failure)
-    {
-        Log.CorsConfigurationInvalid(_logger, failure);
-        failures.Add(failure);
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 4,
-            Level = LogLevel.Critical,
-            Message = "CORS settings failed startup validation: {FailureReason}")]
-        public static partial void CorsConfigurationInvalid(ILogger logger, string failureReason);
     }
 }

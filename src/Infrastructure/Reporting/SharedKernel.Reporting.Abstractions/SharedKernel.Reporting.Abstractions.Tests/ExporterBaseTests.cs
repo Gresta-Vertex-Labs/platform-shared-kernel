@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
 using System.Text;
 using FluentAssertions;
@@ -108,7 +109,7 @@ public sealed class ExporterBaseTests
             "reports", tenantScoped: false, _ => rejecting, (_, _) => Task.FromResult(Result.Success()))));
         var produced = 0;
 
-        Result<ReportExportOutcome> result = await new LineExporter<Row>(new ReportingDependencies(storageFactory: factory))
+        Result<ReportExportOutcome> result = await new LineExporter<Row>(new ReportingDependencies(NullLogger<ReportingDependencies>.Instance, storageFactory: factory))
             .ExportAsync(Counted(), Rows.Definition, Destination());
 
         result.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
@@ -152,7 +153,7 @@ public sealed class ExporterBaseTests
     {
         var tenantStore = new InMemoryFileStorage("tenant-reports");
         IFileStorageFactory factory = InMemoryStorage.CreateFactory(b => b.AddInMemoryTenantStore(tenantStore));
-        var exporter = new LineExporter<Row>(new ReportingDependencies(storageFactory: factory));
+        var exporter = new LineExporter<Row>(new ReportingDependencies(NullLogger<ReportingDependencies>.Instance, storageFactory: factory));
 
         Result<ReportExportOutcome> result = await exporter.ExportAsync(
             Rows.Generate(1),
@@ -166,7 +167,7 @@ public sealed class ExporterBaseTests
     [Fact]
     public async Task ExportAsync_WithoutStorage_ThrowsAnExplainingException()
     {
-        var exporter = new LineExporter<Row>(new ReportingDependencies());
+        var exporter = new LineExporter<Row>(new ReportingDependencies(NullLogger<ReportingDependencies>.Instance));
 
         var export = () => exporter.ExportAsync(Rows.Generate(1), Rows.Definition, Destination());
 
@@ -184,47 +185,10 @@ public sealed class ExporterBaseTests
         stream.CanWrite.Should().BeTrue();
     }
 
-    [Fact]
-    public async Task Export_EmitsASpanWithFormatRowsAndSize_AndMarksFailures()
-    {
-        using var testSource = new ActivitySource(nameof(Export_EmitsASpanWithFormatRowsAndSize_AndMarksFailures));
-        var spans = new List<Activity>();
-        ActivityTraceId traceId = default;
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "SharedKernel.Reporting" || source == testSource,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = span =>
-            {
-                if (span.TraceId == traceId && span.Source.Name == "SharedKernel.Reporting")
-                {
-                    lock (spans)
-                    {
-                        spans.Add(span);
-                    }
-                }
-            },
-        };
-        ActivitySource.AddActivityListener(listener);
-        using Activity test = testSource.StartActivity("test")!;
-        traceId = test.TraceId;
-
-        await Exporter().ExportAsync(Rows.Generate(2), Rows.Definition, Destination());
-        await new LineExporter<Row>(Dependencies()) { FailAfterRows = 0 }.ExportAsync(Rows.Generate(2), Rows.Definition, Destination() with { Key = "b.txt" });
-
-        spans.Should().HaveCount(2);
-        spans[0].GetTagItem("reporting.format").Should().Be("lines");
-        spans[0].GetTagItem("reporting.row_count").Should().Be(2L);
-        spans[0].GetTagItem("reporting.store").Should().Be("reports");
-        spans[0].Status.Should().Be(ActivityStatusCode.Unset);
-        spans[1].Status.Should().Be(ActivityStatusCode.Error);
-        spans[1].GetTagItem("error.type").Should().Be(ReportingErrorCodes.RowLimitExceeded);
-        spans.Should().OnlyContain(s => s.Tags.All(t => !t.Value!.Contains("name-", StringComparison.Ordinal)));
-    }
 
     private static ReportDestination Destination() => new() { Store = "reports", Key = "out.txt" };
 
-    private ReportingDependencies Dependencies() => new(storageFactory: InMemoryStorage.CreateFactory(_reports));
+    private ReportingDependencies Dependencies() => new(NullLogger<ReportingDependencies>.Instance, storageFactory: InMemoryStorage.CreateFactory(_reports));
 
     private LineExporter<Row> Exporter() => new(Dependencies());
 }

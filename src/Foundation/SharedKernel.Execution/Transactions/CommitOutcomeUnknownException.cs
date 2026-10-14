@@ -1,3 +1,7 @@
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Internal;
+using SharedKernel.Primitives.Errors;
+
 namespace SharedKernel.Execution.Transactions;
 
 /// <summary>
@@ -16,16 +20,34 @@ namespace SharedKernel.Execution.Transactions;
 /// an error (a deferred constraint, a serialization failure) is not ambiguous — it rolled back — and surfaces as
 /// that error instead.
 /// </para>
+/// <para>
+/// <strong>Classification.</strong> Its <see cref="SharedKernelException.Error"/> has the code
+/// <see cref="ExecutionErrorCodes.CommitOutcomeUnknown"/> and <see cref="ErrorType.Timeout"/> (HTTP 504, gRPC
+/// <c>DeadlineExceeded</c>): "outcome unknown", not "not processed". The original failure is the
+/// <see cref="Exception.InnerException"/> and never part of the message.
+/// </para>
 /// </remarks>
-public sealed class CommitOutcomeUnknownException : Exception
+public sealed class CommitOutcomeUnknownException : SharedKernelException
 {
     /// <summary>Initializes a new instance with the failure raised by the commit.</summary>
     /// <param name="innerException">The exception the commit raised.</param>
     public CommitOutcomeUnknownException(Exception innerException)
-        : base(
-            "The transaction's COMMIT failed without a response from the database, so it is unknown whether the "
-                + "changes were applied. The operation was not retried; re-read the data before repeating it.",
-            innerException)
+        : base(ExecutionErrors.CommitOutcomeUnknown(), innerException)
+    {
+    }
+
+    /// <summary>Initializes a new instance with an explicit error.</summary>
+    /// <param name="error">The error describing the failure.</param>
+    public CommitOutcomeUnknownException(Error error)
+        : base(error)
+    {
+    }
+
+    /// <summary>Initializes a new instance with an explicit error and the failure raised by the commit.</summary>
+    /// <param name="error">The error describing the failure.</param>
+    /// <param name="innerException">The exception the commit raised.</param>
+    public CommitOutcomeUnknownException(Error error, Exception innerException)
+        : base(error, innerException)
     {
     }
 }

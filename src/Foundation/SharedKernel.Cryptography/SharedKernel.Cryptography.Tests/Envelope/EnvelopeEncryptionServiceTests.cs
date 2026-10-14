@@ -142,7 +142,7 @@ public sealed class EnvelopeEncryptionServiceTests
     {
         _provider.DataKeyLength = length;
 
-        await Assert.ThrowsAsync<CryptographicException>(async () => await _service.EncryptAsync(new byte[] { 1 }, AssociatedData));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await _service.EncryptAsync(new byte[] { 1 }, AssociatedData));
     }
 
     [Theory]

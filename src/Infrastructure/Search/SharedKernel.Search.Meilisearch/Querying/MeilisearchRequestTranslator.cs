@@ -189,7 +189,7 @@ internal static class MeilisearchRequestValidator
                 return ValidateFilterFields(not.Operand, indexName, fieldsByName);
             default:
                 throw new NotSupportedException(
-                    $"Unrecognized SearchFilter node type '{filter.GetType()}' — the closed hierarchy has grown a new node.");
+                    $"Search filter node type '{filter.GetType()}' is not recognised, so add its translation to this provider and to the in-memory double.");
         }
     }
 

@@ -104,7 +104,7 @@ public sealed class OrderExportTests
         var result = await new OrderExport(new InMemoryReportExporterFactory())
             .RunAsync("docx", Orders(1), CancellationToken.None);
 
-        Assert.Equal(ReportingErrorCodes.UnsupportedFormat, result.Error.Code);
+        Assert.Equal(ReportingErrorCodes.FormatNotSupported, result.Error.Code);
     }
 
     private static async IAsyncEnumerable<Order> Orders(int count)
@@ -133,8 +133,8 @@ public sealed class OrderExportTests
   (`ExportToStreamAsync`).
 - **Factory.** Supports the formats passed to its constructor, or CSV, Xlsx and PDF when none are. `ParseFormat`
   matches a format name, file extension (with or without the dot) or content type, case-insensitively, and returns
-  `reporting.unsupported_format` otherwise. `GetExporter<TRow>` and `Exporter<TRow>` return the same cached
-  exporter per format and row type; an unsupported format throws `InvalidOperationException`.
+  `reporting.format_not_supported` otherwise. `GetExporter<TRow>` and `Exporter<TRow>` return the same cached
+  exporter per format and row type; an unsupported format throws `InvalidOperationException` ("No report exporter is registered for the format ...").
 - **Converter.** Records each call as an `HtmlConversion` (`Html`, `Options` — `HtmlToPdfOptions.Default` when none
   given — and `Destination`, `null` for streams). `ConvertToStreamAsync` writes `PlaceholderPdf` (a tiny `%PDF-`
   document); `ConvertAsync` returns a `PdfDocumentOutcome` for the destination. `SimulateFailure` returns
@@ -193,7 +193,7 @@ The per-format exporters injected directly (`ICsvReportExporter<T>`, `ISpreadshe
 
 | Code | When |
 | --- | --- |
-| `reporting.unsupported_format` | `ParseFormat` with a format the factory does not support |
+| `reporting.format_not_supported` | `ParseFormat` with a format the factory does not support |
 | `storage.unavailable` | `ExportAsync` with `SimulateFailure` and no `SimulatedError` |
 | `reporting.invalid_destination` | `ExportToStreamAsync` with `SimulateFailure` and no `SimulatedError` |
 | `reporting.converter_unavailable` | The converter with `SimulateFailure` and no `SimulatedError` |

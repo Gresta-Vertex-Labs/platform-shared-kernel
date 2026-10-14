@@ -28,8 +28,8 @@ Reference from any project.
 | [`SharedKernel.Core`](../src/Foundation/SharedKernel.Core/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
 | [`SharedKernel.Cryptography`](../src/Foundation/SharedKernel.Cryptography/README.md) | `src/Foundation` | `SharedKernel.Configuration`, `SharedKernel.Primitives` |
 | [`SharedKernel.DataPrivacy`](../src/Foundation/SharedKernel.DataPrivacy/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
-| [`SharedKernel.Execution`](../src/Foundation/SharedKernel.Execution/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
-| [`SharedKernel.FeatureManagement`](../src/Foundation/SharedKernel.FeatureManagement/README.md) | `src/Foundation` | `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Execution`](../src/Foundation/SharedKernel.Execution/README.md) | `src/Foundation` | `SharedKernel.Core`, `SharedKernel.Primitives` |
+| [`SharedKernel.FeatureManagement`](../src/Foundation/SharedKernel.FeatureManagement/README.md) | `src/Foundation` | `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Localization`](../src/Foundation/SharedKernel.Localization/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
 | [`SharedKernel.Primitives`](../src/Foundation/SharedKernel.Primitives/README.md) | `src/Foundation` | — |
 | [`SharedKernel.Validation`](../src/Foundation/SharedKernel.Validation/README.md) | `src/Foundation` | `SharedKernel.Core`, `SharedKernel.Localization`, `SharedKernel.Primitives` |
@@ -49,17 +49,17 @@ Reference from the Application project.
 
 | Package | Folder | SharedKernel dependencies |
 |---|---|---|
-| [`SharedKernel.AI.Abstractions`](../src/Infrastructure/AI/SharedKernel.AI.Abstractions/README.md) | `src/Infrastructure/AI` | `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.AI.Abstractions`](../src/Infrastructure/AI/SharedKernel.AI.Abstractions/README.md) | `src/Infrastructure/AI` | `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Application`](../src/Application/SharedKernel.Application/README.md) | `src/Application` | `SharedKernel.Caching.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Primitives` |
-| [`SharedKernel.Caching.Abstractions`](../src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Execution` |
-| [`SharedKernel.Idempotency.Abstractions`](../src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) | `src/Infrastructure/Idempotency` | `SharedKernel.Execution` |
+| [`SharedKernel.Caching.Abstractions`](../src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Core`, `SharedKernel.Execution` |
+| [`SharedKernel.Idempotency.Abstractions`](../src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) | `src/Infrastructure/Idempotency` | `SharedKernel.Core`, `SharedKernel.Execution` |
 | [`SharedKernel.Integration.Notifications.Abstractions`](../src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Abstractions/README.md) | `src/Infrastructure/Integration` | `SharedKernel.Configuration`, `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
 | [`SharedKernel.Messaging.Abstractions`](../src/Infrastructure/Messaging/SharedKernel.Messaging.Abstractions/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Contracts`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Persistence.Abstractions`](../src/Infrastructure/Persistence/SharedKernel.Persistence.Abstractions/README.md) | `src/Infrastructure/Persistence` | `SharedKernel.Contracts`, `SharedKernel.Domain`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
-| [`SharedKernel.Reporting.Abstractions`](../src/Infrastructure/Reporting/SharedKernel.Reporting.Abstractions/README.md) | `src/Infrastructure/Reporting` | `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
-| [`SharedKernel.Search.Abstractions`](../src/Infrastructure/Search/SharedKernel.Search.Abstractions/README.md) | `src/Infrastructure/Search` | `SharedKernel.Contracts`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Reporting.Abstractions`](../src/Infrastructure/Reporting/SharedKernel.Reporting.Abstractions/README.md) | `src/Infrastructure/Reporting` | `SharedKernel.Core`, `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
+| [`SharedKernel.Search.Abstractions`](../src/Infrastructure/Search/SharedKernel.Search.Abstractions/README.md) | `src/Infrastructure/Search` | `SharedKernel.Contracts`, `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Security.Abstractions`](../src/Hosting/Security/SharedKernel.Security.Abstractions/README.md) | `src/Hosting/Security` | `SharedKernel.Execution` |
-| [`SharedKernel.Storage.Abstractions`](../src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Storage.Abstractions`](../src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 
 ## Adapter
 
@@ -75,7 +75,7 @@ Reference from the Infrastructure project.
 | [`SharedKernel.Caching.Redis.DistributedLocking`](../src/Infrastructure/Caching/SharedKernel.Caching.Redis.DistributedLocking/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
 | [`SharedKernel.Caching.Redis.HashStore`](../src/Infrastructure/Caching/SharedKernel.Caching.Redis.HashStore/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core` |
 | [`SharedKernel.Caching.Redis.PubSub`](../src/Infrastructure/Caching/SharedKernel.Caching.Redis.PubSub/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
-| [`SharedKernel.Communication`](../src/Infrastructure/Communication/SharedKernel.Communication/README.md) | `src/Infrastructure/Communication` | `SharedKernel.Configuration`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Communication`](../src/Infrastructure/Communication/SharedKernel.Communication/README.md) | `src/Infrastructure/Communication` | `SharedKernel.Configuration`, `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Communication.Grpc`](../src/Infrastructure/Communication/SharedKernel.Communication.Grpc/README.md) | `src/Infrastructure/Communication` | `SharedKernel.Communication`, `SharedKernel.Domain`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Communication.Rest`](../src/Infrastructure/Communication/SharedKernel.Communication.Rest/README.md) | `src/Infrastructure/Communication` | `SharedKernel.Communication`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Cryptography.Argon2`](../src/Foundation/SharedKernel.Cryptography.Argon2/README.md) | `src/Foundation` | `SharedKernel.Configuration`, `SharedKernel.Cryptography` |
@@ -85,11 +85,11 @@ Reference from the Infrastructure project.
 | [`SharedKernel.Integration.Notifications.Email.SendGrid`](../src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Email.SendGrid/README.md) | `src/Infrastructure/Integration` | `SharedKernel.Integration.Notifications.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
 | [`SharedKernel.Integration.Notifications.Sms.Twilio`](../src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Sms.Twilio/README.md) | `src/Infrastructure/Integration` | `SharedKernel.Integration.Notifications.Abstractions`, `SharedKernel.Primitives` |
 | [`SharedKernel.Integration.Webhooks`](../src/Infrastructure/Integration/SharedKernel.Integration.Webhooks/README.md) | `src/Infrastructure/Integration` | `SharedKernel.Configuration`, `SharedKernel.Contracts`, `SharedKernel.Cryptography`, `SharedKernel.Execution`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Primitives` |
-| [`SharedKernel.Messaging.MassTransit`](../src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Compression`, `SharedKernel.Configuration`, `SharedKernel.Contracts`, `SharedKernel.Cryptography`, `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Messaging.Abstractions` |
+| [`SharedKernel.Messaging.MassTransit`](../src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Compression`, `SharedKernel.Configuration`, `SharedKernel.Contracts`, `SharedKernel.Core`, `SharedKernel.Cryptography`, `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Messaging.Abstractions` |
 | [`SharedKernel.Messaging.MassTransit.AzureServiceBus`](../src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Messaging.MassTransit` |
 | [`SharedKernel.Messaging.MassTransit.EfCore`](../src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.EfCore/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Messaging.MassTransit` |
 | [`SharedKernel.Messaging.MassTransit.RabbitMq`](../src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Messaging.MassTransit` |
-| [`SharedKernel.Persistence.Dapper`](../src/Infrastructure/Persistence/SharedKernel.Persistence.Dapper/README.md) | `src/Infrastructure/Persistence` | `SharedKernel.Configuration`, `SharedKernel.Persistence.Npgsql` |
+| [`SharedKernel.Persistence.Dapper`](../src/Infrastructure/Persistence/SharedKernel.Persistence.Dapper/README.md) | `src/Infrastructure/Persistence` | `SharedKernel.Configuration`, `SharedKernel.Core`, `SharedKernel.Persistence.Npgsql` |
 | [`SharedKernel.Persistence.EfCore`](../src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/README.md) | `src/Infrastructure/Persistence` | `SharedKernel.Configuration`, `SharedKernel.Core`, `SharedKernel.Cryptography`, `SharedKernel.Domain`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.Npgsql` |
 | [`SharedKernel.Persistence.EfCore.Auditing`](../src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore.Auditing/README.md) | `src/Infrastructure/Persistence` | `SharedKernel.Configuration`, `SharedKernel.Cryptography`, `SharedKernel.Persistence.EfCore` |
 | [`SharedKernel.Persistence.EfCore.Encryption`](../src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore.Encryption/README.md) | `src/Infrastructure/Persistence` | `SharedKernel.Configuration`, `SharedKernel.Cryptography`, `SharedKernel.Persistence.EfCore` |
@@ -104,7 +104,7 @@ Reference from the Infrastructure project.
 | [`SharedKernel.Storage.Obs`](../src/Infrastructure/Storage/SharedKernel.Storage.Obs/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Storage.S3` |
 | [`SharedKernel.Storage.S3`](../src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Configuration`, `SharedKernel.Storage.Abstractions` |
 | [`SharedKernel.Validation.FluentValidation`](../src/Foundation/SharedKernel.Validation.FluentValidation/README.md) | `src/Foundation` | `SharedKernel.Application`, `SharedKernel.Validation` |
-| [`SharedKernel.Workflows.Temporal`](../src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/README.md) | `src/Infrastructure/Workflows` | `SharedKernel.Application`, `SharedKernel.Configuration`, `SharedKernel.Cryptography`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Workflows.Temporal`](../src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/README.md) | `src/Infrastructure/Workflows` | `SharedKernel.Application`, `SharedKernel.Configuration`, `SharedKernel.Core`, `SharedKernel.Cryptography`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 
 ## Host
 
@@ -117,7 +117,7 @@ Reference from the Api / Worker project.
 | [`SharedKernel.Application.Pipeline.Caching`](../src/Application/SharedKernel.Application.Pipeline.Caching/README.md) | `src/Application` | `SharedKernel.Application.Pipeline`, `SharedKernel.Caching.Abstractions` |
 | [`SharedKernel.MultiTenancy`](../src/Hosting/ServiceDefaults/SharedKernel.MultiTenancy/README.md) | `src/Hosting/ServiceDefaults` | `SharedKernel.Caching.Abstractions`, `SharedKernel.Execution`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Security.Abstractions` |
 | [`SharedKernel.Presentation.Core`](../src/Hosting/Presentation/SharedKernel.Presentation.Core/README.md) | `src/Hosting/Presentation` | `SharedKernel.Execution`, `SharedKernel.Localization`, `SharedKernel.Primitives`, `SharedKernel.Security.Abstractions` |
-| [`SharedKernel.Presentation.GraphQL`](../src/Hosting/Presentation/SharedKernel.Presentation.GraphQL/README.md) | `src/Hosting/Presentation` | `SharedKernel.Contracts`, `SharedKernel.Primitives` |
+| [`SharedKernel.Presentation.GraphQL`](../src/Hosting/Presentation/SharedKernel.Presentation.GraphQL/README.md) | `src/Hosting/Presentation` | `SharedKernel.Contracts`, `SharedKernel.Core`, `SharedKernel.Presentation.Core`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Primitives` |
 | [`SharedKernel.Presentation.Grpc`](../src/Hosting/Presentation/SharedKernel.Presentation.Grpc/README.md) | `src/Hosting/Presentation` | `SharedKernel.Configuration`, `SharedKernel.Core`, `SharedKernel.Presentation.Core` |
 | [`SharedKernel.Presentation.OpenApi`](../src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/README.md) | `src/Hosting/Presentation` | `SharedKernel.Presentation.Core`, `SharedKernel.Presentation.WebApi` |
 | [`SharedKernel.Presentation.SignalR`](../src/Hosting/Presentation/SharedKernel.Presentation.SignalR/README.md) | `src/Hosting/Presentation` | `SharedKernel.Configuration`, `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Presentation.Core`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Primitives` |

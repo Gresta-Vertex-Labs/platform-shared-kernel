@@ -25,7 +25,7 @@ public interface IReportExporterFactory
     /// (<c>".xlsx"</c>) or a content type, ignoring case.
     /// </summary>
     /// <param name="value">The requested format, typically user input.</param>
-    /// <returns>The format, or <see cref="ReportingErrorCodes.UnsupportedFormat"/> listing the supported ones.</returns>
+    /// <returns>The format, or <see cref="ReportingErrorCodes.FormatNotSupported"/> listing the supported ones.</returns>
     Result<ReportFormat> ParseFormat(string? value);
 
     /// <summary>Returns the exporter for <paramref name="format"/>.</summary>

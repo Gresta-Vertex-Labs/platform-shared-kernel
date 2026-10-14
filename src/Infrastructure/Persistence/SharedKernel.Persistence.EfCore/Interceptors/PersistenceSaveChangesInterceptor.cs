@@ -7,8 +7,10 @@ using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Exceptions;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
@@ -316,13 +318,13 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
             // property modified whether or not its value changed.
             var tenantProperty = entry.Property(nameof(IHasTenant.TenantId));
             if (entry.State == EntityState.Modified && !Equals(tenantProperty.CurrentValue, tenantProperty.OriginalValue))
-                throw Reject(entityTypeName, TenantIsolationErrors.TenantChanged(entityTypeName));
+                throw Reject(entityTypeName, EfCoreErrors.TenantChanged(entityTypeName));
 
             if (currentTenantId is null)
-                throw Reject(entityTypeName, TenantIsolationErrors.NoTenant(entityTypeName));
+                throw Reject(entityTypeName, PersistenceSharedErrors.TenantRequired());
 
             if (tenantProperty.CurrentValue is not TenantId tenantId || tenantId != currentTenantId.Value)
-                throw Reject(entityTypeName, TenantIsolationErrors.OtherTenant(entityTypeName));
+                throw Reject(entityTypeName, EfCoreErrors.OtherTenant(entityTypeName));
         }
     }
 

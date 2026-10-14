@@ -837,8 +837,8 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             var configured = _idempotencyOptions ?? new IdempotencyOptions();
             if (configured.LeaseDuration <= TimeSpan.Zero || configured.LeaseDuration >= configured.ExpiryWindow)
                 throw new InvalidOperationException(
-                    $"IdempotencyOptions.LeaseDuration ({configured.LeaseDuration}) must be greater than zero and " +
-                    $"shorter than IdempotencyOptions.ExpiryWindow ({configured.ExpiryWindow}).");
+                    $"IdempotencyOptions.LeaseDuration '{configured.LeaseDuration}' must be greater than zero and " +
+                    $"shorter than IdempotencyOptions.ExpiryWindow '{configured.ExpiryWindow}'.");
         }
 
         // PT-04 / P-346: Guard — WithPayloadTransform() requires the matching 01.Core primitive to
@@ -1011,7 +1011,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     {
         if (_transport is not null)
             throw new InvalidOperationException(
-                $"A transport has already been configured ({_transport.Name}). Only one transport (RabbitMQ or Azure Service Bus) is permitted per bus instance.");
+                $"A transport is already configured ('{_transport.Name}'), and only one transport (RabbitMQ or Azure Service Bus) is permitted per bus instance.");
     }
 
     // The platform pipeline every transport applies last, from inside its bus callback

@@ -23,7 +23,7 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// Increments <see cref="MessagingDiagnostics.FaultCounter"/> unconditionally for every delivered
 /// fault (P-348/WO-054).
 /// </remarks>
-internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer<Fault<TMessage>>
+internal sealed class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer<Fault<TMessage>>
     where TMessage : class
     where TFaultConsumer : class, IFaultConsumer<TMessage>
 {
@@ -75,7 +75,7 @@ internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : I
                 Message: e.Message ?? string.Empty))
             .ToArray();
 
-        LogFaultHandling(faultId, messageTypeName);
+        MessagingLog.FaultHandling(_logger, faultId, messageTypeName);
 
         try
         {
@@ -89,26 +89,8 @@ internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : I
         }
         catch (Exception ex)
         {
-            LogFaultConsumerError(typeof(TFaultConsumer).Name, faultId, ex);
+            MessagingLog.FaultConsumerFailed(_logger, typeof(TFaultConsumer).Name, faultId, ex);
             throw; // Never swallow — activates MassTransit fault tracking.
         }
     }
-
-    /// <summary>
-    /// Logs entry into fault handling for a given faulted message.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 7004,
-        Level = LogLevel.Error,
-        Message = "Handling fault {FaultId} for message type {MessageType}. Invoking fault consumer.")]
-    private partial void LogFaultHandling(Guid faultId, string messageType);
-
-    /// <summary>
-    /// Logs an unhandled exception raised from <see cref="IFaultConsumer{TMessage}.HandleAsync"/>.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 7005,
-        Level = LogLevel.Error,
-        Message = "Unhandled exception in fault consumer {FaultConsumerType} for fault {FaultId}.")]
-    private partial void LogFaultConsumerError(string faultConsumerType, Guid faultId, Exception exception);
 }

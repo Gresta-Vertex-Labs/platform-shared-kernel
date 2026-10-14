@@ -2,8 +2,8 @@
   <PropertyGroup>
     <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>AI / vector-retrieval abstraction contracts for Platform.SharedKernel microservices: IEmbeddingGenerator (text-to-vector, batched, token-usage-accounted), IVectorCollection&lt;TRecord&gt; (upsert/delete/query/get/count/scroll with mandatory model-identity/dimension/tenant-scope validation before any I/O), IVectorCollectionProvisioner (ensure/exists/delete/cutover), VectorCollectionReadinessProbe, IVectorProviderDescriptor and ICompletionProviderDescriptor (ceilings + zero-I/O pre-flight validation), ISemanticKernel (stateless chat/completion orchestration — no tool execution, no retry, no caching), the closed 8-node VectorFilter AST over the closed five-kind VectorValue scalar union, and the Result-valued IntelligenceErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives. Implemented by SharedKernel.AI.Qdrant, SharedKernel.AI.Milvus, and SharedKernel.AI.SemanticKernel.</Description>
-    <PackageTags>ai;vector-database;embeddings;rag;llm;qdrant;milvus;semantic-kernel;shared-kernel</PackageTags>
+    <Description>AI / vector-retrieval abstraction contracts for Platform.SharedKernel microservices: IEmbeddingGenerator (text-to-vector, batched, token-usage-accounted), IVectorCollection&lt;TRecord&gt; (upsert/delete/query/get/count/scroll with mandatory model-identity/dimension/tenant-scope validation before any I/O), IVectorCollectionProvisioner (ensure/exists/delete/cutover), VectorCollectionReadinessProbe, IVectorProviderDescriptor and ICompletionProviderDescriptor (ceilings + zero-I/O pre-flight validation), ISemanticKernel (stateless chat/completion orchestration — no tool execution, no retry, no caching), the closed 8-node VectorFilter AST over the closed five-kind VectorValue scalar union, and the Result-valued IntelligenceErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives, SharedKernel.Execution and SharedKernel.Core (IntelligenceStreamException is a SharedKernelException). Implemented by SharedKernel.AI.Qdrant and SharedKernel.AI.SemanticKernel.</Description>
+    <PackageTags>ai;vector-database;embeddings;rag;llm;qdrant;semantic-kernel;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
@@ -17,5 +17,7 @@
     -->
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <!-- SharedKernelException (IntelligenceStreamException derives it so the edges map the stream error by its ErrorType). Core takes no third-party package. -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
   </ItemGroup>
 </Project>

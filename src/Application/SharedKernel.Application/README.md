@@ -317,7 +317,7 @@ public sealed class TenantRequiredBehavior<TRequest, TResponse>(IRequestContext 
     where TRequest : ICommandBase
 {
     public Task<TResponse> Handle(TRequest request, RequestHandlerContinuation<TResponse> next, CancellationToken ct) =>
-        caller.TenantId is null ? throw new InvalidOperationException("No tenant.") : next();
+        caller.TenantId is null ? throw new InvalidOperationException("The command requires a tenant, but the caller has none.") : next();
 }
 ```
 

@@ -1,3 +1,4 @@
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.Npgsql.Errors;
@@ -27,7 +28,7 @@ public sealed class PostgresErrorClassification
         TableName = tableName;
     }
 
-    /// <summary>Gets the caller-safe error: its <see cref="ErrorType"/> and a <see cref="PostgresClassifiedErrorCodes"/> code.</summary>
+    /// <summary>Gets the caller-safe error: its <see cref="ErrorType"/> and a <see cref="PersistenceErrorCodes.Postgresql"/> code.</summary>
     public Error Error { get; }
 
     /// <summary>Gets the PostgreSQL SQLSTATE that was classified.</summary>

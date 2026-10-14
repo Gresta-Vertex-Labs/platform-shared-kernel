@@ -23,7 +23,7 @@ internal static class JsonTranslationReader
         }
         catch (JsonException ex)
         {
-            throw new FormatException($"{source} is not valid JSON: {ex.Message}", ex);
+            throw new FormatException($"{source} is not valid JSON. Fix the file so it parses as a JSON object.", ex);
         }
 
         using (document)
@@ -80,7 +80,7 @@ internal static class JsonTranslationReader
                     }
                     catch (FormatException ex)
                     {
-                        throw new FormatException($"{source}, '{code}': {ex.Message}", ex);
+                        throw new FormatException($"{source}, '{code}' has an invalid message template. Fix its placeholder syntax.", ex);
                     }
 
                     break;

@@ -1,6 +1,7 @@
+using System.Diagnostics;
 using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Messaging.Abstractions.Errors;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.MassTransit.Diagnostics;
@@ -8,6 +9,7 @@ using SharedKernel.Messaging.MassTransit.Internal;
 using SharedKernel.Messaging.MassTransit.Transports;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
 
 // Alias to disambiguate from MassTransit.PublishContext
 using MessagingPublishContext = SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext;
@@ -22,14 +24,19 @@ internal sealed class MassTransitMessageBus : IMessageBus
     private readonly IReadOnlyDictionary<Type, string> _routeMap;
     private readonly ConventionSendEndpointResolver _resolver;
     private readonly MessagingTransport? _transport;
+    private readonly ILogger<MassTransitMessageBus> _logger;
 
     public MassTransitMessageBus(
         IPublishEndpoint publishEndpoint,
         ISendEndpointProvider sendEndpointProvider,
         IServiceProvider serviceProvider,
         IReadOnlyDictionary<Type, string> routeMap,
-        ConventionSendEndpointResolver resolver)
+        ConventionSendEndpointResolver resolver,
+        ILogger<MassTransitMessageBus> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _logger = logger;
         _publishEndpoint = publishEndpoint;
         _sendEndpointProvider = sendEndpointProvider;
         _routeMap = routeMap;
@@ -69,28 +76,43 @@ internal sealed class MassTransitMessageBus : IMessageBus
     {
         var messageTypeName = typeof(T).Name;
 
-        // P-560: Publish now emits its own span, matching SendAsync. Previously the platform's
-        // most-used dispatch verb was the only one producing no Activity of its own.
-        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("MessageBus.Publish");
+        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("messaging publish", ActivityKind.Producer);
         activity?.SetTag(MessagingTagKeys.MessageType, messageTypeName);
 
-        // HP-03: propagators run first; the explicit callback runs last so its values win.
+        // Propagators run first; the explicit callback runs last so its values win.
         var context = BuildContext(configure);
 
+        // One outcome feeds the span's result and the counter's tag.
+        var outcome = WellKnownOutcomes.Success;
         try
         {
             await _publishEndpoint.Publish(message, pipe => ApplyContext(pipe, context), ct).ConfigureAwait(false);
+            return Result.Success();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            return Classify(ex, messageTypeName, "publish");
+            outcome = activity.RecordException(ex);
+            throw;
         }
+        catch (Exception ex)
+        {
+            // A recognised transport fault becomes a failed Result; anything else is a bug and keeps its
+            // original stack trace through a plain rethrow.
+            if (MessagingExceptionClassifier.TryClassify(ex, messageTypeName, "publish") is { } error)
+            {
+                activity.AddExceptionEvents(ex);
+                outcome = activity.RecordFailure(error);
+                MessagingLog.DispatchFailed(_logger, messageTypeName, "publish", error.Code, ex);
+                return Result.Failure(error);
+            }
 
-        // P-348/WO-054: incremented only after the publish above completes without throwing.
-        MessagingDiagnostics.PublishCounter.Add(
-            1, new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName));
-
-        return Result.Success();
+            outcome = activity.RecordException(ex);
+            throw;
+        }
+        finally
+        {
+            MessagingDiagnostics.PublishCounter.Add(1, MessagingDiagnostics.OutcomeTags(MessagingTagKeys.MessageType, messageTypeName, outcome));
+        }
     }
 
     public async Task<Result> SendAsync<T>(T command, CancellationToken ct) where T : class
@@ -99,7 +121,7 @@ internal sealed class MassTransitMessageBus : IMessageBus
 
         var messageTypeName = typeof(T).Name;
 
-        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("MessageBus.Send");
+        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("messaging send", ActivityKind.Producer);
         activity?.SetTag(MessagingTagKeys.MessageType, messageTypeName);
 
         // Per-type route override first; otherwise the convention-based resolver.
@@ -107,40 +129,48 @@ internal sealed class MassTransitMessageBus : IMessageBus
             ? new Uri($"queue:{route}")
             : _resolver.Resolve<T>();
 
-        // P-341: propagators run before dispatch, identical precedence to PublishAsync. SendAsync
-        // exposes no configure callback, so propagator output alone shapes the context.
+        // Propagators run before dispatch, identical precedence to PublishAsync. SendAsync exposes no configure
+        // callback, so propagator output alone shapes the context.
         var context = BuildContext(configure: null);
 
+        var outcome = WellKnownOutcomes.Success;
         try
         {
             var endpoint = await _sendEndpointProvider.GetSendEndpoint(endpointUri).ConfigureAwait(false);
             await endpoint.Send(command, pipe => ApplyContext(pipe, context), ct).ConfigureAwait(false);
+            return Result.Success();
         }
-        catch (EndpointNotFoundException)
+        catch (EndpointNotFoundException ex)
         {
-            return MessagingErrors.EndpointNotFound(messageTypeName, endpointUri.ToString());
+            var error = MassTransitErrors.EndpointNotFound(messageTypeName, endpointUri.ToString());
+            activity.AddExceptionEvents(ex);
+            outcome = activity.RecordFailure(error);
+            MessagingLog.DispatchFailed(_logger, messageTypeName, "send", error.Code, ex);
+            return Result.Failure(error);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            return Classify(ex, messageTypeName, "send");
+            outcome = activity.RecordException(ex);
+            throw;
         }
+        catch (Exception ex)
+        {
+            if (MessagingExceptionClassifier.TryClassify(ex, messageTypeName, "send") is { } error)
+            {
+                activity.AddExceptionEvents(ex);
+                outcome = activity.RecordFailure(error);
+                MessagingLog.DispatchFailed(_logger, messageTypeName, "send", error.Code, ex);
+                return Result.Failure(error);
+            }
 
-        // P-560: SendAsync previously produced an Activity but no counter, so send traffic was
-        // invisible to the same dashboards that charted publishes.
-        MessagingDiagnostics.SendCounter.Add(
-            1, new KeyValuePair<string, object?>(MessagingTagKeys.MessageType, messageTypeName));
-
-        return Result.Success();
+            outcome = activity.RecordException(ex);
+            throw;
+        }
+        finally
+        {
+            MessagingDiagnostics.SendCounter.Add(1, MessagingDiagnostics.OutcomeTags(MessagingTagKeys.MessageType, messageTypeName, outcome));
+        }
     }
-
-    /// <summary>
-    /// Maps a transport exception onto the <c>messaging.*</c> failure contract, rethrowing anything
-    /// the classifier does not recognise as an operational fault.
-    /// </summary>
-    private static Result Classify(Exception ex, string messageTypeName, string operation)
-        => MessagingExceptionClassifier.TryClassify(ex, messageTypeName, operation) is { } error
-            ? Result.Failure(error)
-            : throw ex;
 
     /// <summary>
     /// Builds the per-dispatch context: every registered propagator in registration order, then the

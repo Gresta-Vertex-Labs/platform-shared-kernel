@@ -51,7 +51,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Abstractions — reference it from your **Application** project |
-| Depends on | `SharedKernel.Primitives` (`Result`, `Error`), `SharedKernel.Execution` (`TenantId`), `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| Depends on | `SharedKernel.Primitives` (`Result`, `Error`), `SharedKernel.Execution` (`TenantId`), `SharedKernel.Core` (`SharedKernelException`), `Microsoft.Extensions.DependencyInjection.Abstractions` |
 | Namespaces | `SharedKernel.Storage` |
 | Provider (host) | `SharedKernel.Storage.S3` or `SharedKernel.Storage.Obs` — reference it from your **Infrastructure** or **Api** project |
 
@@ -396,7 +396,15 @@ that itself carried `If-Match` or `If-None-Match`; the same conflict from a cond
 | `ArgumentOutOfRangeException` | `ByteRange`, `FileDownload` | A negative position, or an end before the start |
 | `InvalidOperationException` | `IFileStorageFactory`, unkeyed `IFileStorage`/`ITenantFileStorage`, `AddStore` | An unknown store, a tenancy mismatch, an ambiguous unkeyed store, a duplicate store name |
 | `OperationCanceledException` | Every async member | Your `CancellationToken` was cancelled |
-| `StorageException` | `ListAsync` | A page could not be read; `Error` carries the storage error |
+| `StorageException` | `ListAsync` | A page could not be read; `Error` carries the storage error. It is a `SharedKernelException`, so an uncaught one is mapped by its `Error.Type` at the HTTP, gRPC and SignalR edges (an outage answers 503, a denied listing 403) instead of 500. A tenant view rewrites its message so `tenants/{id}/` never leaves it |
+
+### Telemetry names
+
+Providers emit one activity source and one meter, both named by `StorageTelemetryNames.SourceName` /
+`MeterName` (`SharedKernel.Storage`), so a dashboard or subscription written against them works for every provider.
+The tag keys are `StorageTagKeys.Store`, `Operation`, `Provider` and `Direction`; the instruments are
+`sharedkernel.storage.operation.duration` (`s`) and `sharedkernel.storage.bytes` (`By`). Object keys are never a tag.
+`AddServiceDefaults()` subscribes to `SharedKernel.*`; the S3 package README lists the spans, tags and outcomes.
 
 ### Health
 

@@ -98,9 +98,20 @@ FluentValidation.
 | Behaviour | Detail |
 | --- | --- |
 | Several validators for one request | Run one after another, never concurrently (a validator may use a scoped `DbContext`) |
-| Each failure | One `Error.Validation(failure.ErrorCode, failure.ErrorMessage)`; `ErrorCodes.Validation.Failed` when a hand-built failure has no code |
+| Each failure | One `Error.Validation(code, failure.ErrorMessage)`; the code is the failure's own when it already follows the kernel format (`order.too_big`, an identifier rule's code), otherwise it comes from the table below |
 | `Error.MessageArguments` | The failure's placeholder values plus `PropertyPath` and `PropertyName`; FluentValidation's `PropertyValue` is always dropped |
 | No validator registered | No errors from the bridge; hand-written `IRequestValidator<T>` implementations run alongside it |
+
+FluentValidation names a failure after the built-in validator that raised it (`NotEmptyValidator`); that name is mapped and not kept:
+
+| FluentValidation validator | Kernel code |
+| --- | --- |
+| `NotEmptyValidator`, `NotNullValidator` | `validation.required` |
+| `MaximumLengthValidator` | `validation.max_length` |
+| `MinimumLengthValidator` | `validation.min_length` |
+| `LengthValidator`, `ExactLengthValidator`, `InclusiveBetweenValidator`, `ExclusiveBetweenValidator`, `GreaterThanValidator`, `GreaterThanOrEqualValidator`, `LessThanValidator`, `LessThanOrEqualValidator` | `validation.out_of_range` |
+| `EmailValidator`, `RegularExpressionValidator`, `CreditCardValidator` | `validation.invalid_format` |
+| Anything else (`Must`, `Equal`, a PascalCase `WithErrorCode("Custom")`, no code) | `validation.failed` |
 
 ### From rule to HTTP response
 

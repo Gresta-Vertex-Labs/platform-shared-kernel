@@ -102,8 +102,7 @@ internal sealed class TenantKeyStore
                 using var dataKey = await _envelope.Value.GenerateDataKeyAsync(cancellationToken).ConfigureAwait(false);
                 if (dataKey.PlaintextKey.Length < SubkeyDerivation.MinimumRootKeyLength)
                 {
-                    throw new CryptographicException(
-                        $"The envelope provider generated a {dataKey.PlaintextKey.Length}-byte data key; tenant data keys need at least {SubkeyDerivation.MinimumRootKeyLength} bytes.");
+                    throw EncryptionErrors.DataKeyInvalid(dataKey.PlaintextKey.Length, SubkeyDerivation.MinimumRootKeyLength);
                 }
 
                 await using var insert = connection.CreateCommand();
@@ -114,7 +113,7 @@ internal sealed class TenantKeyStore
                 AddParameter(insert, "wrapped", dataKey.WrappedKey.ToArray());
                 AddParameter(insert, "master", dataKey.MasterKeyId);
                 if (await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1)
-                    EncryptionLog.TenantKeyCreated(_logger, dataKey.MasterKeyId);
+                    EncryptionLog.TenantKeyCreated(_logger);
 
                 // Re-read: when another process created the key first, its key wins and ours is discarded.
                 row = await ReadAsync(connection, tenantId, cancellationToken).ConfigureAwait(false);
@@ -139,8 +138,8 @@ internal sealed class TenantKeyStore
                     .ConfigureAwait(false);
                 if (unwrapped.IsFailure)
                 {
-                    throw new CryptographicException(
-                        $"The tenant data key could not be unwrapped with master key '{row.Value.MasterKeyId}': {unwrapped.Error.Message}");
+                    // Only the provider's ErrorType survives: its message and the master key id (a vault URL) never reach the text.
+                    throw EncryptionErrors.DataKeyUnwrapFailed(unwrapped.Error.Type);
                 }
 
                 entry = new TenantKeyEntry(tenantId, unwrapped.Value, _timeProvider.GetTimestamp());
@@ -325,7 +324,14 @@ internal static class TenantKeyIds
 {
     private const string Prefix = "skt:";
 
-    public static string For(Guid tenantId) => Prefix + tenantId.ToString("N");
+    public static string For(Guid tenantId)
+    {
+        // The compact 32-digit form is part of the stored key id (a wire format, not an audit column value).
+        Span<char> buffer = stackalloc char[Prefix.Length + 32];
+        Prefix.CopyTo(buffer);
+        tenantId.TryFormat(buffer[Prefix.Length..], out _, "N");
+        return new string(buffer);
+    }
 
     public static bool TryParse(string keyId, out Guid tenantId)
     {

@@ -35,7 +35,7 @@ internal sealed class ReportExporterFactory(IServiceProvider services, IEnumerab
             }
         }
 
-        return ReportingErrors.UnsupportedFormat(value, _formats);
+        return ReportingErrors.FormatNotSupported(value, _formats);
     }
 
     public IReportExporter<TRow> GetExporter<TRow>(ReportFormat format)
@@ -46,8 +46,8 @@ internal sealed class ReportExporterFactory(IServiceProvider services, IEnumerab
         {
             string registered = _formats.Length == 0 ? "none" : string.Join(", ", _formats.Select(f => f.Name));
             throw new InvalidOperationException(
-                $"No report exporter is registered for the format '{format.Name}' (registered: {registered}). "
-                + "Add it on services.AddSharedKernelReporting(), e.g. .AddCsv(configuration), .AddSpreadsheet(configuration) or .AddPdf(configuration).");
+                $"No report exporter is registered for the format '{format.Name}'. Registered formats: {registered}. "
+                + "Call AddCsv, AddSpreadsheet or AddPdf on AddSharedKernelReporting().");
         }
 
         return services.GetRequiredKeyedService<IReportExporter<TRow>>(format.Name);

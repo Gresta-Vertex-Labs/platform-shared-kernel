@@ -339,10 +339,10 @@ Managed failure reasons: `Malformed`, `WrongPrefix`, `UnknownKey`, `Revoked`, `E
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 12200 | Warning | API key rejected (reason: `{Reason}`, key id: `{KeyId}`) |
-| 12201 | Warning | API key rejected: more than one `{HeaderName}` header value |
+| 12200 | Warning | The API key was rejected with rejection code '`{RejectionCode}`' for key id '`{KeyId}`'. |
+| 12201 | Warning | The request carries more than one '`{HeaderName}`' header value. |
 
-The key itself is never logged; the key id is not secret.
+The key itself is never logged; the key id is a format-validated handle, not a secret and not the client id. `{RejectionCode}` is the validator's `FailureReason`, logged only when it is a stable code of at most 64 characters of letters, digits, `_`, `.` or `-`; anything else (an identifier, subject, claim value or multi-line text) is logged as `Rejected`. Return a code, never an identifier.
 
 ## Testing
 
@@ -399,6 +399,8 @@ For endpoints, run the same registration on `WebApplication.CreateBuilder()` wit
 | Expect `[RequireFreshAuthentication]` to pass for a key | Gate key clients on permissions | A key has no authentication time |
 
 ## Design decisions
+
+**Why is the key id logged but the client id not?** The key id is a 16-character handle validated by the key format, so logging it identifies which key failed without exposing a secret or the client; `{RejectionCode}` is a closed code (the managed reasons, or the custom validator's bounded `FailureReason`).
 
 **Why SHA-256 and not a password hash?** A slow hash protects low-entropy secrets. The secret here is 190 random bits;
 guessing is infeasible at any hash speed, and a slow hash would add tens of milliseconds to every request.

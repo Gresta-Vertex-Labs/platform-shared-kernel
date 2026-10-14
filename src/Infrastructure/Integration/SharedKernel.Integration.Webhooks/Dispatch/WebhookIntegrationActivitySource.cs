@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Integration.Webhooks.Dispatch;
 
@@ -6,45 +7,44 @@ namespace SharedKernel.Integration.Webhooks.Dispatch;
 /// Distributed-tracing source for outbound webhook dispatch.
 /// </summary>
 /// <remarks>
-/// <see cref="WebhookDispatcher.DispatchToSubscriptionAsync{TEvent}"/> starts a
-/// <c>"WebhookDispatcher.DispatchToSubscription"</c> span (tags: <see cref="WebhookActivityTags.SubscriptionId"/>,
-/// <see cref="WebhookActivityTags.EventType"/>, <see cref="WebhookActivityTags.Outcome"/>,
-/// <see cref="WebhookActivityTags.AttemptCount"/>); <see cref="WebhookDispatcher.DispatchAsync{TEvent}"/>
-/// starts a parent <c>"WebhookDispatcher.Dispatch"</c> span (tags: <see cref="WebhookActivityTags.SubscriptionCount"/>,
-/// <see cref="WebhookActivityTags.EventType"/>) around the fan-out. Spans never carry
-/// <c>WebhookSubscription.Url</c> or any signing secret as a tag, under any circumstance.
+/// <see cref="WebhookDispatcher.DispatchToSubscriptionAsync{TEvent}"/> starts a <c>webhook deliver</c> span (kind
+/// Client; tags <see cref="WebhookTagKeys.SubscriptionId"/>, <see cref="WebhookTagKeys.EventType"/>,
+/// <see cref="WebhookTagKeys.DeliveryId"/>, <see cref="WebhookTagKeys.AttemptCount"/> and the outcome);
+/// <see cref="WebhookDispatcher.DispatchAsync{TEvent}"/> starts a parent <c>webhook dispatch</c> span (kind Internal;
+/// tags <see cref="WebhookTagKeys.SubscriptionCount"/> and <see cref="WebhookTagKeys.EventType"/>) around the fan-out.
+/// Spans never carry <c>WebhookSubscription.Url</c> or any signing secret as a tag, under any circumstance.
 /// </remarks>
 public static class WebhookIntegrationActivitySource
 {
     /// <summary>The name of the <see cref="ActivitySource"/> used by this package.</summary>
     public const string Name = "SharedKernel.Integration";
 
-    private static readonly ActivitySource Source = new(Name);
+    private static readonly ActivitySource Source = new(Name, TelemetryVersion.Of(typeof(WebhookIntegrationActivitySource).Assembly));
 
-    /// <summary>Starts the parent span wrapping <see cref="WebhookDispatcher.DispatchAsync{TEvent}"/>'s fan-out.</summary>
+    /// <summary>Starts the parent span wrapping the fan-out of <see cref="WebhookDispatcher.DispatchAsync{TEvent}"/>.</summary>
     internal static Activity? StartDispatch(int subscriptionCount, string eventType)
     {
-        var activity = Source.StartActivity("WebhookDispatcher.Dispatch");
-        if (activity is not null)
+        var activity = Source.StartActivity("webhook dispatch", ActivityKind.Internal);
+        if (activity is { IsAllDataRequested: true })
         {
-            activity.SetTag(WebhookActivityTags.SubscriptionCount, subscriptionCount);
-            activity.SetTag(WebhookActivityTags.EventType, eventType);
+            activity.SetTag(WebhookTagKeys.SubscriptionCount, subscriptionCount);
+            activity.SetTag(WebhookTagKeys.EventType, eventType);
         }
 
         return activity;
     }
 
     /// <summary>
-    /// Starts the per-subscription span wrapping
-    /// <see cref="WebhookDispatcher.DispatchToSubscriptionAsync{TEvent}"/>.
+    /// Starts the per-subscription span wrapping <see cref="WebhookDispatcher.DispatchToSubscriptionAsync{TEvent}"/>.
     /// </summary>
-    internal static Activity? StartDispatchToSubscription(Guid subscriptionId, string eventType)
+    internal static Activity? StartDeliver(Guid subscriptionId, Guid deliveryId, string eventType)
     {
-        var activity = Source.StartActivity("WebhookDispatcher.DispatchToSubscription");
-        if (activity is not null)
+        var activity = Source.StartActivity("webhook deliver", ActivityKind.Client);
+        if (activity is { IsAllDataRequested: true })
         {
-            activity.SetTag(WebhookActivityTags.SubscriptionId, subscriptionId);
-            activity.SetTag(WebhookActivityTags.EventType, eventType);
+            activity.SetTag(WebhookTagKeys.SubscriptionId, subscriptionId);
+            activity.SetTag(WebhookTagKeys.DeliveryId, deliveryId);
+            activity.SetTag(WebhookTagKeys.EventType, eventType);
         }
 
         return activity;

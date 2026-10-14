@@ -48,7 +48,7 @@ Usually you reference the Rest or Grpc package instead, which brings this one.
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project |
-| Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Configuration`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience`, `Microsoft.Extensions.ServiceDiscovery`, `Microsoft.Extensions.ServiceDiscovery.Dns` |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Configuration`, `SharedKernel.Core`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience`, `Microsoft.Extensions.ServiceDiscovery`, `Microsoft.Extensions.ServiceDiscovery.Dns` |
 | Namespaces | `SharedKernel.Communication` |
 
 ## Quick start
@@ -114,7 +114,9 @@ flowchart LR
   half-way through a short-lived token), and concurrent callers share one token request. A 401 to a token the handler
   added is answered once with a new token. Secrets are read per request, so a rotated key takes effect without a restart.
 - **Fails closed on credentials.** When no token can be had the request is not sent: it fails with
-  `communication.access_token_unavailable` (`AccessTokenUnavailableException`, an `HttpRequestException`).
+  `communication.access_token_unavailable`. A typed client used through its raw `HttpClient` throws
+  `AccessTokenUnavailableException`, a `SharedKernelException` (not an `HttpRequestException`) whose `Error` is
+  Unavailable, so an inbound edge answers 503; REST still retries, breaks and hedges on it.
 - **TLS files are re-read** whenever the connection handler is rebuilt (every two minutes), so a certificate rotated
   on disk by cert-manager is picked up. Missing files fail startup. A host-name mismatch is never accepted; revocation
   is not checked.
@@ -182,7 +184,9 @@ builder.Services.AddSharedKernelCommunication(builder.Configuration)
 
 `UseAccessTokenProvider<T>()` registers the provider as a keyed singleton for that client and sets
 `Authentication:Mode` to `AccessTokenProvider`. A failed `Result` fails the call with
-`communication.access_token_unavailable`. `AccessToken.ToString()` is redacted, so a token never reaches a log.
+`communication.access_token_unavailable` with a fixed message: the provider's own detail is never copied into the
+`Error`, so log it in the provider. `AccessToken.ToString()` is redacted, so a token never reaches a log.
+A client whose `Authentication:Mode` is `AccessTokenProvider` without a registered provider fails host startup, naming the client, instead of the first request.
 
 ### 4. Present a client certificate to a private-PKI service
 
@@ -250,7 +254,7 @@ and [Grpc](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/mai
 | `IAccessTokenProvider` | Supplies a token per attempt: `GetAccessTokenAsync(AccessTokenContext, CancellationToken)` → `Result<AccessToken>` |
 | `AccessToken(Value, ExpiresAt, Scheme = "Bearer")` | A token; `ToString()` is redacted |
 | `AccessTokenContext(ClientName, ForceRefresh)` | Which client asks, and whether the last token was refused |
-| `AccessTokenUnavailableException` | Thrown into the HTTP pipeline when no token could be had; carries `ClientName` and `Error` |
+| `AccessTokenUnavailableException` | A `SharedKernelException` thrown into the HTTP pipeline when no token could be had; carries `Error` and `ClientName` (null when built from an `Error` alone) |
 | `CommunicationOptions`, `CommunicationClientOptions`, `ClientAuthenticationOptions`, `ClientTlsOptions` | The bound options |
 
 ### Errors
@@ -259,27 +263,30 @@ and [Grpc](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/mai
 
 | Code | Type | When |
 | --- | --- | --- |
-| `communication.unreachable` | Unavailable | No response: refused, reset, unresolvable, TLS failed |
+| `communication.unavailable` | Unavailable | No response: refused, reset, unresolvable, TLS failed |
 | `communication.timeout` | Timeout | An attempt, or the whole call with its retries, ran out of time |
 | `communication.circuit_open` | Unavailable | Refused without being sent while the circuit breaker is open |
 | `communication.access_token_unavailable` | Unavailable | No access token; the request was not sent |
 | `communication.empty_body` | Unexpected | A success response with no body where one was expected |
 | `communication.invalid_body` | Unexpected | A success body that is not valid JSON for the expected type |
+| `communication.grpc.invalid_money` | Validation | A `google.type.Money` message whose `units` and `nanos` break the message's rules (from `SharedKernel.Communication.Grpc`) |
 
 A failure the called service reported keeps the service's own code; one without a code becomes `http.{status}` or
-`grpc.{status}`.
+`grpc.{status}` (`CommunicationErrorCodes.ForHttpStatus(int)` and the nested `CommunicationErrorCodes.GrpcStatus` constants name them; they mirror the names of the server side and keep their values).
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 11000 | Debug | Acquired an access token from `{TokenEndpoint}` for client id `{ClientId}`, valid for `{Lifetime}` |
-| 11001 | Warning | The token endpoint refused the client (`{StatusCode}`, OAuth error `{OAuthError}`) |
-| 11002 | Warning | The token endpoint could not be reached |
-| 11003 | Warning | Client `{ClientName}` has no access token (`{ErrorCode}`); the request was not sent |
-| 11004 | Debug | Client `{ClientName}` was answered 401; sending once more with a new token |
+| 11000 | Debug | Acquired an access token for client `'{ClientName}'` that is valid for `{LifetimeSeconds}` seconds |
+| 11001 | Warning | The token endpoint refused client `'{ClientName}'` with status `{StatusCode}` and OAuth error `'{OAuthError}'` |
+| 11002 | Warning | The token endpoint could not be reached for client `'{ClientName}'` (the exception is logged) |
+| 11003 | Warning | Client `'{ClientName}'` has no access token, so the request was not sent and failed as `{ErrorType}` with code `'{ErrorCode}'` |
+| 11004 | Debug | Client `'{ClientName}'` was answered with 401, so the request is sent once more with a new access token |
 
-Tokens and secrets are never logged. Outbound spans and resilience metrics come from `WithCommunicationTelemetry()` in
+Sub-block 11000–11099 belongs to this package; 11100–11199 to `SharedKernel.Communication.Grpc` and 11200–11299 to `SharedKernel.Communication.Rest`; 11300–11399 is retired. Loggers use the kernel type as the category (`ILogger<ClientAuthenticationHandler>`), so a log filter keys on that type name.
+
+Tokens, secrets, the token endpoint URL and the OAuth client id are never logged or put into an `Error`: clients are named by their kernel client name, and the endpoint's `error` is reduced to the RFC 6749 section 5.2 values (`invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`), anything else being `unrecognized`. Outbound spans and resilience metrics come from `WithCommunicationTelemetry()` in
 [`SharedKernel.ServiceDefaults`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md).
 
 ## Testing

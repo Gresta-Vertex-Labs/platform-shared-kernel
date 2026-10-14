@@ -43,7 +43,7 @@ public sealed class DefinitionTests
     {
         var build = () => ReportDefinition.For<Row>().Build();
 
-        build.Should().Throw<InvalidOperationException>().WithMessage("*at least one column*");
+        build.Should().Throw<InvalidReportDefinitionException>().WithMessage("*at least one column*");
     }
 
     [Theory]

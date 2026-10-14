@@ -24,7 +24,13 @@ internal static class RestResilience
                 // The strategy needs at least one attempt configured; it never handles anything instead.
                 o.Retry.ShouldHandle = static _ => ValueTask.FromResult(false);
             }
-            else if (!options.RetriesNonIdempotentMethods)
+            else
+            {
+                var retryShouldHandle = o.Retry.ShouldHandle;
+                o.Retry.ShouldHandle = async args => IsTokenFailure(args.Outcome) || await retryShouldHandle(args).ConfigureAwait(false);
+            }
+
+            if (options.Retry.MaxRetryAttempts != 0 && !options.RetriesNonIdempotentMethods)
             {
                 o.Retry.DisableFor(HttpMethod.Post, HttpMethod.Patch);
             }
@@ -41,6 +47,9 @@ internal static class RestResilience
             o.Endpoint.Timeout.Timeout = options.AttemptTimeout;
             o.Hedging.MaxHedgedAttempts = options.Hedging.MaxHedgedAttempts;
             o.Hedging.Delay = options.Hedging.Delay;
+
+            var hedgingHandles = o.Hedging.ShouldHandle;
+            o.Hedging.ShouldHandle = async args => IsTokenFailure(args.Outcome) || await hedgingHandles(args).ConfigureAwait(false);
 
             if (!options.RetriesNonIdempotentMethods)
             {
@@ -66,6 +75,9 @@ internal static class RestResilience
             breaker.MinimumThroughput = options.CircuitBreaker.MinimumThroughput;
             breaker.SamplingDuration = options.CircuitBreaker.SamplingDuration;
             breaker.BreakDuration = options.CircuitBreaker.BreakDuration;
+
+            var breakerHandles = breaker.ShouldHandle;
+            breaker.ShouldHandle = async args => IsTokenFailure(args.Outcome) || await breakerHandles(args).ConfigureAwait(false);
             return;
         }
 
@@ -73,6 +85,13 @@ internal static class RestResilience
         breaker.ShouldHandle = static _ => ValueTask.FromResult(false);
         breaker.SamplingDuration = TimeSpan.FromTicks(Math.Max(breaker.SamplingDuration.Ticks, options.AttemptTimeout.Ticks * 2));
     }
+
+    /// <summary>
+    /// A token failure is an <see cref="AccessTokenUnavailableException"/> thrown before anything is sent. It is not an
+    /// <see cref="HttpRequestException"/>, so the standard predicates would pass it by; retry, breaker and hedging
+    /// still treat it as the transient failure it is (repeating it has no side effect).
+    /// </summary>
+    private static bool IsTokenFailure<T>(Outcome<T> outcome) => outcome.Exception is AccessTokenUnavailableException;
 
     internal static bool IsNonIdempotent(HttpMethod? method) =>
         method is not null && (method == HttpMethod.Post || method == HttpMethod.Patch);

@@ -62,37 +62,19 @@ internal static class ProblemFactory
         var problem = new ProblemDetails { Status = statusCode, Detail = detail };
         problem.Extensions[ProblemDetailsExtensionNames.ErrorCode] = code;
 
-        // Constructing the framework's problem result applies its defaults to this instance: the reason phrase as
-        // title and the RFC section as type, exactly as every IProblemDetailsService writer would.
-        _ = TypedResults.Problem(problem);
+        // The framework's reason phrase as title and RFC section as type, exactly as every IProblemDetailsService
+        // writer would.
+        ProblemDefaults.Apply(problem);
 
         ProblemDetailsCustomizer.Apply(httpContext, problem);
         return problem;
     }
 
-    /// <summary>
-    /// Adds <c>errors</c> and <c>errorCodes</c>: both keyed by each error's field path (its
-    /// <see cref="ErrorArgumentNames.PropertyPath"/> argument) or, when it names no field, by its code, in the order
-    /// the keys first appear. <c>errorCodes[key][i]</c> is the code of the error whose message is
-    /// <c>errors[key][i]</c>; each message is shown and translated on its own.
-    /// </summary>
     private static void AddFieldErrors(ProblemDetails problem, IReadOnlyList<Error> errors, HttpContext httpContext)
     {
-        var groups = errors.GroupBy(KeyOf, StringComparer.Ordinal).ToArray();
+        var groups = FieldErrorGroups.Create(errors, httpContext);
 
-        problem.Extensions[ProblemDetailsExtensionNames.Errors] = groups.ToDictionary(
-            group => group.Key,
-            group => group.Select(error => ErrorPresentation.GetClientMessage(error, httpContext)).ToArray(),
-            StringComparer.Ordinal);
-
-        problem.Extensions[ProblemDetailsExtensionNames.ErrorCodes] = groups.ToDictionary(
-            group => group.Key,
-            group => group.Select(error => error.Code).ToArray(),
-            StringComparer.Ordinal);
+        problem.Extensions[ProblemDetailsExtensionNames.Errors] = groups.Errors;
+        problem.Extensions[ProblemDetailsExtensionNames.ErrorCodes] = groups.ErrorCodes;
     }
-
-    private static string KeyOf(Error error) =>
-        error.MessageArguments.TryGetValue(ErrorArgumentNames.PropertyPath, out var path) && path is string { Length: > 0 } field
-            ? field
-            : error.Code;
 }

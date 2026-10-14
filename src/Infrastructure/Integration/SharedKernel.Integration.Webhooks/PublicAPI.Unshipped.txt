@@ -1,0 +1,157 @@
+#nullable enable
+SharedKernel.Integration.Webhooks.Dispatch.IWebhookDispatcher
+SharedKernel.Integration.Webhooks.Dispatch.IWebhookDispatcher.DispatchAsync<TEvent>(TEvent integrationEvent, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!>!
+SharedKernel.Integration.Webhooks.Dispatch.IWebhookDispatcher.DispatchToSubscriptionAsync<TEvent>(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, TEvent integrationEvent, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!
+SharedKernel.Integration.Webhooks.Dispatch.IWebhookDispatcher.SendTestDeliveryAsync(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!
+SharedKernel.Integration.Webhooks.Dispatch.IWebhookUrlValidator
+SharedKernel.Integration.Webhooks.Dispatch.IWebhookUrlValidator.ValidateAsync(System.Uri! url, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Integration.Webhooks.Dispatch.PrivateNetworkWebhookUrlValidator
+SharedKernel.Integration.Webhooks.Dispatch.PrivateNetworkWebhookUrlValidator.PrivateNetworkWebhookUrlValidator(Microsoft.Extensions.Options.IOptions<SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions!>! options) -> void
+SharedKernel.Integration.Webhooks.Dispatch.PrivateNetworkWebhookUrlValidator.ValidateAsync(System.Uri! url, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.<Clone>$() -> SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.Attempts.get -> int
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.DeliveryId.get -> System.Guid
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.Equals(SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult? other) -> bool
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.Error.get -> SharedKernel.Primitives.Errors.Error?
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.IsSuccess.get -> bool
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.StatusCode.get -> int?
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.SubscriptionId.get -> System.Guid
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.WebhookDeliveryResult(System.Guid subscriptionId, System.Guid deliveryId, bool isSuccess, int? statusCode, int attempts, SharedKernel.Primitives.Errors.Error? error) -> void
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDispatcher
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDispatcher.DispatchAsync<TEvent>(TEvent integrationEvent, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!>!
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDispatcher.DispatchToSubscriptionAsync<TEvent>(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, TEvent integrationEvent, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDispatcher.SendTestDeliveryAsync(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!
+SharedKernel.Integration.Webhooks.Dispatch.WebhookDispatcher.WebhookDispatcher(SharedKernel.Integration.Webhooks.Subscriptions.IWebhookSubscriptionStore! subscriptionStore, System.Net.Http.IHttpClientFactory! httpClientFactory, SharedKernel.Integration.Webhooks.Signing.WebhookSignatureProvider! signatureProvider, SharedKernel.Integration.Webhooks.Dispatch.IWebhookUrlValidator! urlValidator, SharedKernel.Messaging.Abstractions.EventPublisher.IEventPublisher! eventPublisher, System.Collections.Generic.IEnumerable<SharedKernel.Integration.Webhooks.Observability.IWebhookDeliveryObserver!>! observers, Microsoft.Extensions.Options.IOptions<SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions!>! options, System.IServiceProvider! serviceProvider, SharedKernel.Integration.Webhooks.Dispatch.WebhookMetrics! metrics, SharedKernel.Primitives.Clocks.IClock! clock, Microsoft.Extensions.Logging.ILogger<SharedKernel.Integration.Webhooks.Dispatch.WebhookDispatcher!>! logger) -> void
+SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes
+SharedKernel.Integration.Webhooks.Dispatch.WebhookIntegrationActivitySource
+SharedKernel.Integration.Webhooks.Dispatch.WebhookMetrics
+SharedKernel.Integration.Webhooks.Dispatch.WebhookMetrics.RecordDelivery(string! eventType, string! outcome, long startTimestamp) -> void
+SharedKernel.Integration.Webhooks.Dispatch.WebhookMetrics.WebhookMetrics(System.Diagnostics.Metrics.IMeterFactory! meterFactory) -> void
+SharedKernel.Integration.Webhooks.Dispatch.WebhookTagKeys
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.<Clone>$() -> SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent!
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.Attempts.get -> int
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.Attempts.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.Deconstruct(out System.Guid EventId, out System.DateTimeOffset OccurredOn, out System.Guid SubscriptionId, out string! EventType, out int Attempts, out string? LastErrorCode) -> void
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.Equals(SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent? other) -> bool
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.EventId.get -> System.Guid
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.EventId.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.EventType.get -> string!
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.EventType.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.LastErrorCode.get -> string?
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.LastErrorCode.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.OccurredOn.get -> System.DateTimeOffset
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.OccurredOn.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.SubscriptionId.get -> System.Guid
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.SubscriptionId.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.WebhookDeliveryExhaustedEvent(System.Guid EventId, System.DateTimeOffset OccurredOn, System.Guid SubscriptionId, string! EventType, int Attempts, string? LastErrorCode) -> void
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.<Clone>$() -> SharedKernel.Integration.Webhooks.Events.WebhookPingEvent!
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.Deconstruct(out System.Guid EventId, out System.DateTimeOffset OccurredOn) -> void
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.Equals(SharedKernel.Integration.Webhooks.Events.WebhookPingEvent? other) -> bool
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.EventId.get -> System.Guid
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.EventId.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.OccurredOn.get -> System.DateTimeOffset
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.OccurredOn.init -> void
+SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.WebhookPingEvent(System.Guid EventId, System.DateTimeOffset OccurredOn) -> void
+SharedKernel.Integration.Webhooks.Extensions.ServiceCollectionExtensions
+SharedKernel.Integration.Webhooks.Observability.IWebhookDeliveryObserver
+SharedKernel.Integration.Webhooks.Observability.IWebhookDeliveryObserver.OnAttemptAsync(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, int attemptNumber, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Integration.Webhooks.Observability.IWebhookDeliveryObserver.OnCompletedAsync(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult! result, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.AllowPrivateNetworkTargets.get -> bool
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.AllowPrivateNetworkTargets.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.BaseBackoffDelay.get -> System.TimeSpan
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.BaseBackoffDelay.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.EncryptPayload.get -> bool
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.EncryptPayload.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.MaxAttempts.get -> int
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.MaxAttempts.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.MaxBackoffDelay.get -> System.TimeSpan
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.MaxBackoffDelay.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.MaxConcurrentDeliveries.get -> int
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.MaxConcurrentDeliveries.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.RequestTimeout.get -> System.TimeSpan
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.RequestTimeout.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.SignatureTolerance.get -> System.TimeSpan
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.SignatureTolerance.set -> void
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions.WebhookDeliveryOptions() -> void
+SharedKernel.Integration.Webhooks.Signing.WebhookPayloadAssociatedData
+SharedKernel.Integration.Webhooks.Signing.WebhookSignatureHeaders
+SharedKernel.Integration.Webhooks.Signing.WebhookSignatureProvider
+SharedKernel.Integration.Webhooks.Signing.WebhookSignatureProvider.Sign(string! payloadJson, string! secret, System.DateTimeOffset timestamp) -> string!
+SharedKernel.Integration.Webhooks.Signing.WebhookSignatureProvider.WebhookSignatureProvider() -> void
+SharedKernel.Integration.Webhooks.Signing.WebhookSignatureVerifier
+SharedKernel.Integration.Webhooks.Subscriptions.IWebhookSubscriptionStore
+SharedKernel.Integration.Webhooks.Subscriptions.IWebhookSubscriptionStore.GetActiveSubscriptionsAsync(string! eventType, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription!>!>!
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.<Clone>$() -> SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription!
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Deconstruct(out System.Guid SubscriptionId, out System.Uri! Url, out System.Collections.Generic.IReadOnlyList<string!>! Secrets, out System.Collections.Generic.IReadOnlyList<string!>! EventTypes, out bool IsActive, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>? Headers) -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Equals(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription? other) -> bool
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.EventTypes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.EventTypes.init -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Headers.init -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.IsActive.get -> bool
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.IsActive.init -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Secret.get -> string!
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Secrets.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Secrets.init -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.SubscriptionId.get -> System.Guid
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.SubscriptionId.init -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Url.get -> System.Uri!
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Url.init -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.WebhookSubscription(System.Guid SubscriptionId, System.Uri! Url, System.Collections.Generic.IReadOnlyList<string!>! Secrets, System.Collections.Generic.IReadOnlyList<string!>! EventTypes, bool IsActive, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? Headers = null) -> void
+SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.WebhookSubscription(System.Guid subscriptionId, System.Uri! url, string! secret, System.Collections.Generic.IReadOnlyList<string!>! eventTypes, bool isActive) -> void
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.DeliveryFaulted = "integration.webhook.delivery_faulted" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.EndpointRejected = "integration.webhook.endpoint_rejected" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.EndpointUnavailable = "integration.webhook.endpoint_unavailable" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.HeaderCollision = "integration.webhook.header_collision" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.SecretsMissing = "integration.webhook.secrets_missing" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.TargetRejected = "integration.webhook.target_rejected" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.Timeout = "integration.webhook.timeout" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookErrorCodes.Unavailable = "integration.webhook.unavailable" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookIntegrationActivitySource.Name = "SharedKernel.Integration" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookMetrics.DeliveriesInstrumentName = "sharedkernel.integration.webhook.deliveries" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookMetrics.DeliveryDurationInstrumentName = "sharedkernel.integration.webhook.delivery.duration" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookMetrics.MeterName = "SharedKernel.Integration" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookTagKeys.AttemptCount = "webhook.attempt_count" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookTagKeys.DeliveryId = "webhook.delivery_id" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookTagKeys.EventType = "webhook.event_type" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookTagKeys.SubscriptionCount = "webhook.subscription_count" -> string!
+const SharedKernel.Integration.Webhooks.Dispatch.WebhookTagKeys.SubscriptionId = "webhook.subscription_id" -> string!
+const SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.EventName = "sharedkernel.webhooks.delivery-exhausted" -> string!
+const SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.EventName = "sharedkernel.webhooks.ping" -> string!
+const SharedKernel.Integration.Webhooks.Signing.WebhookSignatureHeaders.DeliveryIdHeaderName = "X-Webhook-Delivery-Id" -> string!
+const SharedKernel.Integration.Webhooks.Signing.WebhookSignatureHeaders.SignatureHeaderName = "X-Webhook-Signature" -> string!
+const SharedKernel.Integration.Webhooks.Signing.WebhookSignatureHeaders.TimestampHeaderName = "X-Webhook-Timestamp" -> string!
+override SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.Equals(object? obj) -> bool
+override SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.GetHashCode() -> int
+override SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.ToString() -> string!
+override SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.Equals(object? obj) -> bool
+override SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.GetHashCode() -> int
+override SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.ToString() -> string!
+override SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.Equals(object? obj) -> bool
+override SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.GetHashCode() -> int
+override SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.ToString() -> string!
+override SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.Equals(object? obj) -> bool
+override SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.GetHashCode() -> int
+override SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.ToString() -> string!
+static SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.Failed(System.Guid subscriptionId, System.Guid deliveryId, SharedKernel.Primitives.Errors.Error! error, int? statusCode = null, int attempts = 0) -> SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!
+static SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.Succeeded(System.Guid subscriptionId, System.Guid deliveryId, int statusCode, int attempts) -> SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!
+static SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.operator !=(SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult? left, SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult? right) -> bool
+static SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult.operator ==(SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult? left, SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult? right) -> bool
+static SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.operator !=(SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent? left, SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent? right) -> bool
+static SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent.operator ==(SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent? left, SharedKernel.Integration.Webhooks.Events.WebhookDeliveryExhaustedEvent? right) -> bool
+static SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.operator !=(SharedKernel.Integration.Webhooks.Events.WebhookPingEvent? left, SharedKernel.Integration.Webhooks.Events.WebhookPingEvent? right) -> bool
+static SharedKernel.Integration.Webhooks.Events.WebhookPingEvent.operator ==(SharedKernel.Integration.Webhooks.Events.WebhookPingEvent? left, SharedKernel.Integration.Webhooks.Events.WebhookPingEvent? right) -> bool
+static SharedKernel.Integration.Webhooks.Extensions.ServiceCollectionExtensions.AddSharedKernelWebhooks(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Integration.Webhooks.Extensions.ServiceCollectionExtensions.WithDeliveryObserver<TObserver>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Integration.Webhooks.Extensions.ServiceCollectionExtensions.WithUrlValidator<TValidator>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Integration.Webhooks.Signing.WebhookPayloadAssociatedData.Build(System.Guid subscriptionId, System.Guid deliveryId) -> byte[]!
+static SharedKernel.Integration.Webhooks.Signing.WebhookSignatureVerifier.Verify(string? payloadJson, string? timestampHeaderValue, string? signatureHeaderValue, System.Collections.Generic.IReadOnlyList<string!>? secretCandidates, System.TimeSpan? tolerance = null) -> bool
+static SharedKernel.Integration.Webhooks.Signing.WebhookSignatureVerifier.Verify(string? payloadJson, string? timestampHeaderValue, string? signatureHeaderValue, string? secret, System.TimeSpan? tolerance = null) -> bool
+static SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.operator !=(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription? left, SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription? right) -> bool
+static SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription.operator ==(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription? left, SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription? right) -> bool

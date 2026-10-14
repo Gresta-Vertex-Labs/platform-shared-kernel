@@ -1,6 +1,10 @@
+using System.Diagnostics;
 using MassTransit;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Messaging.MassTransit.Diagnostics;
 using SharedKernel.Messaging.MassTransit.Logging;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
@@ -22,7 +26,7 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// will not be applied if <c>AddConsumer</c> is used.
 /// </para>
 /// </remarks>
-public abstract partial class BatchConsumerBase<TMessage> : IConsumer<Batch<TMessage>>
+public abstract class BatchConsumerBase<TMessage> : IConsumer<Batch<TMessage>>
     where TMessage : class
 {
     /// <summary>
@@ -36,35 +40,62 @@ public abstract partial class BatchConsumerBase<TMessage> : IConsumer<Batch<TMes
     /// <param name="logger">The logger for this batch consumer type.</param>
     protected BatchConsumerBase(ILogger logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
         Logger = logger;
     }
 
     /// <summary>
-    /// MassTransit entry point for batch delivery. Logs batch entry, forwards to
-    /// <see cref="ConsumeAsync"/>, and rethrows any unhandled exception after structured logging.
+    /// MassTransit entry point for batch delivery. Starts a <c>messaging consume_batch</c> span, counts the batch
+    /// (its size, tagged with the outcome) and times it in seconds, forwards to <see cref="ConsumeAsync"/>, and
+    /// rethrows any unhandled exception after structured logging.
     /// Do not override — override <see cref="ConsumeAsync"/> instead.
     /// </summary>
     /// <param name="context">The MassTransit batch consume context.</param>
     public async Task Consume(ConsumeContext<Batch<TMessage>> context)
     {
         var messages = context.Message.Select(c => c.Message).ToList().AsReadOnly();
+        var messageTypeName = typeof(TMessage).Name;
+
+        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("messaging consume_batch", ActivityKind.Consumer);
+        activity?.SetTag(MessagingTagKeys.MessageType, messageTypeName);
+        activity?.SetTag(MessagingTagKeys.BatchMessageCount, messages.Count);
+
+        var destination = context.DestinationAddress?.AbsolutePath;
+        if (destination is not null)
+            activity?.SetTag(MessagingTagKeys.Destination, destination);
 
         var scopeState = MessagingLogScope.Create(context.CorrelationId);
-        scopeState["MessageType"] = typeof(TMessage).Name;
+        scopeState["MessageType"] = messageTypeName;
         scopeState["BatchSize"] = messages.Count;
 
         using var scope = Logger.BeginScope(scopeState);
 
-        LogBatchEntry(Logger, messages.Count, typeof(TMessage).Name);
+        MessagingLog.BatchProcessing(Logger, messages.Count, messageTypeName);
 
+        // One outcome feeds the span's result and the metric tags. The counter adds the batch size, so it counts
+        // messages like ConsumerBase does.
+        var outcome = WellKnownOutcomes.Success;
+        var started = Stopwatch.GetTimestamp();
         try
         {
             await ConsumeAsync(messages, context.CancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            LogBatchError(Logger, typeof(TMessage).Name, ex);
-            throw; // Never swallow — activates MassTransit retry/fault policies.
+            outcome = activity.RecordException(ex);
+
+            // Cancellation (a host shutting down) is not an error and is not logged as one.
+            if (outcome != WellKnownOutcomes.Canceled)
+                MessagingLog.BatchFailed(Logger, messageTypeName, ex);
+
+            throw; // Never swallow: activates MassTransit retry/fault policies.
+        }
+        finally
+        {
+            var tags = MessagingDiagnostics.OutcomeTags(MessagingTagKeys.MessageType, messageTypeName, outcome);
+            MessagingDiagnostics.ConsumeCounter.Add(messages.Count, tags);
+            MessagingDiagnostics.ConsumeDurationHistogram.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
         }
     }
 
@@ -86,23 +117,4 @@ public abstract partial class BatchConsumerBase<TMessage> : IConsumer<Batch<TMes
     /// </para>
     /// </remarks>
     protected abstract Task ConsumeAsync(IReadOnlyList<TMessage> messages, CancellationToken ct);
-
-    /// <summary>
-    /// Logs structured entry into batch processing with the batch size and message type.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 7002,
-        Level = LogLevel.Information,
-        Message = "Processing batch of {BatchSize} messages for {MessageType}.")]
-    private static partial void LogBatchEntry(ILogger logger, int batchSize, string messageType);
-
-    /// <summary>
-    /// Logs an unhandled exception raised from <see cref="ConsumeAsync"/>. See CorrelationId
-    /// in the structured log scope established by <see cref="Consume"/>.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 7003,
-        Level = LogLevel.Error,
-        Message = "Unhandled exception processing batch for {MessageType}. See CorrelationId in scope.")]
-    private static partial void LogBatchError(ILogger logger, string messageType, Exception exception);
 }

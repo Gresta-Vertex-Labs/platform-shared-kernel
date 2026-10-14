@@ -93,4 +93,61 @@ public sealed class MultiTenancyRealHostStartupTests
         Assert.Null(exception);
         await host.StopAsync();
     }
+
+    private const string DatabaseStrategyMessage =
+        "The tenant resolution strategy 'Database' needs an IDbConnectionFactory, but none is registered. "
+        + "Register one with AddSharedKernelNpgsql or AddSharedKernelPostgres, or remove 'Database' from "
+        + "SharedKernel:MultiTenancy:StrategyOrder.";
+
+    [Fact]
+    public async Task RealHost_DatabaseInTheOrderWithoutAConnectionFactory_StartupFailsFirst_WithTheSharedSentence()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSharedKernelMultiTenancy();
+        using var host = builder.Build();
+
+        var exception = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+
+        Assert.Equal(DatabaseStrategyMessage, exception.Message);
+    }
+
+    [Fact]
+    public async Task TheDefensiveStub_SaysTheSameSentence_WhenItIsReachedAnyway()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = [TenantResolutionStrategyNames.Header]);
+        using var host = builder.Build();
+        await host.StartAsync();
+        try
+        {
+            var stub = host.Services.GetServices<ITenantResolutionStrategy>()
+                .Single(s => s.StrategyName == TenantResolutionStrategyNames.Database);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => stub.TryResolveAsync(new Microsoft.AspNetCore.Http.DefaultHttpContext(), CancellationToken.None));
+
+            Assert.Equal(DatabaseStrategyMessage, exception.Message);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task RealHost_UnregisteredAndDuplicateNames_FailWithQuotedSentencesThatNameTheRemedy()
+    {
+        var unregistered = CreateBuilderWithConnectionFactory();
+        unregistered.Services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = ["Bogus"]);
+        using var unregisteredHost = unregistered.Build();
+        var first = await Assert.ThrowsAsync<OptionsValidationException>(() => unregisteredHost.StartAsync());
+        Assert.StartsWith("TenantResolutionOptions.StrategyOrder references strategy names that are not registered: 'Bogus'. The registered strategy names are: ", first.Message);
+        Assert.EndsWith(". Register the strategy or remove the name from the order.", first.Message);
+
+        var duplicate = CreateBuilderWithConnectionFactory();
+        duplicate.Services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = [TenantResolutionStrategyNames.Header, TenantResolutionStrategyNames.Header]);
+        using var duplicateHost = duplicate.Build();
+        var second = await Assert.ThrowsAsync<OptionsValidationException>(() => duplicateHost.StartAsync());
+        Assert.Equal("TenantResolutionOptions.StrategyOrder lists the strategy names more than once: 'Header'. List each strategy name once.", second.Message);
+    }
 }

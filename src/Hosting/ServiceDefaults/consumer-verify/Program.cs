@@ -13,7 +13,9 @@ using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.ServiceDefaults.Extensions;
+using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Execution.Context;
 
 // ── Surface 1: AddServiceDefaults() — mandatory first call ──────────────────
@@ -30,6 +32,21 @@ Console.WriteLine("Surface 1 PASS: AddServiceDefaults()");
 builder.Services.AddSingleton<IDbConnectionFactory, NoOpDbConnectionFactory>();
 builder.Services.AddSharedKernelMultiTenancy();
 Console.WriteLine("Surface 2 PASS: AddSharedKernelMultiTenancy()");
+
+// ── Surface 2b: the narrowed telemetry surface ──────────────────────────────
+// AddServiceDefaults() exports every SharedKernel.* source and meter by wildcard; only the four third-party
+// extensions remain. Compiling and calling them proves the surface is consumable and chainable.
+builder
+    .WithMessagingTelemetry()
+    .WithPersistenceTelemetry()
+    .WithCommunicationTelemetry()
+    .WithWorkflowTelemetry();
+Console.WriteLine("Surface 2b PASS: WithMessagingTelemetry(), WithPersistenceTelemetry(), WithCommunicationTelemetry(), WithWorkflowTelemetry()");
+
+// ── Surface 2c: a service's own check logs its registration (no category argument) ──
+HealthCheckRegistrationLogging.LogRegistration(builder.Services, "ledger", [HealthCheckTags.Ready]);
+builder.Services.AddHealthChecks().AddCheck("ledger", () => HealthCheckResult.Healthy(), [HealthCheckTags.Ready]);
+Console.WriteLine("Surface 2c PASS: HealthCheckRegistrationLogging.LogRegistration(services, name, tags)");
 
 var app = builder.Build();
 

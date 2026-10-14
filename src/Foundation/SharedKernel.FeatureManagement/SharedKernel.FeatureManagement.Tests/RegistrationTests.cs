@@ -50,7 +50,7 @@ public sealed class RegistrationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task AFailingFilter_ReturnsTheDefault_WithGeneralError_AndLogsAWarning(bool defaultValue)
+    public async Task AFailingFilter_ReturnsTheDefault_WithGeneralError_AndLogsAnError(bool defaultValue)
     {
         var logs = new CapturingLoggerProvider();
         await using var provider = await FeatureTestHost.StartAsync(
@@ -65,8 +65,8 @@ public sealed class RegistrationTests
         Assert.Equal(ErrorType.General, details.ErrorType);
         Assert.DoesNotContain("service is down", details.ErrorMessage, StringComparison.Ordinal);
         var entry = Assert.Single(logs.Entries, e => e.EventId.Id == 1301);
-        Assert.Equal(LogLevel.Warning, entry.Level);
-        Assert.Equal("Feature flag Exploding could not be evaluated; the caller's default value was used", entry.Message);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Equal("Evaluating the feature flag 'Exploding' failed, so the caller's default value was used.", entry.Message);
         Assert.IsType<InvalidOperationException>(entry.Exception);
     }
 

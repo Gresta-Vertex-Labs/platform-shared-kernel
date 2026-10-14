@@ -270,7 +270,7 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
             var act = () => db.SaveChangesAsync();
 
             var conflict = (await act.Should().ThrowAsync<ConflictException>()).Which;
-            conflict.Error.Code.Should().Be(ConcurrencyVersion.ConflictErrorCode);
+            conflict.Error.Code.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict);
             ConcurrencyVersion.TryGetCurrentVersion(conflict, out var reported).Should().BeTrue();
             reported.Should().Be(current);
         }

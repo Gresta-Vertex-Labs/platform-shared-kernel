@@ -32,8 +32,8 @@ internal static class RequestFingerprint
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             throw new InvalidOperationException(
-                $"Could not compute an automatic idempotency fingerprint for '{typeof(TRequest).FullName}' " +
-                "via JSON serialization — it likely has an unserializable member or a reference cycle. " +
+                $"The automatic idempotency fingerprint of '{typeof(TRequest).FullName}' could not be computed. " +
+                "It likely has an unserializable member or a reference cycle. " +
                 "Implement IIdempotentRequest.Fingerprint on the command to supply an explicit fingerprint " +
                 "instead of relying on automatic serialization.",
                 ex);

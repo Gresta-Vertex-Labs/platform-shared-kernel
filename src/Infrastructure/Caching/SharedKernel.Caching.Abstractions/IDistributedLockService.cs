@@ -23,7 +23,8 @@ namespace SharedKernel.Caching.Abstractions;
 /// pause. Pass <see cref="IDistributedLock.FencingToken"/> or <see cref="DistributedLease.FencingToken"/>
 /// to the protected resource and have it reject a token that is not greater than the last one it
 /// accepted. Resource names are global across services; prefix them with your service name unless
-/// several services must contend for the same resource.
+/// several services must contend for the same resource. A resource name is logged, so it must never carry a tenant id
+/// or personal data.
 /// </para>
 /// </remarks>
 /// <example>
@@ -48,7 +49,7 @@ namespace SharedKernel.Caching.Abstractions;
 public interface IDistributedLockService
 {
     /// <summary>Tries to acquire a lock on <paramref name="resource"/>.</summary>
-    /// <param name="resource">The resource name. Must not be null or whitespace.</param>
+    /// <param name="resource">The resource name. Must not be null or whitespace, and must not carry a tenant id or personal data because it is logged.</param>
     /// <param name="options">Expiry, wait and retry settings, or <see langword="null"/> for <see cref="DistributedLockOptions.Default"/>.</param>
     /// <param name="ct">Cancellation token. Cancelling aborts the attempt.</param>
     /// <returns>The held lock, or <see langword="null"/> when another holder kept the resource for the whole wait time.</returns>
@@ -61,7 +62,7 @@ public interface IDistributedLockService
         CancellationToken ct = default);
 
     /// <summary>Tries to claim <paramref name="resource"/> for <paramref name="duration"/>, in a single attempt.</summary>
-    /// <param name="resource">The resource name. Must not be null or whitespace.</param>
+    /// <param name="resource">The resource name. Must not be null or whitespace, and must not carry a tenant id or personal data because it is logged.</param>
     /// <param name="duration">How long the claim lasts. Must be positive.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The lease, or <see langword="null"/> when the resource is already claimed.</returns>

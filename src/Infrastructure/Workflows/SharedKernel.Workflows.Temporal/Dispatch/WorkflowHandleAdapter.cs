@@ -1,24 +1,29 @@
+using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
-using SharedKernel.Workflows.Temporal.Failures;
+using SharedKernel.Workflows.Temporal.Diagnostics;
 using SharedKernel.Workflows.Temporal.Interception;
 using Temporalio.Client;
+using Temporalio.Exceptions;
 
 namespace SharedKernel.Workflows.Temporal.Dispatch;
 
 /// <summary>
-/// The default <see cref="IWorkflowHandle"/> — a thin, <see cref="Result"/>-returning wrapper over a
-/// real Temporal <see cref="WorkflowHandle"/>.
+/// The default <see cref="IWorkflowHandle"/>: a thin, <see cref="Result"/>-returning wrapper over a real Temporal
+/// <see cref="WorkflowHandle"/>. Only a <see cref="TemporalException"/> becomes a failed result; any other exception
+/// propagates.
 /// </summary>
 internal class WorkflowHandleAdapter : IWorkflowHandle
 {
     internal readonly WorkflowHandle Handle;
     private readonly TenantScope _tenantScope;
+    private readonly ILogger _logger;
 
-    public WorkflowHandleAdapter(WorkflowHandle handle, TenantScope tenantScope)
+    public WorkflowHandleAdapter(WorkflowHandle handle, TenantScope tenantScope, ILogger logger)
     {
         Handle = handle;
         _tenantScope = tenantScope;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -37,11 +42,12 @@ internal class WorkflowHandleAdapter : IWorkflowHandle
                 signalName,
                 [args],
                 new WorkflowSignalOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+            WorkflowLog.SignalDispatched(_logger, signalName);
             return Result.Success();
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (DispatchFailureReporter.CanHandle(exception))
         {
-            return Result.Failure(WorkflowFailureMapper.ToError(exception));
+            return Result.Failure(DispatchFailureReporter.Report(_logger, WorkflowOperations.Signal, exception));
         }
     }
 
@@ -55,11 +61,12 @@ internal class WorkflowHandleAdapter : IWorkflowHandle
                 queryName,
                 [],
                 new WorkflowQueryOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+            WorkflowLog.QueryDispatched(_logger, queryName);
             return Result<TQueryResult>.Success(value);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (DispatchFailureReporter.CanHandle(exception))
         {
-            return Result<TQueryResult>.Failure(WorkflowFailureMapper.ToError(exception));
+            return Result<TQueryResult>.Failure(DispatchFailureReporter.Report(_logger, WorkflowOperations.Query, exception));
         }
     }
 
@@ -72,9 +79,9 @@ internal class WorkflowHandleAdapter : IWorkflowHandle
             await Handle.CancelAsync(new WorkflowCancelOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
             return Result.Success();
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (DispatchFailureReporter.CanHandle(exception))
         {
-            return Result.Failure(WorkflowFailureMapper.ToError(exception));
+            return Result.Failure(DispatchFailureReporter.Report(_logger, WorkflowOperations.Cancel, exception));
         }
     }
 
@@ -89,11 +96,12 @@ internal class WorkflowHandleAdapter : IWorkflowHandle
             await Handle.TerminateAsync(
                 reason,
                 new WorkflowTerminateOptions { Rpc = new RpcOptions { CancellationToken = cancellationToken } });
+            WorkflowLog.WorkflowTerminated(_logger);
             return Result.Success();
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (DispatchFailureReporter.CanHandle(exception))
         {
-            return Result.Failure(WorkflowFailureMapper.ToError(exception));
+            return Result.Failure(DispatchFailureReporter.Report(_logger, WorkflowOperations.Terminate, exception));
         }
     }
 }
@@ -105,9 +113,12 @@ internal class WorkflowHandleAdapter : IWorkflowHandle
 /// <typeparam name="TResult">The workflow's result type.</typeparam>
 internal sealed class WorkflowHandleAdapter<TResult> : WorkflowHandleAdapter, IWorkflowHandle<TResult>
 {
-    public WorkflowHandleAdapter(WorkflowHandle handle, TenantScope tenantScope)
-        : base(handle, tenantScope)
+    private readonly ILogger _resultLogger;
+
+    public WorkflowHandleAdapter(WorkflowHandle handle, TenantScope tenantScope, ILogger logger)
+        : base(handle, tenantScope, logger)
     {
+        _resultLogger = logger;
     }
 
     /// <inheritdoc />
@@ -120,9 +131,9 @@ internal sealed class WorkflowHandleAdapter<TResult> : WorkflowHandleAdapter, IW
                 rpcOptions: new RpcOptions { CancellationToken = cancellationToken });
             return Result<TResult>.Success(value);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (DispatchFailureReporter.CanHandle(exception))
         {
-            return Result<TResult>.Failure(WorkflowFailureMapper.ToError(exception));
+            return Result<TResult>.Failure(DispatchFailureReporter.Report(_resultLogger, WorkflowOperations.GetResult, exception));
         }
     }
 }

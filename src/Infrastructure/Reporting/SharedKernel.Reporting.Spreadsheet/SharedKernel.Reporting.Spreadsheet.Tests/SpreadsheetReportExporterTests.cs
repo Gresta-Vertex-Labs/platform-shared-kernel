@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using ClosedXML.Excel;
@@ -250,7 +251,7 @@ public sealed class SpreadsheetReportExporterTests
     {
         var options = new SpreadsheetExportOptions();
         configure?.Invoke(options);
-        return new SpreadsheetReportExporter<TestRow>(new ReportingDependencies(storageFactory: storageFactory), Options.Create(options));
+        return new SpreadsheetReportExporter<TestRow>(new ReportingDependencies(NullLogger<ReportingDependencies>.Instance, storageFactory: storageFactory), Options.Create(options));
     }
 
     private static async Task<XLWorkbook> ExportAsync(TestRow[] rows, ReportDefinition<TestRow> definition)

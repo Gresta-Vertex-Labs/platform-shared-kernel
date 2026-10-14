@@ -93,15 +93,17 @@ internal sealed class EfAuditTrailWriter : IAuditTrailWriter
     /// <returns>The stored record.</returns>
     /// <exception cref="ArgumentException">A field is missing or exceeds its <see cref="AuditFieldLimits"/> limit.</exception>
     /// <exception cref="InvalidOperationException">
-    /// A succeeded entry has no ambient transaction, the caller has no tenant outside an explicit system
-    /// scope, or the idempotency key was used for a different event.
+    /// A succeeded entry has no ambient transaction, or the idempotency key was used for a different event.
+    /// </exception>
+    /// <exception cref="SharedKernel.Core.Exceptions.ForbiddenException">
+    /// The caller has no tenant outside an explicit system scope (<c>persistence.tenant_required</c>).
     /// </exception>
     public async Task<AuditRecord> RecordAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
         var startedAt = Stopwatch.GetTimestamp();
-        var tenantId = _factory.Scope.ResolveCallerTenant("Recording an audit entry");
+        var tenantId = _factory.Scope.ResolveCallerTenant();
         var pending = _factory.Create(entry, tenantId);
 
         if (entry.Outcome == AuditOutcome.Succeeded)
@@ -116,7 +118,7 @@ internal sealed class EfAuditTrailWriter : IAuditTrailWriter
             }
 
             var record = await AppendAsync(ambient.Connection, ambient.Transaction, pending, cancellationToken).ConfigureAwait(false);
-            AuditingMeter.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+            AuditingInstruments.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
             return record;
         }
 
@@ -127,13 +129,13 @@ internal sealed class EfAuditTrailWriter : IAuditTrailWriter
             {
                 // One statement, autocommitted: its own transaction, no lock taken on any chain.
                 var record = await AppendAsync(connection, null, pending, cancellationToken).ConfigureAwait(false);
-                AuditingMeter.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+                AuditingInstruments.RecordAppendDuration(Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
                 return record;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not InvalidOperationException)
         {
-            AuditingLog.FailureAuditWriteFailed(_logger, ex, entry.ResourceType);
+            AuditingLog.FailureAuditWriteFailed(_logger, entry.ResourceType, ex);
             throw;
         }
     }
@@ -153,20 +155,18 @@ internal sealed class EfAuditTrailWriter : IAuditTrailWriter
         var existing = await LedgerDb.ReadByIdempotencyKeyAsync(connection, transaction, chain, fields.IdempotencyKey!, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException(
-                $"Idempotency key '{fields.IdempotencyKey}' conflicted, but no record holds it; retry the operation.");
+                $"An audit entry with the same idempotency key for resource type '{fields.ResourceType}' conflicted, but no record holds it. Retry the operation.");
 
         if (!string.Equals(existing.Action, fields.Action, StringComparison.Ordinal) ||
             !string.Equals(existing.ResourceId, fields.ResourceId, StringComparison.Ordinal) ||
             existing.Outcome != fields.Outcome)
         {
             throw new InvalidOperationException(
-                $"Idempotency key '{fields.IdempotencyKey}' of resource type '{fields.ResourceType}' already records a different event " +
-                $"(Action='{existing.Action}', ResourceId='{existing.ResourceId}', Outcome={existing.Outcome}); " +
-                $"it cannot also record Action='{fields.Action}', ResourceId='{fields.ResourceId}', Outcome={fields.Outcome}.");
+                $"An audit entry with the same idempotency key already records a different event for resource type '{fields.ResourceType}'.");
         }
 
-        AuditingLog.IdempotentDuplicateReturned(_logger, fields.ResourceType, fields.IdempotencyKey!);
-        AuditingMeter.RecordIdempotentDuplicate();
+        AuditingLog.IdempotentDuplicateReturned(_logger, fields.ResourceType);
+        AuditingInstruments.RecordIdempotentDuplicate();
         return existing;
     }
 

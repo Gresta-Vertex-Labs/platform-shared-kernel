@@ -2,13 +2,15 @@ using System.Diagnostics;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Health;
-using SharedKernel.ServiceDefaults.Logging;
+using SharedKernel.ServiceDefaults.Diagnostics;
 
 namespace SharedKernel.ServiceDefaults.HealthChecks;
 
 /// <summary>Runs one <see cref="IReadinessProbe"/> as a health check.</summary>
-internal sealed class ReadinessProbeHealthCheck(IReadinessProbe probe, ILogger? logger) : IHealthCheck
+internal sealed class ReadinessProbeHealthCheck(IReadinessProbe probe, ILogger<ReadinessProbeHealthCheck> logger) : IHealthCheck
 {
+    private readonly ILogger<ReadinessProbeHealthCheck> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
     /// <summary>The data key the report's latency is written under.</summary>
     internal const string LatencyDataKey = "LatencyMilliseconds";
 
@@ -31,8 +33,7 @@ internal sealed class ReadinessProbeHealthCheck(IReadinessProbe probe, ILogger? 
         }
         catch (Exception exception)
         {
-            if (logger is not null)
-                ServiceDefaultsLog.ReadinessProbeThrew(logger, probe.Name, exception.GetType().Name);
+            ServiceDefaultsLog.ReadinessProbeThrew(_logger, probe.Name, exception);
 
             return new HealthCheckResult(
                 failureStatus,

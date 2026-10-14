@@ -54,7 +54,7 @@ internal static class NpgsqlConnectionStringPolicy
         if (builder.Multiplexing)
         {
             yield return "'Multiplexing' is enabled: statements of different callers share one physical "
-                + "connection, so a transaction-local tenant binding cannot be relied on.";
+                + "connection, so a transaction-local tenant binding is not reliable.";
         }
 
         if (builder.NoResetOnClose)

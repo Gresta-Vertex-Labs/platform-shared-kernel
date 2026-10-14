@@ -41,7 +41,6 @@ public static class DatabaseReadinessHealthCheckExtensions
 
         HealthCheckRegistrationLogging.LogRegistration(
             builder.Services,
-            "SharedKernel.ServiceDefaults.HealthChecks.DatabaseReadinessHealthCheckExtensions",
             name,
             tags);
 
@@ -75,7 +74,6 @@ public static class DatabaseReadinessHealthCheckExtensions
 
         HealthCheckRegistrationLogging.LogRegistration(
             builder.Services,
-            "SharedKernel.ServiceDefaults.HealthChecks.DatabaseReadinessHealthCheckExtensions",
             name,
             tags);
 
@@ -104,7 +102,7 @@ public static class DatabaseReadinessHealthCheckExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Db];
-        HealthCheckRegistrationLogging.LogRegistration(builder.Services, typeof(DatabaseReadinessHealthCheckExtensions).FullName!, name, tags);
+        HealthCheckRegistrationLogging.LogRegistration(builder.Services, name, tags);
 
         return builder.Add(new HealthCheckRegistration(
             name,

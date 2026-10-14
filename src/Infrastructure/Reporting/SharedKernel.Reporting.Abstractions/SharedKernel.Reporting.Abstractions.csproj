@@ -19,6 +19,7 @@
   <ItemGroup>
     <!-- Never a format library (ClosedXML, SpreadCheetah, PdfSharp, MigraDoc): those live in the provider packages. -->
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
     <ProjectReference Include="..\..\Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
   </ItemGroup>
 

@@ -5,6 +5,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Application.Pipeline.Caching.csproj" />
     <ProjectReference Include="..\..\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" />
+    <!-- ActivityRecorder, MetricRecorder and the log assertions assert the cache telemetry through the shared helpers. -->
+    <ProjectReference Include="..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- A real FusionCache over a shared distributed cache proves the cached value survives serialization. -->
     <ProjectReference Include="..\..\..\Infrastructure\Caching\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
   </ItemGroup>

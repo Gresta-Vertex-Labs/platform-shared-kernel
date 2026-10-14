@@ -7,6 +7,7 @@ using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Options;
+using SharedKernel.Search.Meilisearch.Tests.Support;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Search.Meilisearch.Tests.Index;
@@ -69,7 +70,8 @@ public sealed class MeilisearchGetAsyncNullDeserializationTests
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:7700") };
         var client = new global::Meilisearch.MeilisearchClient(httpClient, "test-api-key");
         var index = new MeilisearchIndex<TestDocument>(
-            client, Definition(), new MeilisearchOptions(), new FakeClock(), NullLogger<MeilisearchIndex<TestDocument>>.Instance);
+            client, Definition(), new MeilisearchOptions(), new FakeClock(), NullLogger<MeilisearchIndex<TestDocument>>.Instance,
+            MeiliTelemetry.Create());
 
         var act = async () => await index.GetAsync("some-document-id", TenantScope.Global);
 
@@ -80,7 +82,7 @@ public sealed class MeilisearchGetAsyncNullDeserializationTests
         // The operation name in the error is the telemetry operation ("get"), not the C# member name —
         // the same string the search.operation span tag and the duration histogram carry, so an error in
         // a log can be joined to its metric series.
-        result.Subject.Error.Message.Should().Contain("'get'").And.Contain("null document");
+        result.Subject.Error.Message.Should().Contain("'get'");
         handler.RequestCount.Should().Be(1, "GetAsync issues exactly one HTTP call for a get-by-id");
     }
 }

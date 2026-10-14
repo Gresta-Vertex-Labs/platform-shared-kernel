@@ -358,9 +358,41 @@ internal sealed class ScopedFileStorage : IFileStorage
         string prefix,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await foreach (FileListItem item in _inner.ListAsync(_prefix + prefix, cancellationToken).ConfigureAwait(false))
+        // The enumerator is driven by hand: the catch must cover only the inner stream, never the consumer's code
+        // between two items, and a yield is not allowed in a try block that has a catch clause.
+        IAsyncEnumerator<FileListItem> enumerator;
+        try
         {
-            yield return ToCaller(item);
+            enumerator = _inner.ListAsync(_prefix + prefix, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        }
+        catch (StorageException inner)
+        {
+            throw new StorageException(ToCaller(inner.Error), inner);
+        }
+
+        try
+        {
+            while (true)
+            {
+                try
+                {
+                    if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
+                    {
+                        yield break;
+                    }
+                }
+                catch (StorageException inner)
+                {
+                    // The inner message may quote the tenant-prefixed key; the original stays as InnerException.
+                    throw new StorageException(ToCaller(inner.Error), inner);
+                }
+
+                yield return ToCaller(enumerator.Current);
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
         }
     }
 

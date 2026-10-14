@@ -61,7 +61,7 @@ internal static class DomainEventDispatchLoop
         }
 
         throw new InvalidOperationException(
-            $"Domain-event dispatch did not reach quiescence after {MaxIterations} passes — a handler is " +
+            $"Domain-event dispatch did not reach quiescence after {MaxIterations} passes because a handler is " +
             "unconditionally re-raising events. This is almost always an application bug.");
     }
 
@@ -72,7 +72,7 @@ internal static class DomainEventDispatchLoop
         if (batch.Count == 0)
             return;
 
-        PersistenceContextLog.DomainEventsDiscarded(
+        EfCoreLog.DomainEventsDiscarded(
             logger,
             batch.Count,
             string.Join(", ", batch.Select(e => e.GetType().Name).Distinct(StringComparer.Ordinal)));

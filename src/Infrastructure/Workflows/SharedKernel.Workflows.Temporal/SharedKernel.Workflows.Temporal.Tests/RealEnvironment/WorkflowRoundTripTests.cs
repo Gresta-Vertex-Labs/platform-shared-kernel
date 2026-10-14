@@ -59,7 +59,7 @@ public sealed class WorkflowRoundTripTests(TemporalTestFixture fixture)
 
         // Attach to the SAME execution via GetHandle<T>, proving the handle is a durable reference,
         // not a one-shot completion future.
-        var reattached = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.RoundTrip));
+        var reattached = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.RoundTrip)).Value;
 
         Result<string> result = await reattached.GetResultAsync();
         result.IsSuccess.Should().BeTrue();

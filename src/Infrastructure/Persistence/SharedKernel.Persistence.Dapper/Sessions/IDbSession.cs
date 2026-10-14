@@ -49,7 +49,9 @@ public interface IDbSession : IAsyncDisposable
     /// <c>uuid</c> (the <see cref="TenantId"/> type handler is always registered).
     /// </summary>
     /// <returns>The tenant id.</returns>
-    /// <exception cref="InvalidOperationException">No tenant is resolved.</exception>
+    /// <exception cref="SharedKernel.Core.Exceptions.ForbiddenException">
+    /// No tenant is resolved: the error is the shared <c>persistence.tenant_required</c> value.
+    /// </exception>
     TenantId RequireTenantId();
 
     /// <summary>

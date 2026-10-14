@@ -38,7 +38,7 @@ public sealed class RedisIdempotencyKeyBuilderTests
     }
 
     [Fact]
-    public void Build_UnknownPurpose_Throws() =>
-        Assert.Throws<ArgumentOutOfRangeException>(
+    public void Build_UnknownPurpose_IsUnreachable_BecauseTheStoreGuardsThePurposeFirst() =>
+        Assert.Throws<System.Diagnostics.UnreachableException>(
             () => RedisIdempotencyKeyBuilder.Build(IdempotencyTenantScope.NoTenant, (IdempotencyPurpose)42, "k"));
 }

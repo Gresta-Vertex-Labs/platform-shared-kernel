@@ -20,6 +20,8 @@
     <!-- No direct PackageReference to StackExchange.Redis: it flows transitively via
          SharedKernel.Caching.Redis.Core, which owns IConnectionMultiplexer construction (S-07). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- AddMetrics() and the IMeterFactory implementation behind the SharedKernel.Idempotency meter. -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>

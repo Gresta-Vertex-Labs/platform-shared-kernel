@@ -1,3 +1,4 @@
+using SharedKernel.Security.Totp.Diagnostics;
 using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Totp;
 using SharedKernel.Security.Abstractions;
@@ -9,7 +10,7 @@ namespace SharedKernel.Security.Totp.Tests.Enrollment;
 
 public sealed class TotpEnrollmentServiceConfirmTests
 {
-    private const int ChallengeNotAcceptedEventId = 12400;
+    private const int ChallengeNotAcceptedEventId = TotpLoggingEventIds.ChallengeNotAccepted;
 
     private readonly TotpTestHarness _harness = new();
 

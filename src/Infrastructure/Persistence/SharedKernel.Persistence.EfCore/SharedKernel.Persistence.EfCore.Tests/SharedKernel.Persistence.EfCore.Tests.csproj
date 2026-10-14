@@ -29,4 +29,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="NSubstitute" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\SharedTestSupport\LoggingConformance.cs" Link="SharedTestSupport\LoggingConformance.cs" />
+  </ItemGroup>
 </Project>

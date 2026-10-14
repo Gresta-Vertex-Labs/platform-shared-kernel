@@ -206,7 +206,7 @@ public sealed class CacheWarmupTests
         Assert.Equal(["before", "failing:threw", "after"], log.Entries);
         var failure = Assert.Single(logs.Logs, l => l.Level == LogLevel.Error && l.Message.Contains("failing", StringComparison.Ordinal));
         Assert.IsType<InvalidOperationException>(failure.Exception);
-        Assert.Contains(logs.Logs, l => l.Message == "Cache warmup completed");
+        Assert.Contains(logs.Logs, l => l.Message == "Cache warmup completed.");
 
         await host.StopAsync().WaitAsync(Timeout);
     }
@@ -300,7 +300,7 @@ public sealed class CacheWarmupTests
 
         await host.StartAsync().WaitAsync(Timeout);
 
-        Assert.True(await Eventually.HoldsAsync(() => logs.Logs.Any(l => l.Message == "Cache warmup completed")));
+        Assert.True(await Eventually.HoldsAsync(() => logs.Logs.Any(l => l.Message == "Cache warmup completed.")));
         Assert.Equal(["failing:threw", "after"], log.Entries);
 
         await host.StopAsync().WaitAsync(Timeout);

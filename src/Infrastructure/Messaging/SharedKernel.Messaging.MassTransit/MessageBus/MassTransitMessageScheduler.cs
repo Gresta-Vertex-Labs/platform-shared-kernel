@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Messaging.Abstractions.Scheduling;
+using SharedKernel.Messaging.MassTransit.Diagnostics;
+using SharedKernel.Messaging.MassTransit.Internal;
 
 // Alias MassTransit's IMessageScheduler to avoid name collision with our abstraction.
 using MtScheduler = MassTransit.IMessageScheduler;
@@ -27,18 +30,28 @@ namespace SharedKernel.Messaging.MassTransit.MessageBus;
 /// no longer cancel it. Where cancelling matters across a restart, have the consumer check whether
 /// the work is still wanted rather than relying on the token.
 /// </para>
+/// <para>
+/// <strong>Caller cancellation propagates.</strong> <see cref="CancelAsync"/> never reports success to a
+/// caller who cancelled it: an <see cref="OperationCanceledException"/> reaches the caller, and the token
+/// stays registered so the cancel can be retried. Only a gone or unrecognised token is a silent no-op, and a recognised transport
+/// fault is swallowed with a warning; any other exception propagates.
+/// </para>
 /// </remarks>
 internal sealed class MassTransitMessageScheduler : IMessageScheduler
 {
     private readonly MtScheduler _scheduler;
+    private readonly ILogger<MassTransitMessageScheduler> _logger;
 
     // Maps schedule tokens to the message type so CancelScheduledPublish(Type, Guid) can be called.
     // ConcurrentDictionary is used defensively; concurrent access from async consumers is possible.
     private readonly ConcurrentDictionary<Guid, Type> _tokenTypeMap = new();
 
-    public MassTransitMessageScheduler(MtScheduler scheduler)
+    public MassTransitMessageScheduler(MtScheduler scheduler, ILogger<MassTransitMessageScheduler> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
         _scheduler = scheduler;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -76,10 +89,27 @@ internal sealed class MassTransitMessageScheduler : IMessageScheduler
                 .CancelScheduledPublish(messageType, scheduleToken, ct)
                 .ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (OperationCanceledException)
         {
-            // Cancellation of an already-delivered or unrecognised token is a no-op per contract.
-            // MassTransit may throw if the token is no longer tracked — swallow silently.
+            // The caller cancelled the call, so the schedule was not cancelled. Put the entry back so the
+            // same token can still be cancelled with a live token, then let the cancellation propagate.
+            _tokenTypeMap.TryAdd(scheduleToken, messageType);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // A recognised transport fault (the broker unreachable, a timeout, a refused operation) is the only
+            // thing swallowed: the contract makes cancelling a gone token a no-op and this is logged so the cause
+            // is not lost. Anything else is a bug and propagates with its stack intact, token restored so the same
+            // token can be cancelled again.
+            if (MessagingExceptionClassifier.TryClassify(ex, messageType.Name, "cancel") is not null)
+            {
+                MessagingLog.SchedulerCancelFailed(_logger, messageType.Name, ex);
+                return;
+            }
+
+            _tokenTypeMap.TryAdd(scheduleToken, messageType);
+            throw;
         }
     }
 }

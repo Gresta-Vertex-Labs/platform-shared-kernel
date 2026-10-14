@@ -100,7 +100,9 @@ Supported cultures and the default culture are ASP.NET Core's `RequestLocalizati
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13004 | Warning | Neither `UserPreferenceClaimType` nor a registered `ITenantCatalog` is configured — the `UserPreference` and `TenantDefault` steps can never resolve a culture |
+| 13400 | Warning | Neither a user preference claim type nor a tenant catalog is configured, so the user preference and tenant default culture steps can never resolve a culture |
+
+Event id before this release: 13004 → 13400. The package owns the sub-block 13400-13499 of the ServiceDefaults EventId block (13000-13999).
 
 ## Testing
 
@@ -118,7 +120,7 @@ Supported cultures and the default culture are ASP.NET Core's `RequestLocalizati
 | Forget `app.UseRequestLocalization()` | Call it after `TenantResolutionMiddleware` | This package only configures the providers; the BCL middleware applies them |
 | Leave `SupportedCultures` at the default | Add every culture you translate | ASP.NET Core ignores a resolved culture that is not supported |
 | Run `UseRequestLocalization()` before tenant resolution | Place it after `TenantResolutionMiddleware` | The `TenantDefault` step reads the tenant from the request context |
-| Configure neither a claim type nor a catalog | Set `UserPreferenceClaimType` or register `ITenantCatalog` | Culture would come from `Accept-Language` alone (EventId 13004 warns) |
+| Configure neither a claim type nor a catalog | Set `UserPreferenceClaimType` or register `ITenantCatalog` | Culture would come from `Accept-Language` alone (EventId 13400 warns) |
 | Put `AcceptLanguageHeader` first in `StrategyOrder` | Keep signed signals first | A header is caller-controlled and would override the user's preference |
 
 ---

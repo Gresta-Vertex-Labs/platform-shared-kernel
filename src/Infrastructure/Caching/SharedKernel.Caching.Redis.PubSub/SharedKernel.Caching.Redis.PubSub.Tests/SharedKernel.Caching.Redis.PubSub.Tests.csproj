@@ -22,5 +22,7 @@
     <ProjectReference Include="..\SharedKernel.Caching.Redis.PubSub.csproj" />
     <!-- SharedKernel.Caching.Redis.Core provides AddRedisConnection (IConnectionMultiplexer registration) -->
     <ProjectReference Include="..\..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
+    <!-- InMemoryLoggerFactory and the log assertions -->
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 </Project>

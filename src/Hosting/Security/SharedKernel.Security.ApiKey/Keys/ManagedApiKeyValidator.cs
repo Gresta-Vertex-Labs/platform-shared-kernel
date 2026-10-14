@@ -2,6 +2,7 @@ using SharedKernel.Execution.Tenancy;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.ApiKey.Diagnostics;
 using SharedKernel.Security.ApiKey.Options;
 using SharedKernel.Security.ApiKey.Validation;
 
@@ -15,12 +16,12 @@ internal sealed class ManagedApiKeyValidator(IApiKeyStore store, IClock clock, I
 
         if (!ApiKeyFormat.TryParse(presentedKey, out string? prefix, out string? keyId))
         {
-            return ApiKeyValidationResult.Failure("Malformed");
+            return ApiKeyValidationResult.Failure(ApiKeyRejectionReasons.Malformed);
         }
 
         if (!string.Equals(prefix, options.Value.Prefix, StringComparison.Ordinal))
         {
-            return ApiKeyValidationResult.Failure("WrongPrefix", keyId);
+            return ApiKeyValidationResult.Failure(ApiKeyRejectionReasons.WrongPrefix, keyId);
         }
 
         ApiKeyRecord? record = await store.FindAsync(keyId, cancellationToken).ConfigureAwait(false);
@@ -30,18 +31,18 @@ internal sealed class ManagedApiKeyValidator(IApiKeyStore store, IClock clock, I
         bool hashMatches = FixedTimeComparison.AreEqual(presentedHash, record?.KeyHash ?? string.Empty);
         if (record is null || !hashMatches || !string.Equals(record.KeyId, keyId, StringComparison.Ordinal))
         {
-            return ApiKeyValidationResult.Failure("UnknownKey", keyId);
+            return ApiKeyValidationResult.Failure(ApiKeyRejectionReasons.UnknownKey, keyId);
         }
 
         DateTimeOffset now = clock.UtcNow;
         if (record.RevokedAt is { } revokedAt && revokedAt <= now)
         {
-            return ApiKeyValidationResult.Failure("Revoked", keyId);
+            return ApiKeyValidationResult.Failure(ApiKeyRejectionReasons.Revoked, keyId);
         }
 
         if (record.ExpiresAt is { } expiresAt && expiresAt <= now)
         {
-            return ApiKeyValidationResult.Failure("Expired", keyId);
+            return ApiKeyValidationResult.Failure(ApiKeyRejectionReasons.Expired, keyId);
         }
 
         // default(TenantId) names no tenant; Success rejects it.

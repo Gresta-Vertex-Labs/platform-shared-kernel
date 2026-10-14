@@ -139,8 +139,20 @@ flowchart LR
 - **Cutover.** `CutoverAsync` uses `POST /swap-indexes`: it creates an empty live index if none exists, swaps, and the
   staging name then holds the previous data. `DeleteStagingAfterCutover` (default `true`) deletes it; `false` keeps it
   and logs 9113.
-- **Failures.** SDK exceptions are classified onto `search.unreachable`, `search.timeout`, `search.unauthorized` or
-  `search.engine_fault` (EventId 9123).
+  A failed step keeps an outage's own classification (`search.unavailable`, `search.timeout`, `search.engine_unauthorized`);
+  any other failure is `search.cutover_failed` naming the step (`create_live`, `swap`, `delete_staging`) — never the
+  engine's or the exception's text (EventId 9129).
+- **Failures.** A recognised SDK fault is classified onto `search.unavailable`, `search.timeout`,
+  `search.engine_unauthorized` (the engine refusing this service's own key, `Unexpected`) or `search.engine_fault` (EventId 9123, with the exception) — the same codes and error types as
+  ElasticSearch. The error text is the kernel's own wording plus, at most, the engine's short error code (only when it
+  matches `^[a-z0-9_.]{1,64}$`); the engine message, which echoes the filter, never reaches an `Error`. An unrecognised
+  exception (a defect) is **not** turned into `search.engine_fault`: it propagates with its stack, after the span and the
+  duration histogram are completed. The caller's cancellation always propagates as `OperationCanceledException`; an
+  HTTP-client timeout with the token not cancelled is `search.timeout`. The SDK does not expose the HTTP status of an API
+  error, so a gateway fault answered with a body-less or HTML reply is `search.engine_fault`.
+- **Typed SDK errors.** The registered client is built over a named `IHttpClientFactory` client whose primary handler
+  is the SDK's `MeilisearchMessageHandler`; the SDK's `(HttpClient, key)` constructor does not install it, and without it a
+  rejected POST would be read as a success payload.
 - **Connection recycling.** The singleton client never returns its handler to the factory, so
   `PooledConnectionLifetimeMinutes` recycles connections and re-resolves DNS after a pod moves.
 
@@ -261,19 +273,21 @@ to every index registered on the builder.
 
 ### Errors
 
-Neutral codes come from `SearchErrors` (see the Abstractions README). Meilisearch-only codes, from `MeilisearchErrors`:
+Neutral codes come from `SearchErrors` (see the Abstractions README). Meilisearch-only codes are the public constants of `MeilisearchErrorCodes`; the factory that builds them is internal:
 
 | Code | Type | When |
 | --- | --- | --- |
-| `search.meilisearch.indexing_task_failed` | Unexpected | A write task finished as failed |
-| `search.meilisearch.tenant_token_issuance_failed` | Unexpected | Token signing failed, or `ApiKeyUid`, tenant field or index list missing |
+| `search.meilisearch.indexing_task_failed` | Unexpected | A write task finished as failed; the message carries the engine's short error code, or `unknown` |
+| `search.meilisearch.tenant_token_issuance_failed` | Unexpected | Token signing failed, or `ApiKeyUid`, tenant field or index list missing (fixed wording; the signing exception goes to the log) |
 | `search.meilisearch.tenant_token_ttl_out_of_range` | Validation | The TTL is not positive or exceeds `TenantTokenMaxTtlMinutes` |
 
 ### Logging
 
+Log statements are plain static methods of an internal `MeilisearchLog` class (EventIds in `MeilisearchLoggingEventIds`), each one sentence ending in a period, with the exception as the last parameter on every caught-exception path. Ids are never renumbered, and every logger category is a kernel type.
+
 | Event id | Level | Event |
 | --- | --- | --- |
-| 9100 | Information | Client configured for `{Url}` with `{IndexCount}` indexes |
+| 9100 | Information | Client configured with `{IndexCount}` indexes |
 | 9101 | Information | Index ensured with `{FieldCount}` fields |
 | 9102 | Information | Index settings applied (filterable, sortable, facetable counts) |
 | 9103 | Debug | Documents enqueued as a task |
@@ -283,24 +297,30 @@ Neutral codes come from `SearchErrors` (see the Abstractions README). Meilisearc
 | 9107 | Error | Task failed with an engine error code |
 | 9108 | Warning | Bulk operation partially failed |
 | 9109 | Debug | Search returned hits |
-| 9110 | Warning | Search request rejected before any I/O |
+| 9110 | Warning | Search request rejected before any I/O, with `{ErrorType}` and `{ErrorCode}` |
 | 9111 | Warning | Tenanted index called with `TenantScope.Global` |
 | 9112 | Information | Indexes swapped (cutover) |
 | 9113 | Warning | Staging index retained after cutover |
 | 9114 | Debug | Tenant search token issued |
-| 9115 | Warning | Raw client access enabled — bypasses tenant scoping |
-| 9116 | Warning | Probe degraded |
+| 9115 | Warning | Raw client access is enabled, so the raw client bypasses tenant scoping |
+| 9116 | Warning | Probe degraded; carries the first measurement exception |
 | 9117 | Warning | Write backlog is deep |
 | 9118 | Warning | Schema fingerprint mismatch |
-| 9119 | Error | Operation faulted |
+| 9119 | Warning | Operation faulted; carries the exception |
 | 9120 | Debug | Document walk started |
 | 9121 | Debug | Bulk operation throttled |
 | 9122 | Debug | `CountAsync` reached the `maxTotalHits` ceiling (lower bound) |
-| 9123 | Warning | Operation faulted and was mapped to an error code |
+| 9123 | Warning | Operation faulted and was mapped to an error code; carries the exception |
 | 9124 | Information | Synonyms and stop words applied |
-| 9125 | Warning | Index settings drifted from the registered definition |
+| 9125 | Warning | Index drifted from its registered definition at startup, with a bounded `{DriftKind}` (`probe_failed`, `engine_unreachable`, `not_addressable`, `no_fingerprint`, `fingerprint_mismatch`); one line per index |
 | 9126 | Information | Index settings verified against the registered definition |
 | 9127 | Information | Ranking rules applied |
+| 9128 | Warning | Issuing a tenant search token failed; carries the exception |
+| 9129 | Warning | A cutover step failed (`{Step}`); carries the exception, when there is one |
+
+### Telemetry
+
+The provider records the shared `SharedKernel.Search` telemetry described in the Abstractions package: Client spans named `search {operation}` (the tenant-token issuance is an `Internal` span with no I/O) and the `sharedkernel.search.operation.duration` (`s`) and `sharedkernel.search.documents` (`{document}`) instruments, tagged `search.index`, `search.operation`, `search.provider` = `meilisearch`, `outcome` and, on a failure, `error.type`. The instruments come from the host's `IMeterFactory` (the registration calls `AddMetrics()`), so they share one meter with the ElasticSearch provider when both are registered and are told apart by `search.provider`. Meilisearch-only operations: `instant_search`, `search_facet_values` and `issue_tenant_token`.
 
 ### Health
 

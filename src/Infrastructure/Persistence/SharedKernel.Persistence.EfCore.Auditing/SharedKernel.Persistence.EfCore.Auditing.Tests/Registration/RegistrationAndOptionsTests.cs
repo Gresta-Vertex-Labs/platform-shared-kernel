@@ -139,7 +139,7 @@ public sealed class RegistrationAndOptionsTests
         var mac = await authenticator.ComputeMacAsync("k1", message);
         (await authenticator.VerifyMacAsync("k1", message, mac)).Should().BeTrue();
         (await authenticator.VerifyMacAsync("k2", message, mac)).Should().BeFalse();
-        await authenticator.Invoking(a => a.ComputeMacAsync("k3", message).AsTask()).Should().ThrowAsync<KeyNotFoundException>();
+        await authenticator.Invoking(a => a.ComputeMacAsync("k3", message).AsTask()).Should().ThrowAsync<InvalidOperationException>();
     }
 
     [Fact]

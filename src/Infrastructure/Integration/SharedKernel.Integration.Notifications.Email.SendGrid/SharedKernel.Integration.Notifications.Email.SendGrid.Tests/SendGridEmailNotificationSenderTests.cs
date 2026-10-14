@@ -1,3 +1,4 @@
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -16,6 +17,7 @@ using SharedKernel.Testing.Storage;
 
 namespace SharedKernel.Integration.Notifications.Email.SendGrid.Tests;
 
+[Collection(SendGridSenderCollection.Name)]
 public sealed class SendGridEmailNotificationSenderTests
 {
     private static readonly TenantId TenantA = new(Guid.Parse("a3a3a3a3-0000-4000-8000-000000000001"));
@@ -144,7 +146,7 @@ public sealed class SendGridEmailNotificationSenderTests
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsSuccess.Should().BeFalse();
-        result.Subject.Error.Should().NotBeNullOrEmpty();
+        result.Subject.Error!.Code.Should().Be(NotificationErrorCodes.AttachmentUnresolvable);
     }
 
     // Regression (Shop platform, Notify): the sender required IFileStorageFactory unconditionally, so a host that sends
@@ -176,7 +178,7 @@ public sealed class SendGridEmailNotificationSenderTests
         var result = await harness.Sender.SendAsync(Message(attachments: [attachment]), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Contain("AddSharedKernelStorage");
+        result.Error!.Code.Should().Be(NotificationErrorCodes.AttachmentUnresolvable);
         handler.Requests.Should().BeEmpty();
     }
 
@@ -248,7 +250,7 @@ public sealed class SendGridEmailNotificationSenderTests
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsSuccess.Should().BeFalse();
-        result.Subject.Error.Should().Contain("Unable to resolve one or more attachments");
+        result.Subject.Error!.Code.Should().Be(NotificationErrorCodes.AttachmentUnresolvable);
     }
 
     [Fact]
@@ -260,7 +262,8 @@ public sealed class SendGridEmailNotificationSenderTests
         var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Contain("400");
+        result.Error!.Code.Should().Be(NotificationErrorCodes.ProviderRejected);
+        result.Error.Message.Should().Contain("400");
     }
 
     [Fact]

@@ -4,6 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Application.Mediator.MediatR.csproj" />
+    <!-- ActivityRecorder and MetricRecorder for the stream telemetry check. -->
+    <ProjectReference Include="..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

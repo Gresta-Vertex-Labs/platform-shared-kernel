@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Hosting;
+using SharedKernel.Idempotency.Redis.Diagnostics;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Idempotency.Abstractions;
@@ -66,7 +68,39 @@ public sealed class RedisIdempotencyServiceCollectionExtensionsTests
         services.AddRedisIdempotency(p => p.ForRequests());
 
         var exception = Assert.Throws<InvalidOperationException>(() => services.AddRedisIdempotency(p => p.ForRequests()));
-        Assert.Contains("Request", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "An IIdempotencyStore is already registered for IdempotencyPurpose 'Request'. Register one store per purpose.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void AddRedisIdempotency_RegistersTheMetricsAsASingleton_AndAMeterFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
+        services.AddRedisIdempotency(p => p.ForRequests().ForMessages());
+
+        Assert.Equal(
+            ServiceLifetime.Singleton,
+            Assert.Single(services, d => d.ServiceType == typeof(RedisIdempotencyMetrics)).Lifetime);
+        Assert.Contains(services, d => d.ServiceType == typeof(IMeterFactory));
+    }
+
+    [Fact]
+    public void Host_ThatNeverCalledAddMetrics_StillResolvesTheStoreAndItsMeterFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
+        services.AddRedisIdempotency(p => p.ForRequests().ForMessages());
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(provider.GetRequiredService<IMeterFactory>());
+        Assert.Same(provider.GetRequiredService<RedisIdempotencyMetrics>(), provider.GetRequiredService<RedisIdempotencyMetrics>());
+        Assert.IsType<RedisIdempotencyStore>(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Request));
+        Assert.IsType<RedisIdempotencyStore>(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Message));
     }
 
     [Fact]

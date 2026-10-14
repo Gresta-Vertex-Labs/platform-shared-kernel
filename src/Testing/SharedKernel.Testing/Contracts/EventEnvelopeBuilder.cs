@@ -27,7 +27,7 @@ public sealed class EventEnvelopeBuilder<TEvent>
     private string _source = "test-service";
     private string? _subject;
     private Guid? _tenantId;
-    private string? _correlationId = Guid.NewGuid().ToString("N");
+    private string? _correlationId = Guid.NewGuid().ToString();
     private string? _causationId;
 
     /// <summary>Sets the wrapped integration event.</summary>

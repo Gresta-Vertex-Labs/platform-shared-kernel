@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Abstractions.Options;
+using SharedKernel.Integration.Notifications.Abstractions.Tracing;
 
 namespace SharedKernel.Integration.Notifications.Abstractions.Extensions;
 
@@ -37,6 +39,10 @@ public static class ServiceCollectionExtensions
         {
             optionsBuilder.Configure(configure);
         }
+
+        // The instruments of every provider: one singleton, built from the host's IMeterFactory (AddMetrics(), which
+        // each provider registration adds, as this zero-I/O package takes no Microsoft.Extensions.Diagnostics).
+        services.TryAddSingleton<NotificationMetrics>();
 
         return services;
     }

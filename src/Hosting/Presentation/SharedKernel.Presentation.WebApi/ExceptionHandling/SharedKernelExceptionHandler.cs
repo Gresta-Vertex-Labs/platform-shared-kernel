@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.WebApi.Diagnostics;
 
 namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 
@@ -30,7 +30,7 @@ namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 ///   <item><see cref="ValidationException"/>: 400, with exactly the body a returned <c>Error.Validation</c> of the same
 ///   errors produces.</item>
 ///   <item>Any other <see cref="SharedKernelException"/>: its <see cref="Error"/>, presented like a returned one.</item>
-///   <item>Anything else: 500 <c>unexpected.exception</c> with a generic message; the exception itself only in
+///   <item>Anything else: 500 <c>unexpected.default</c> with a generic message; the exception itself only in
 ///   Development or when <c>Problems:IncludeExceptionDetails</c> is set.</item>
 /// </list>
 /// <para>
@@ -38,19 +38,15 @@ namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 /// own log is suppressed for every exception handled here, so each is logged once. A gRPC call gets the status but
 /// no body.
 /// </para>
+/// <para>
+/// The handler also records the failure on the ambient server span, once (<see cref="EdgeFailureRecording"/>): a
+/// server-category failure fails the span (status <c>Error</c>, <c>error.type</c>, <c>error.code</c>, one exception
+/// event; a timeout is recorded as a failure, not as an exception), a client-category one only tags
+/// <c>error.code</c>, and a request the client abandoned (499) records nothing.
+/// </para>
 /// </remarks>
-internal sealed partial class SharedKernelExceptionHandler
+internal sealed class SharedKernelExceptionHandler
 {
-    private const string UnexpectedMessage = "An unexpected error occurred.";
-
-    private const string TimeoutMessage = "The operation did not complete in time.";
-
-    private const string ExceptionTypeKey = "type";
-
-    private const string ExceptionMessageKey = "message";
-
-    private const string ExceptionStackTraceKey = "stackTrace";
-
     /// <summary>The <see cref="HttpContext.Items"/> key marking an exception this handler handled.</summary>
     private static readonly object HandledKey = new();
 
@@ -104,7 +100,7 @@ internal sealed partial class SharedKernelExceptionHandler
 
         if (httpContext.RequestAborted.IsCancellationRequested)
         {
-            Log.RequestAborted(_logger, RequestFacts.GetEndpointDisplayName(httpContext), exception);
+            WebApiLog.RequestAborted(_logger, RequestFacts.GetEndpointDisplayName(httpContext), exception);
 
             if (!httpContext.Response.HasStarted)
             {
@@ -114,17 +110,21 @@ internal sealed partial class SharedKernelExceptionHandler
             return;
         }
 
-        var problem = BuildProblem(httpContext, exception);
+        // The framework's own bad-request exceptions are an HTTP matter and carry no classification.
+        var classified = exception is BadHttpRequestException ? null : ExceptionClassification.Classify(exception);
+        var problem = BuildProblem(httpContext, exception, classified);
         var statusCode = problem.Status ?? StatusCodes.Status500InternalServerError;
         var errorCode = problem.Extensions[ProblemDetailsExtensionNames.ErrorCode] as string ?? string.Empty;
 
+        RecordOnSpan(exception, classified, errorCode);
+
         if (statusCode >= StatusCodes.Status500InternalServerError)
         {
-            Log.ServerError(_logger, statusCode, errorCode, RequestFacts.GetEndpointDisplayName(httpContext), exception);
+            WebApiLog.ServerError(_logger, RequestFacts.GetEndpointDisplayName(httpContext), statusCode, errorCode, exception);
         }
         else
         {
-            Log.ClientError(_logger, statusCode, errorCode, RequestFacts.GetEndpointDisplayName(httpContext), exception);
+            WebApiLog.ClientError(_logger, RequestFacts.GetEndpointDisplayName(httpContext), statusCode, errorCode, exception);
         }
 
         if (RequestFacts.IsGrpcRequest(httpContext))
@@ -138,7 +138,7 @@ internal sealed partial class SharedKernelExceptionHandler
 
     private static bool IsHandledHere(HttpContext httpContext) => httpContext.Items.ContainsKey(HandledKey);
 
-    private ProblemDetails BuildProblem(HttpContext httpContext, Exception exception)
+    private ProblemDetails BuildProblem(HttpContext httpContext, Exception exception, ClassifiedException? classified)
     {
         switch (exception)
         {
@@ -154,57 +154,40 @@ internal sealed partial class SharedKernelExceptionHandler
                     badRequest.StatusCode,
                     ProblemFactory.CodeForStatus(badRequest.StatusCode),
                     badRequest.Message);
-
-            case ValidationException validation:
-                // Exactly what a returned error produces: one error is itself, several are Error.Validation(errors).
-                var error = validation.Errors.Count == 1 ? validation.Errors[0] : Error.Validation(validation.Errors);
-                return ProblemFactory.ForError(error, httpContext, StatusCodes.Status400BadRequest);
-
-            case SharedKernelException sharedKernelException:
-                return ProblemFactory.ForError(sharedKernelException.Error, httpContext);
-
-            case TimeoutException:
-            case OperationCanceledException:
-                // Not the client: the request is still open, so something inside the service ran out of time.
-                return ProblemFactory.ForError(Error.Timeout(ErrorCodes.Timeout.Default, TimeoutMessage), httpContext);
-
-            default:
-                var problem = ProblemFactory.ForError(
-                    Error.Unexpected(ErrorCodes.Unexpected.Default, UnexpectedMessage),
-                    httpContext);
-
-                if (_options.Value.Problems.IncludeExceptionDetails ?? _environment.IsDevelopment())
-                {
-                    problem.Extensions[ProblemDetailsExtensionNames.Exception] = new Dictionary<string, string?>(StringComparer.Ordinal)
-                    {
-                        [ExceptionTypeKey] = exception.GetType().FullName,
-                        [ExceptionMessageKey] = exception.Message,
-                        [ExceptionStackTraceKey] = exception.StackTrace,
-                    };
-                }
-
-                return problem;
         }
+
+        var problem = ProblemFactory.ForError(classified!.Error, httpContext, classified.StatusCode);
+
+        if (classified.Kind == ExceptionKind.Unclassified
+            && (_options.Value.Problems.IncludeExceptionDetails ?? _environment.IsDevelopment()))
+        {
+            problem.Extensions[ProblemDetailsExtensionNames.Exception] = ExceptionClassification.Describe(exception);
+        }
+
+        return problem;
     }
 
-    private static partial class Log
+    // What the handled failure leaves on the ambient server span, once. The framework's own bad-request exceptions are
+    // always client errors (4xx).
+    private static void RecordOnSpan(Exception exception, ClassifiedException? classified, string errorCode)
     {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 1,
-            Level = LogLevel.Error,
-            Message = "Request to {EndpointDisplayName} failed with {StatusCode} {ErrorCode}.")]
-        public static partial void ServerError(ILogger logger, int statusCode, string errorCode, string endpointDisplayName, Exception exception);
+        switch (classified)
+        {
+            case null:
+            case { Kind: ExceptionKind.Validation }:
+                // A validation exception is a 400 whatever the type of its single error.
+                EdgeFailureRecording.RecordClientCode(classified?.Error.Code ?? errorCode);
+                break;
 
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 7,
-            Level = LogLevel.Debug,
-            Message = "Request to {EndpointDisplayName} was rejected with {StatusCode} {ErrorCode}.")]
-        public static partial void ClientError(ILogger logger, int statusCode, string errorCode, string endpointDisplayName, Exception exception);
+            case { Kind: ExceptionKind.Timeout }:
+                // A real timeout of the service: a failure, not an exception event (a cancellation is never recorded
+                // as one).
+                EdgeFailureRecording.Record(classified.Error);
+                break;
 
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 8,
-            Level = LogLevel.Debug,
-            Message = "The client closed the request to {EndpointDisplayName} before it completed.")]
-        public static partial void RequestAborted(ILogger logger, string endpointDisplayName, Exception exception);
+            default:
+                EdgeFailureRecording.Record(classified.Error, exception);
+                break;
+        }
     }
 }

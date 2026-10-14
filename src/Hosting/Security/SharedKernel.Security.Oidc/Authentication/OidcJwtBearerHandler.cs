@@ -11,7 +11,7 @@ using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Oidc.Dpop;
 using SharedKernel.Security.Oidc.Internal;
-using SharedKernel.Security.Oidc.Logging;
+using SharedKernel.Security.Oidc.Diagnostics;
 using SharedKernel.Security.Oidc.Options;
 using SharedKernel.Security.Oidc.Revocation;
 
@@ -118,19 +118,19 @@ internal sealed class OidcJwtBearerHandler(
         TokenConfirmation confirmation = TokenConfirmation.Read(token.Claims);
         if (confirmation.IsMalformed)
         {
-            return DpopFailure(state, "invalid_token", "MalformedConfirmation");
+            return DpopFailure(state, "invalid_token", DpopRejectionReasons.MalformedConfirmation);
         }
 
         if (confirmation.JwkThumbprint is { } jkt)
         {
             if (!DpopEnabled)
             {
-                return DpopFailure(state, error: null, "DpopNotEnabled");
+                return DpopFailure(state, error: null, DpopRejectionReasons.DpopNotEnabled);
             }
 
             if (!state.PresentedWithDpop)
             {
-                return DpopFailure(state, "invalid_token", "BoundTokenPresentedAsBearer");
+                return DpopFailure(state, "invalid_token", DpopRejectionReasons.BoundTokenPresentedAsBearer);
             }
 
             DpopResult proof = await Context.RequestServices
@@ -145,11 +145,11 @@ internal sealed class OidcJwtBearerHandler(
         }
         else if (state.PresentedWithDpop)
         {
-            return DpopFailure(state, "invalid_token", "UnboundTokenPresentedAsDpop");
+            return DpopFailure(state, "invalid_token", DpopRejectionReasons.UnboundTokenPresentedAsDpop);
         }
         else if (DpopEnabled && settings.Dpop.Mode == DpopMode.Required)
         {
-            return DpopFailure(state, "invalid_token", "DpopRequired");
+            return DpopFailure(state, "invalid_token", DpopRejectionReasons.DpopRequired);
         }
 
         if (confirmation.CertificateThumbprint is { } x5t

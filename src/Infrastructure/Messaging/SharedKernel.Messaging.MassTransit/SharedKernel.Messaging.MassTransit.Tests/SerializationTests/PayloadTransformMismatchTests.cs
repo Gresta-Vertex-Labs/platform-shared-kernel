@@ -102,7 +102,10 @@ public sealed class PayloadTransformMismatchTests
 
         var act = () => deserializer.Deserialize(body, new MtEmptyHeaders(), new Uri("loopback://localhost/test"));
 
-        act.Should().Throw<PayloadTransformMismatchException>()
-            .WithInnerException<Exception>();
+        // A failed decompress result is turned straight into the mismatch exception with its canonical error; the
+        // result's own text is not carried along as an inner exception.
+        var thrown = act.Should().Throw<PayloadTransformMismatchException>().Which;
+        thrown.Error.Code.Should().Be(SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.PayloadTransformMismatch);
+        thrown.InnerException.Should().BeNull();
     }
 }

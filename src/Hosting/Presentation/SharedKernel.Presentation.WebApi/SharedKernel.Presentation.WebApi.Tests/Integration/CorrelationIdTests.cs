@@ -66,7 +66,7 @@ public sealed class CorrelationIdTests
         header.Should().NotBe(inbound).And.MatchRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
         accessor.Should().Be(header);
         var record = logs.GetLogger("SharedKernel.ServiceDefaults.Security.RequestContextMiddleware").Records
-            .Should().ContainSingle(r => r.EventId.Id == LoggingEventIdRanges.ServiceDefaults + 7).Subject;
+            .Should().ContainSingle(r => r.EventId.Id == LoggingEventIdRanges.SubBlockStart(LoggingEventIdRanges.ServiceDefaults, 2) + 1).Subject;
         record.Message.Should().NotContain(inbound);
         record.TryGetProperty("CorrelationIdLength", out var length).Should().BeTrue();
         length.Should().Be(inbound.Length);

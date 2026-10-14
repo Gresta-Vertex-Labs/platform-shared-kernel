@@ -196,8 +196,8 @@ public sealed class AesGcmEncryptionServiceTests
     {
         var service = new AesGcmEncryptionService(TestKeys.SingleKeyProvider("short", keyLength));
 
-        await Assert.ThrowsAsync<CryptographicException>(async () => await service.EncryptAsync(new byte[] { 1 }, AssociatedData));
-        await Assert.ThrowsAsync<CryptographicException>(async () => await service.EncryptToStringAsync("x", AssociatedData));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.EncryptAsync(new byte[] { 1 }, AssociatedData));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.EncryptToStringAsync("x", AssociatedData));
     }
 
     [Theory]
@@ -209,8 +209,8 @@ public sealed class AesGcmEncryptionServiceTests
         var decryptor = new AesGcmEncryptionService(TestKeys.SingleKeyProvider("k", keyLength));
         EncryptedPayload payload = await encryptor.EncryptAsync(new byte[] { 1 }, AssociatedData);
 
-        await Assert.ThrowsAsync<CryptographicException>(async () => await decryptor.DecryptAsync(payload, AssociatedData));
-        await Assert.ThrowsAsync<CryptographicException>(async () => await decryptor.DecryptToStringAsync(payload.ToString(), AssociatedData));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await decryptor.DecryptAsync(payload, AssociatedData));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await decryptor.DecryptToStringAsync(payload.ToString(), AssociatedData));
     }
 
     [Fact]

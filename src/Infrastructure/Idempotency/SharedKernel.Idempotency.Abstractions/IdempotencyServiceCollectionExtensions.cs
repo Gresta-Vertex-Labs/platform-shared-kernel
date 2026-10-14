@@ -31,13 +31,12 @@ public static class IdempotencyServiceCollectionExtensions
         where TStore : class, IIdempotencyStore
     {
         ArgumentNullException.ThrowIfNull(services);
-        if (!Enum.IsDefined(purpose))
-            throw new ArgumentOutOfRangeException(nameof(purpose), purpose, "Unknown idempotency purpose.");
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
 
         if (services.HasIdempotencyStore(purpose))
         {
             throw new InvalidOperationException(
-                $"An {nameof(IIdempotencyStore)} is already registered for {nameof(IdempotencyPurpose)}.{purpose}. " +
+                $"An {nameof(IIdempotencyStore)} is already registered for {nameof(IdempotencyPurpose)} '{purpose}'. " +
                 "Register one store per purpose.");
         }
 

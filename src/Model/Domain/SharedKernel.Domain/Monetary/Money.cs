@@ -2,6 +2,7 @@ using System.Globalization;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.BusinessRules;
 using SharedKernel.Domain.Exceptions;
+using SharedKernel.Domain.Internal;
 using SharedKernel.Domain.ValueObjects;
 using SharedKernel.Guards;
 using SharedKernel.Primitives.Errors;
@@ -23,7 +24,7 @@ namespace SharedKernel.Domain.Monetary;
 /// <para>
 /// <b>One currency per operation.</b> <see cref="Add"/>, <see cref="Subtract"/>, <see cref="CompareTo"/>,
 /// <see cref="Min"/>, <see cref="Max"/>, <see cref="Sum"/> and the arithmetic and comparison operators throw
-/// <see cref="BusinessRuleViolationException"/> with the code <c>money.currency_mismatch</c>
+/// <see cref="BusinessRuleViolationException"/> with the code <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>
 /// (<see cref="CurrencyMismatchRule.ErrorCode"/>) when the currencies differ. Convert first with
 /// <see cref="MoneyExtensions.ConvertAsync"/>.
 /// </para>
@@ -72,7 +73,8 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     {
         Guard.Throw.Null(currency);
         Currency = currency;
-        CheckRule(new StoredPrecisionRule(amount, currency));
+        if (Math.Round(amount, currency.MinorUnitDigits, MidpointRounding.ToEven) != amount)
+            throw new DomainException(DomainErrors.StoredPrecisionExceeded(amount, currency));
         Amount = amount;
     }
 
@@ -135,7 +137,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <paramref name="amounts"/> contains <see langword="null"/>.
     /// </exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// An amount is not in <paramref name="currency"/>; the error code is <c>money.currency_mismatch</c>.
+    /// An amount is not in <paramref name="currency"/>; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     /// <exception cref="OverflowException">The total is outside the range of <see cref="decimal"/>.</exception>
     public static Money Sum(IEnumerable<Money> amounts, Currency currency)
@@ -157,7 +159,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     public static Money Min(Money left, Money right)
     {
@@ -174,7 +176,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     public static Money Max(Money left, Money right)
     {
@@ -190,7 +192,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns>A new amount in this currency.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     /// <exception cref="OverflowException">The sum is outside the range of <see cref="decimal"/>.</exception>
     public Money Add(Money other)
@@ -206,7 +208,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns>A new amount in this currency; negative when <paramref name="other"/> is larger.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     /// <exception cref="OverflowException">The difference is outside the range of <see cref="decimal"/>.</exception>
     public Money Subtract(Money other)
@@ -256,7 +258,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <paramref name="other"/>; a positive number when <paramref name="other"/> is <see langword="null"/>.
     /// </returns>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     public int CompareTo(Money? other)
     {
@@ -365,7 +367,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns>The sum, in the operands' currency.</returns>
     /// <exception cref="ArgumentNullException">An operand is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     /// <exception cref="OverflowException">The sum is outside the range of <see cref="decimal"/>.</exception>
     public static Money operator +(Money left, Money right)
@@ -380,7 +382,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns>The difference, in the operands' currency.</returns>
     /// <exception cref="ArgumentNullException">An operand is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     /// <exception cref="OverflowException">The difference is outside the range of <see cref="decimal"/>.</exception>
     public static Money operator -(Money left, Money right)
@@ -439,7 +441,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns><see langword="true"/> when <paramref name="left"/> is smaller.</returns>
     /// <exception cref="ArgumentNullException">An operand is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     public static bool operator <(Money left, Money right) => Compare(left, right) < 0;
 
@@ -449,7 +451,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns><see langword="true"/> when <paramref name="left"/> is smaller or equal.</returns>
     /// <exception cref="ArgumentNullException">An operand is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     public static bool operator <=(Money left, Money right) => Compare(left, right) <= 0;
 
@@ -459,7 +461,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns><see langword="true"/> when <paramref name="left"/> is larger.</returns>
     /// <exception cref="ArgumentNullException">An operand is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     public static bool operator >(Money left, Money right) => Compare(left, right) > 0;
 
@@ -469,7 +471,7 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
     /// <returns><see langword="true"/> when <paramref name="left"/> is larger or equal.</returns>
     /// <exception cref="ArgumentNullException">An operand is <see langword="null"/>.</exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// The currencies differ; the error code is <c>money.currency_mismatch</c>.
+    /// The currencies differ; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     public static bool operator >=(Money left, Money right) => Compare(left, right) >= 0;
 
@@ -567,18 +569,5 @@ public sealed class Money : ValueObject, IComparable<Money>, IFormattable
         for (var i = 0; i < digits; i++)
             scale *= 10m;
         return scale;
-    }
-
-    // Backs the EF Core materialization constructor's precision guard. Not IBusinessRule-public: it exists
-    // solely to reuse CheckRule's existing throw shape and is never reachable outside this file.
-    private sealed class StoredPrecisionRule(decimal amount, Currency currency) : IBusinessRule
-    {
-        public string Code => "money.stored_precision_exceeded";
-
-        public string Message =>
-            $"Stored amount {amount.ToString(CultureInfo.InvariantCulture)} has more decimal places than " +
-            $"{currency.Code}'s {currency.MinorUnitDigits}-digit minor unit allows.";
-
-        public bool IsBroken() => Math.Round(amount, currency.MinorUnitDigits, MidpointRounding.ToEven) != amount;
     }
 }

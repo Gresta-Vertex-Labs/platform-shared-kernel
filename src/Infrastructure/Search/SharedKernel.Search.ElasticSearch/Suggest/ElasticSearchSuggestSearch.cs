@@ -9,9 +9,9 @@ using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Errors;
-using SharedKernel.Search.ElasticSearch.Logging;
 using SharedKernel.Search.ElasticSearch.Options;
 
 namespace SharedKernel.Search.ElasticSearch.Suggest;
@@ -21,7 +21,6 @@ namespace SharedKernel.Search.ElasticSearch.Suggest;
 internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDocument>
     where TDocument : class, ISearchDocument
 {
-    private const string OperationSuggest = "suggest";
     private const string SuggestionName = "sk_suggest";
 
     private readonly ElasticsearchClient _client;
@@ -29,6 +28,7 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
     private readonly IReadOnlyCollection<string> _completionFields;
     private readonly ElasticSearchOptions _options;
     private readonly ILogger<ElasticSearchSuggestSearch<TDocument>> _logger;
+    private readonly SearchTelemetry _telemetry;
 
     /// <summary>Initializes a new <see cref="ElasticSearchSuggestSearch{TDocument}"/>.</summary>
     public ElasticSearchSuggestSearch(
@@ -36,13 +36,15 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
         SearchIndexDefinition definition,
         IReadOnlyCollection<string> completionFields,
         ElasticSearchOptions options,
-        ILogger<ElasticSearchSuggestSearch<TDocument>> logger)
+        ILogger<ElasticSearchSuggestSearch<TDocument>> logger,
+        SearchTelemetry telemetry)
     {
         _client = client;
         _definition = definition;
         _completionFields = completionFields;
         _options = options;
         _logger = logger;
+        _telemetry = telemetry;
     }
 
     /// <inheritdoc />
@@ -53,6 +55,29 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
         int size = 10,
         bool fuzzy = false,
         CancellationToken cancellationToken = default)
+    {
+        using var scope = _telemetry.Start(SearchOperations.Suggest, _definition.Name);
+        try
+        {
+            var result = await SuggestCoreAsync(suggestField, prefix, tenantScope, size, fuzzy, cancellationToken)
+                .ConfigureAwait(false);
+            scope.Complete(result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            scope.Faulted(ex);
+            throw;
+        }
+    }
+
+    private async Task<Result<IReadOnlyList<SearchSuggestion>>> SuggestCoreAsync(
+        string suggestField,
+        string prefix,
+        TenantScope tenantScope,
+        int size,
+        bool fuzzy,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(suggestField))
         {
@@ -86,13 +111,10 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
         // suggested from without a tenant, or one tenant's content completes another tenant's typing.
         if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
-            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            ElasticSearchLog.TenantScopeMissing(_logger, _definition.Name);
             return Result<IReadOnlyList<SearchSuggestion>>.Failure(
                 SearchErrors.TenantScopeMissing(_definition.Name));
         }
-
-        var startTimestamp = Stopwatch.GetTimestamp();
-        using var activity = SearchDiagnostics.StartActivity(OperationSuggest, _definition.Name);
 
         var suggester = new FieldSuggester
         {
@@ -138,13 +160,18 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
             if (!response.IsValidResponse)
             {
                 result = Result<IReadOnlyList<SearchSuggestion>>.Failure(
-                    ElasticSearchFaultMapper.Map(
-                        response, _definition.Name, OperationSuggest, string.Join(",", _options.Nodes)));
+                    ElasticSearchFaultMapper.Map(response, _definition.Name, SearchOperations.Suggest, cancellationToken, typeof(TDocument).Name));
+                ElasticSearchLog.OperationFaulted(
+                    _logger,
+                    SearchOperations.Suggest,
+                    _definition.Name,
+                    result.Error.Code,
+                    ElasticSearchFaultMapper.OriginalException(response));
             }
             else
             {
                 var suggestions = MapSuggestions(response);
-                _logger.ElasticSearchSuggestExecuted(_definition.Name, suggestions.Count);
+                ElasticSearchLog.SuggestExecuted(_logger, _definition.Name, suggestions.Count);
                 result = Result<IReadOnlyList<SearchSuggestion>>.Success(suggestions);
             }
         }
@@ -152,16 +179,18 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ElasticSearchFaultMapper.CallerCancellation(ex, cancellationToken) is { } cancellation)
         {
-            var error = SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName, OperationSuggest, ex.Message);
-            _logger.ElasticSearchOperationFaulted(OperationSuggest, _definition.Name, error.Code);
+            // The client wraps most exceptions it surfaces; a cancellation the caller asked for still reaches the
+            // caller as an OperationCanceledException.
+            throw new OperationCanceledException(cancellation.Message, cancellation, cancellationToken);
+        }
+        catch (Exception ex) when (ElasticSearchFaultMapper.TryClassify(ex, SearchOperations.Suggest, typeof(TDocument).Name, out var error))
+        {
+            ElasticSearchLog.OperationFaulted(_logger, SearchOperations.Suggest, _definition.Name, error.Code, ex);
             result = Result<IReadOnlyList<SearchSuggestion>>.Failure(error);
         }
 
-        SearchDiagnostics.Complete(
-            activity, OperationSuggest, _definition.Name, startTimestamp, result.IsFailure ? result.Error.Code : null);
         return result;
     }
 

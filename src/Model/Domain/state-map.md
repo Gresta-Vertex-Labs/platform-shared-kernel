@@ -14,11 +14,14 @@
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
-None — every phase in this domain is complete. The first public release ships with root P-577 (release train).
+None — every phase in this domain is complete.
 
 ## Blocked
 

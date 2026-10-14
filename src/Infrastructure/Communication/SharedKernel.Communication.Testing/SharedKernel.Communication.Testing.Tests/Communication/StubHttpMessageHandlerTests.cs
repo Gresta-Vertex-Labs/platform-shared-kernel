@@ -96,7 +96,7 @@ public sealed class StubHttpMessageHandlerTests
 
         Result result = await client.SendResultAsync(new HttpRequestMessage(HttpMethod.Get, "http://h/x"));
 
-        result.Error.Code.Should().Be(CommunicationErrorCodes.Unreachable);
+        result.Error.Code.Should().Be(CommunicationErrorCodes.Unavailable);
     }
 
     public sealed class InventoryClient(HttpClient http)

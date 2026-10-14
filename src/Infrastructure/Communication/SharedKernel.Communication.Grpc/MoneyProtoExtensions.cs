@@ -1,3 +1,4 @@
+using SharedKernel.Communication.Internal;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -26,7 +27,7 @@ public static class MoneyProtoExtensions
 
         if (!IsValid(money))
         {
-            return ValidationResult<Money>.Failure([InvalidMessage(money)]);
+            return ValidationResult<Money>.Failure([CommunicationErrors.InvalidMoney()]);
         }
 
         ValidationResult<Currency> currency = Currency.Create(money.CurrencyCode);
@@ -53,7 +54,7 @@ public static class MoneyProtoExtensions
         ArgumentNullException.ThrowIfNull(money);
         return IsValid(money)
             ? Amount(money)
-            : throw new ArgumentException(InvalidMessage(money).Message, nameof(money));
+            : throw new ArgumentException(CommunicationErrors.InvalidMoney().Message, nameof(money));
     }
 
     /// <summary>Writes an amount as a <c>google.type.Money</c> in <paramref name="currencyCode"/>.</summary>
@@ -70,7 +71,7 @@ public static class MoneyProtoExtensions
         decimal whole = decimal.Truncate(rounded);
         if (whole is > long.MaxValue or < long.MinValue)
         {
-            throw new ArgumentOutOfRangeException(nameof(amount), amount, "The whole part does not fit google.type.Money's 64-bit units.");
+            throw new ArgumentOutOfRangeException(nameof(amount), "The whole part of the amount does not fit the 64-bit units of google.type.Money.");
         }
 
         return new ProtoMoney
@@ -88,7 +89,4 @@ public static class MoneyProtoExtensions
         && !(money.Units > 0 && money.Nanos < 0)
         && !(money.Units < 0 && money.Nanos > 0);
 
-    private static Error InvalidMessage(ProtoMoney money) => Error.Validation(
-        "money.proto.invalid",
-        $"google.type.Money with units {money.Units} and nanos {money.Nanos} is invalid: nanos must be within ±999,999,999 and share the sign of units.");
 }

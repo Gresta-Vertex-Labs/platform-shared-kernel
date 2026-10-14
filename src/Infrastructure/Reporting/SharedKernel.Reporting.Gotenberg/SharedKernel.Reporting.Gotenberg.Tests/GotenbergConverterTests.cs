@@ -5,10 +5,14 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Execution.Context;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Testing.Logging;
 using Xunit;
 
 namespace SharedKernel.Reporting.Gotenberg.Tests;
@@ -84,38 +88,178 @@ public sealed class GotenbergConverterTests
         request.Headers["Authorization"].Should().Be("Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("reports:s3cret")));
     }
 
+    private const string SentinelHost = "sentinel-host.test";
+    private const string SentinelBody = "sentinel-body";
+    private const string SentinelReason = "sentinel-reason";
+
+    private static readonly string[] Sentinels = [SentinelHost, "3000", "forms/chromium", SentinelBody, SentinelReason, "Unauthorized", "Basic", "s3cret"];
+
     [Theory]
-    [InlineData(HttpStatusCode.BadRequest, ReportingErrorCodes.ConversionFailed, "form field 'scale' is invalid")]
-    [InlineData(HttpStatusCode.NotFound, ReportingErrorCodes.ConverterUnavailable, "BaseUrl")]
-    [InlineData(HttpStatusCode.Unauthorized, ReportingErrorCodes.ConverterUnavailable, "credentials")]
-    [InlineData(HttpStatusCode.ServiceUnavailable, ReportingErrorCodes.ConverterUnavailable, "503")]
-    [InlineData(HttpStatusCode.GatewayTimeout, ReportingErrorCodes.ConversionTimeout, "did not finish")]
-    public async Task MapsGotenbergFailures(HttpStatusCode status, string code, string mentioned)
+    [InlineData(HttpStatusCode.BadRequest, ReportingErrorCodes.ConversionFailed, ErrorType.Validation, "The document could not be converted.")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, ReportingErrorCodes.ConversionFailed, ErrorType.Validation, "The document could not be converted.")]
+    [InlineData(HttpStatusCode.Unauthorized, ReportingErrorCodes.ConverterUnavailable, ErrorType.Unavailable, "The document converter is unavailable.")]
+    [InlineData(HttpStatusCode.Forbidden, ReportingErrorCodes.ConverterUnavailable, ErrorType.Unavailable, "The document converter is unavailable.")]
+    [InlineData(HttpStatusCode.NotFound, ReportingErrorCodes.ConverterUnavailable, ErrorType.Unavailable, "The document converter is unavailable.")]
+    [InlineData(HttpStatusCode.TooManyRequests, ReportingErrorCodes.ConverterUnavailable, ErrorType.Unavailable, "The document converter is unavailable.")]
+    [InlineData(HttpStatusCode.InternalServerError, ReportingErrorCodes.ConverterUnavailable, ErrorType.Unavailable, "The document converter is unavailable.")]
+    [InlineData(HttpStatusCode.BadGateway, ReportingErrorCodes.ConverterUnavailable, ErrorType.Unavailable, "The document converter is unavailable.")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, ReportingErrorCodes.ConverterUnavailable, ErrorType.Unavailable, "The document converter is unavailable.")]
+    [InlineData(HttpStatusCode.RequestTimeout, ReportingErrorCodes.ConversionTimeout, ErrorType.Timeout, null)]
+    [InlineData(HttpStatusCode.GatewayTimeout, ReportingErrorCodes.ConversionTimeout, ErrorType.Timeout, null)]
+    public async Task MapsGotenbergFailures_ToFixedSentences_WithoutAnyProviderDetail(
+        HttpStatusCode status, string code, ErrorType type, string? message)
     {
         var handler = new StubHandler(_ => new HttpResponseMessage(status)
         {
-            Content = new StringContent("Invalid form data: form field 'scale' is invalid"),
+            ReasonPhrase = SentinelReason,
+            Content = new StringContent(SentinelBody),
         });
-        using IHost host = Host(handler, new() { ["SharedKernel:Reporting:Gotenberg:MaxRetryAttempts"] = "0" });
+        using IHost host = Host(handler, Sentinel());
         using var stream = new MemoryStream();
 
         Result<long> result = await Converter(host).ConvertToStreamAsync("<p/>", stream);
 
         result.Error.Code.Should().Be(code);
-        result.Error.Message.Should().Contain(mentioned);
+        result.Error.Type.Should().Be(type);
+        if (message is not null)
+        {
+            result.Error.Message.Should().Be(message);
+        }
+        else
+        {
+            result.Error.Message.Should().StartWith("The document conversion did not finish within ");
+        }
+
+        NoSentinel(result.Error);
         stream.Length.Should().Be(0, "nothing is written when the conversion fails");
     }
 
     [Fact]
-    public async Task AnUnreachableGotenberg_IsUnavailable()
+    public async Task AnUnreachableGotenberg_IsUnavailable_WithoutAnyProviderDetail()
     {
-        var handler = new StubHandler(_ => throw new HttpRequestException(HttpRequestError.ConnectionError, "refused"));
-        using IHost host = Host(handler, new() { ["SharedKernel:Reporting:Gotenberg:MaxRetryAttempts"] = "0" });
+        var handler = new StubHandler(_ => throw new HttpRequestException(HttpRequestError.ConnectionError, $"refused {SentinelHost}:3000 {SentinelBody}"));
+        using IHost host = Host(handler, Sentinel());
 
         Result<long> result = await Converter(host).ConvertToStreamAsync("<p/>", Stream.Null);
 
         result.Error.Code.Should().Be(ReportingErrorCodes.ConverterUnavailable);
-        result.Error.Message.Should().Contain("ConnectionError");
+        result.Error.Type.Should().Be(ErrorType.Unavailable);
+        result.Error.Message.Should().Be("The document converter is unavailable.");
+        NoSentinel(result.Error);
+    }
+
+    [Fact]
+    public async Task ASlowGotenberg_TimeoutError_CarriesNoProviderDetail()
+    {
+        var handler = new StubHandler(async (_, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            return Ok();
+        });
+        Dictionary<string, string?> settings = Sentinel();
+        settings["SharedKernel:Reporting:Gotenberg:Timeout"] = "00:00:01";
+        using IHost host = Host(handler, settings);
+
+        Result<long> result = await Converter(host).ConvertToStreamAsync("<p/>", Stream.Null);
+
+        result.Error.Code.Should().Be(ReportingErrorCodes.ConversionTimeout);
+        result.Error.Type.Should().Be(ErrorType.Timeout);
+        NoSentinel(result.Error);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, 400)]
+    [InlineData(HttpStatusCode.Unauthorized, 401)]
+    [InlineData(HttpStatusCode.Forbidden, 403)]
+    [InlineData(HttpStatusCode.NotFound, 404)]
+    [InlineData(HttpStatusCode.RequestTimeout, 408)]
+    [InlineData(HttpStatusCode.UnprocessableEntity, 422)]
+    [InlineData(HttpStatusCode.TooManyRequests, 429)]
+    [InlineData(HttpStatusCode.InternalServerError, 500)]
+    [InlineData(HttpStatusCode.BadGateway, 502)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, 503)]
+    [InlineData(HttpStatusCode.GatewayTimeout, 504)]
+    public async Task ARejectedConversion_LogsTheStatusCode_AndNothingElse(HttpStatusCode status, int expected)
+    {
+        var logger = new InMemoryLogger<GotenbergHtmlToPdfConverter>();
+        var handler = new StubHandler(_ => new HttpResponseMessage(status)
+        {
+            ReasonPhrase = SentinelReason,
+            Content = new StringContent(SentinelBody),
+        });
+        using IHost host = Host(handler, Sentinel(), services => services.AddSingleton<ILogger<GotenbergHtmlToPdfConverter>>(logger));
+
+        await Converter(host).ConvertToStreamAsync("<p/>", Stream.Null);
+
+        LogRecord record = logger.Records.ShouldHaveLogged(new EventId(20400), LogLevel.Warning);
+        logger.Records.Should().ContainSingle("one record per failed call");
+        record.Template.Should().Be("Gotenberg answered with HTTP status code {StatusCode}.");
+        record.Message.Should().Be($"Gotenberg answered with HTTP status code {expected}.");
+        record.TryGetProperty("StatusCode", out object? value).Should().BeTrue();
+        value.Should().Be(expected);
+        record.Exception.Should().BeNull();
+        logger.Records.ShouldNotLeak(Sentinels);
+        logger.Records.ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Reporting, 4);
+    }
+
+    [Fact]
+    public async Task AnUnreachableGotenberg_LogsTheErrorKindWithTheException_AndNothingElse()
+    {
+        var logger = new InMemoryLogger<GotenbergHtmlToPdfConverter>();
+        var handler = new StubHandler(_ => throw new HttpRequestException(HttpRequestError.ConnectionError, $"refused {SentinelHost}:3000 {SentinelBody}"));
+        using IHost host = Host(handler, Sentinel(), services => services.AddSingleton<ILogger<GotenbergHtmlToPdfConverter>>(logger));
+
+        await Converter(host).ConvertToStreamAsync("<p/>", Stream.Null);
+
+        LogRecord record = logger.Records.ShouldHaveLogged(new EventId(20401), LogLevel.Warning);
+        logger.Records.Should().ContainSingle("one record per failed call");
+        record.Template.Should().Be("Gotenberg could not be reached: {HttpRequestError}.");
+        record.Message.Should().Be("Gotenberg could not be reached: ConnectionError.");
+        record.TryGetProperty("HttpRequestError", out object? value).Should().BeTrue();
+        value.Should().Be(HttpRequestError.ConnectionError);
+        record.Exception.Should().BeOfType<HttpRequestException>();
+        logger.Records.Where(r => r.Message.Contains(SentinelHost, StringComparison.Ordinal)).Should().BeEmpty();
+        logger.Records.ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Reporting, 4);
+    }
+
+    [Fact]
+    public async Task ASuccessfulConversion_LogsNothingFromTheConverter()
+    {
+        var logger = new InMemoryLogger<GotenbergHtmlToPdfConverter>();
+        using IHost host = Host(new StubHandler(_ => Ok()), configure: services => services.AddSingleton<ILogger<GotenbergHtmlToPdfConverter>>(logger));
+
+        (await Converter(host).ConvertToStreamAsync("<p/>", Stream.Null)).IsSuccess.Should().BeTrue();
+
+        logger.Records.Should().BeEmpty();
+    }
+
+    private static Dictionary<string, string?> Sentinel() => new()
+    {
+        ["SharedKernel:Reporting:Gotenberg:BaseUrl"] = $"http://{SentinelHost}:3000/",
+        ["SharedKernel:Reporting:Gotenberg:Username"] = "reports",
+        ["SharedKernel:Reporting:Gotenberg:Password"] = "s3cret",
+        ["SharedKernel:Reporting:Gotenberg:MaxRetryAttempts"] = "0",
+    };
+
+    private static void NoSentinel(Error error)
+    {
+        var parts = new List<string?> { error.Message };
+        foreach (Error detail in error.Details)
+        {
+            parts.Add(detail.Message);
+        }
+
+        foreach (KeyValuePair<string, object?> argument in error.MessageArguments)
+        {
+            parts.Add(argument.Key);
+            parts.Add(argument.Value?.ToString());
+        }
+
+        string everything = string.Join('|', parts);
+        foreach (string sentinel in Sentinels)
+        {
+            everything.Should().NotContain(sentinel);
+        }
     }
 
     [Fact]

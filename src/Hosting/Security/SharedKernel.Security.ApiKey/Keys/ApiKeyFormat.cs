@@ -24,6 +24,8 @@ internal static class ApiKeyFormat
 
     private static readonly uint[] CrcTable = BuildCrcTable();
 
+    internal const string PrefixRule = "ManagedApiKeyOptions.Prefix must be 2-32 lowercase letters, digits and single underscores, starting with a letter.";
+
     public static bool IsValidPrefix([NotNullWhen(true)] string? prefix)
     {
         if (prefix is null || prefix.Length is < MinPrefixLength or > MaxPrefixLength || !char.IsAsciiLetterLower(prefix[0]))

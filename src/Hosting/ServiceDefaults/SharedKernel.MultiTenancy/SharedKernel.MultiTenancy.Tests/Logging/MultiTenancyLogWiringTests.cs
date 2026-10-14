@@ -32,7 +32,7 @@ public sealed class MultiTenancyLogWiringTests
     }
 
     [Fact]
-    public async Task InvokeAsync_TenantResolves_LogsTenantResolvedWithTenantIdAndStrategyName()
+    public async Task InvokeAsync_TenantResolves_LogsTenantResolvedWithStrategyNameAndNoTenantId()
     {
         var (factory, logger) = CreateLogging();
         var expectedTenantId = Guid.NewGuid();
@@ -45,10 +45,14 @@ public sealed class MultiTenancyLogWiringTests
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         var record = inMemoryLogger.Records.ShouldHaveLogged(13100, LogLevel.Debug);
-        record.TryGetProperty("TenantId", out var tenantId).Should().BeTrue();
-        tenantId.Should().Be(new TenantId(expectedTenantId));
         record.TryGetProperty("StrategyName", out var strategyName).Should().BeTrue();
         strategyName.Should().Be(TenantResolutionStrategyNames.Header);
+        record.TryGetProperty("TenantId", out _).Should().BeFalse("the tenant reaches the record ambiently, never as a placeholder");
+        inMemoryLogger.Records.ShouldNotLeak(expectedTenantId.ToString(), expectedTenantId.ToString("N"));
+        inMemoryLogger.Records.ShouldHaveLoggedTemplate(13100, "Resolved the tenant with the strategy '{StrategyName}'.");
+        inMemoryLogger.Records.ShouldFollowLogConvention();
+        inMemoryLogger.Records.ShouldOnlyLogEventIdsInSubBlock(SharedKernel.Primitives.Logging.LoggingEventIdRanges.ServiceDefaults, 1);
+        factory.ShouldHaveCategory(typeof(TenantResolutionMiddleware));
     }
 
     [Fact]
@@ -64,6 +68,9 @@ public sealed class MultiTenancyLogWiringTests
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         inMemoryLogger.Records.ShouldHaveLogged(13101, LogLevel.Trace);
         inMemoryLogger.Records.ShouldNotHaveLogged(13100);
+        inMemoryLogger.Records.ShouldHaveLoggedTemplate(13101, "No tenant resolved for the current request.");
+        inMemoryLogger.Records.ShouldFollowLogConvention();
+        inMemoryLogger.Records.ShouldOnlyLogEventIdsInSubBlock(SharedKernel.Primitives.Logging.LoggingEventIdRanges.ServiceDefaults, 1);
     }
 
     [Fact]

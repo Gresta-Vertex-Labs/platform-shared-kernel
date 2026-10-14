@@ -21,14 +21,7 @@ internal static class CorsPolicyConfiguration
 
         cors.AddPolicy(PolicyName, policy =>
         {
-            if (options.AllowedOrigins.Contains(WebApiOptionsValidator.WildcardOrigin))
-            {
-                policy.AllowAnyOrigin();
-            }
-            else
-            {
-                policy.WithOrigins([.. options.AllowedOrigins]);
-            }
+            ApplyOrigins(policy, options);
 
             if (options.AllowedMethods.Count > 0)
             {
@@ -60,5 +53,19 @@ internal static class CorsPolicyConfiguration
 
             policy.SetPreflightMaxAge(options.PreflightMaxAge);
         });
+    }
+
+    // The wildcard is applied apart from AllowCredentials(): WebApiOptionsValidator refuses credentials with a wildcard
+    // or no origin at startup, so the two never meet in a running host.
+    private static void ApplyOrigins(CorsPolicyBuilder policy, WebApiCorsOptions options)
+    {
+        if (options.AllowedOrigins.Contains(WebApiOptionsValidator.WildcardOrigin))
+        {
+            policy.AllowAnyOrigin();
+        }
+        else
+        {
+            policy.WithOrigins([.. options.AllowedOrigins]);
+        }
     }
 }

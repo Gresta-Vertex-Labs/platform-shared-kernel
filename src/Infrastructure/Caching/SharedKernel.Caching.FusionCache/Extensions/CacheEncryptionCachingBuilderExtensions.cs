@@ -60,9 +60,9 @@ public static class CacheEncryptionCachingBuilderExtensions
         if (!builder.Services.Any(sd => sd.ServiceType == typeof(ISymmetricEncryptionService)))
         {
             throw new InvalidOperationException(
-                "AddCacheEncryption requires ISymmetricEncryptionService to be registered first. "
+                "AddCacheEncryption requires ISymmetricEncryptionService. "
                     + "Register an IEncryptionKeyProvider and call services.AddSharedKernelCryptography(configuration).AddSymmetricEncryption() "
-                    + "(SharedKernel.Cryptography, 01.Core) before AddCacheEncryption().");
+                    + "before AddCacheEncryption().");
         }
 
         ServiceDescriptor? existingCacheService = builder.Services.LastOrDefault(
@@ -71,7 +71,7 @@ public static class CacheEncryptionCachingBuilderExtensions
         if (existingCacheService is null)
         {
             throw new InvalidOperationException(
-                "AddCacheEncryption requires an ICacheService to already be registered. "
+                "AddCacheEncryption requires an ICacheService. "
                     + "Call AddSharedKernelCaching() before AddCacheEncryption().");
         }
 
@@ -81,7 +81,7 @@ public static class CacheEncryptionCachingBuilderExtensions
         if (existingSerializer is null)
         {
             throw new InvalidOperationException(
-                "AddCacheEncryption requires an IFusionCacheSerializer to already be registered. "
+                "AddCacheEncryption requires an IFusionCacheSerializer. "
                     + "Call AddSharedKernelCaching() before AddCacheEncryption().");
         }
 
@@ -142,7 +142,8 @@ public static class CacheEncryptionCachingBuilderExtensions
 
         Type implementationType = descriptor.ImplementationType
             ?? throw new InvalidOperationException(
-                $"Unable to resolve the currently-registered {descriptor.ServiceType.Name} implementation.");
+                $"The registration of '{descriptor.ServiceType.Name}' names no implementation type, factory or instance. "
+                    + "Register a usable implementation before calling AddCacheEncryption().");
 
         return sp => ActivatorUtilities.CreateInstance(sp, implementationType);
     }

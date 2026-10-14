@@ -36,6 +36,11 @@
 //      against the same TDocument is a hard violation; the last unkeyed registration silently wins for
 //      the neutral interfaces (P-07)
 
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Search.Abstractions.Telemetry;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Search.Abstractions.Errors;
+using SharedKernel.Search.Abstractions.Exceptions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,6 +56,7 @@ using SharedKernel.Search.Meilisearch.Raw;
 using SharedKernel.Search.Meilisearch.Tenancy;
 
 await Surface1_ResolvesWithZeroDiExceptions();
+await SurfaceStreamExceptionIsASharedKernelException();
 await Surface2_RawClientAccessorNotResolvableByDefault();
 await Surface3_RawClientAccessorResolvableWhenAllowed();
 await Surface4_MissingConfigFailsAtHostStartAsync();
@@ -210,5 +216,35 @@ static void Verify(bool condition, string label)
     Console.WriteLine($"  ok — {label}");
 }
 
+
+// ── Stream faults are SharedKernelExceptions: a consumer catches by the kernel base type ─
+static Task SurfaceStreamExceptionIsASharedKernelException()
+{
+    Error? caught = null;
+    try
+    {
+        throw new SearchStreamException(SearchErrors.Unavailable(SearchWellKnown.MeilisearchProviderName));
+    }
+    catch (SharedKernelException e) when (e is SearchStreamException)
+    {
+        caught = e.Error;
+    }
+
+    if (caught?.Code != SearchErrorCodes.Unavailable || SearchOperations.Search != "search" || SearchTagKeys.Provider != "search.provider"
+        || SharedKernel.Search.Meilisearch.Errors.MeilisearchErrorCodes.IndexingTaskFailed != "search.meilisearch.indexing_task_failed")
+    {
+        throw new InvalidOperationException("FAIL: the public SearchErrorCodes, SearchOperations and SearchTagKeys constants are reachable from the packed Abstractions");
+    }
+
+    if (caught is null || caught.Type != ErrorType.Unavailable)
+    {
+        throw new InvalidOperationException("FAIL: SearchStreamException is caught as a SharedKernelException and carries its Unavailable error");
+    }
+
+    Console.WriteLine("Surface PASS: SearchStreamException is a SharedKernelException carrying its structured error");
+    return Task.CompletedTask;
+}
+
 /// <summary>Minimal <see cref="ISearchDocument"/> used only by this verification harness.</summary>
 internal sealed record ProductDocument(string DocumentId, string Name) : ISearchDocument;
+

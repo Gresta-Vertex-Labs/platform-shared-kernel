@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OpenAI;
 using OpenAI.Embeddings;
 using SharedKernel.AI.SemanticKernel.Embeddings;
+using SharedKernel.AI.SemanticKernel.Tests.Support;
 using SharedKernel.Testing.Communication;
 
 namespace SharedKernel.AI.SemanticKernel.Tests.Embeddings;
@@ -28,6 +29,7 @@ public sealed class SemanticKernelEmbeddingGeneratorTokenUsageTests
             "text-embedding-3-small",
             dimension,
             maxBatchSize: 10,
+            TestMeterFactory.NewTelemetry(),
             NullLogger<SemanticKernelEmbeddingGenerator>.Instance);
 
     private static EmbeddingClient BuildClient(FakeHttpMessageHandler handler)

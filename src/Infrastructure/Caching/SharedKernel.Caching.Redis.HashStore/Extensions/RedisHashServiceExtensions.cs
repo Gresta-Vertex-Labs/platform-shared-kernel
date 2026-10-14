@@ -61,7 +61,7 @@ public static class RedisHashServiceExtensions
         if (services.Any(d => d.ServiceType == typeof(ITypedHashStore<T>)))
         {
             throw new InvalidOperationException(
-                $"An ITypedHashStore<{typeof(T).Name}> is already registered; register one store per type.");
+                $"An ITypedHashStore<{typeof(T).Name}> is already registered. Register one store per type.");
         }
 
         services.AddSingleton<ITypedHashStore<T>>(sp => new TypedHashStore<T>(sp.GetRequiredService<IRedisHashService>(), typeInfo));

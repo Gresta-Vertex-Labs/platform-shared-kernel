@@ -76,7 +76,7 @@ Cite the rule number from `src/Infrastructure/Storage/CLAUDE.md` → `## Rules &
 ## Cross-domain couplings
 
 - **01.Core** — `Result`/`Error`, `TenantId`, `AddValidatedOptions`, `IReadinessProbe`.
-- **13.ServiceDefaults** — `AddSharedKernelReadiness()` maps `storage-{store}`; `WithStorageTelemetry()` subscribes to `SharedKernel.Storage` by name.
+- **13.ServiceDefaults** — `AddSharedKernelReadiness()` maps `storage-{store}`; the `SharedKernel.*` wildcard of `AddServiceDefaults()` subscribes the `SharedKernel.Storage` source and meter (no per-domain call).
 - **15.Integration** — `Notifications.Abstractions` attachments are storage references.
 - **20.Reporting** — delivers exports through `IFileStorage.UploadAsync`, `WriteCondition` and presigned download URLs.
 - **14.Presentation** — hands out presigned URLs; storage conflict codes feed its pinned precondition-failed codes.

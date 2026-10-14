@@ -1,3 +1,5 @@
+using SharedKernel.Primitives.Propagation;
+
 namespace SharedKernel.Messaging.MassTransit.Logging;
 
 /// <summary>
@@ -55,4 +57,51 @@ internal static class MessagingLogScope
     /// </returns>
     public static Dictionary<string, object?> Create(Guid? correlationId) =>
         new() { [CorrelationIdKey] = correlationId?.ToString("D") ?? string.Empty };
+
+    /// <summary>
+    /// The scope key under which the caller kind (<see cref="WellKnownHeaders.ActorKind"/>) is recorded.
+    /// </summary>
+    internal const string ActorKindKey = "ActorKind";
+
+    /// <summary>
+    /// The closed set of message headers a consumer log scope may carry, mapped to the scope key each is
+    /// recorded under (compared case-insensitively on the header name).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only <see cref="WellKnownHeaders.ActorKind"/> qualifies: a coarse enum, not an identifier. The rest of
+    /// the well-known headers stay out on purpose (root rule L5): <see cref="WellKnownHeaders.ActorId"/> and
+    /// <see cref="WellKnownHeaders.ClientId"/> identify a person or a client, <see cref="WellKnownHeaders.TenantId"/>
+    /// and <see cref="WellKnownHeaders.IdempotencyKey"/> are on the never-log list, and
+    /// <see cref="WellKnownHeaders.CorrelationId"/> is already the scope's own first entry.
+    /// </para>
+    /// <para>
+    /// The set is closed: a header joins it only through a reviewed change, and a test pins its content.
+    /// </para>
+    /// </remarks>
+    internal static readonly IReadOnlyDictionary<string, string> AllowedHeaders =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [WellKnownHeaders.ActorKind] = ActorKindKey,
+        };
+
+    /// <summary>
+    /// Copies the allow-listed headers (<see cref="AllowedHeaders"/>) from <paramref name="headers"/> into
+    /// <paramref name="scope"/>; every other header is ignored.
+    /// </summary>
+    /// <param name="scope">The scope dictionary built by <see cref="Create"/>.</param>
+    /// <param name="headers">The headers of the message being consumed.</param>
+    public static void AddAllowedHeaders(
+        Dictionary<string, object?> scope,
+        IEnumerable<KeyValuePair<string, object>> headers)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(headers);
+
+        foreach (var header in headers)
+        {
+            if (header.Value is not null && AllowedHeaders.TryGetValue(header.Key, out var scopeKey))
+                scope[scopeKey] = header.Value.ToString();
+        }
+    }
 }

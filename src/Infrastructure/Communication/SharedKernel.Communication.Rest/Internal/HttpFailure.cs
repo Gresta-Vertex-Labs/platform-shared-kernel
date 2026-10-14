@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
+using SharedKernel.Communication.Internal;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -21,16 +22,11 @@ internal static class HttpFailure
         error = exception switch
         {
             OperationCanceledException when cancellationToken.IsCancellationRequested => null,
+            // Ahead of HttpRequestException by intent: a token failure keeps its own error and code.
             AccessTokenUnavailableException e => e.Error,
-            BrokenCircuitException => Error.Unavailable(
-                CommunicationErrorCodes.CircuitOpen,
-                "The service is failing; the call was not sent while its circuit breaker is open."),
-            TimeoutRejectedException or OperationCanceledException => Error.Timeout(
-                CommunicationErrorCodes.Timeout,
-                "The service did not answer in time."),
-            HttpRequestException e => Error.Unavailable(
-                CommunicationErrorCodes.Unreachable,
-                $"The service could not be reached ({e.HttpRequestError})."),
+            BrokenCircuitException => CommunicationErrors.CircuitOpen(),
+            TimeoutRejectedException or OperationCanceledException => CommunicationErrors.Timeout(),
+            HttpRequestException e => CommunicationErrors.Unavailable(e.HttpRequestError.ToString()),
             _ => null,
         };
 
@@ -62,23 +58,19 @@ internal static class HttpFailure
 
         if (response.StatusCode == HttpStatusCode.NoContent || response.Content.Headers.ContentLength == 0)
         {
-            return Result<T>.Failure(EmptyBody());
+            return Result<T>.Failure(CommunicationErrors.EmptyBody());
         }
 
         try
         {
             Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             T? value = await JsonSerializer.DeserializeAsync(body, typeInfo, cancellationToken).ConfigureAwait(false);
-            return value is null ? Result<T>.Failure(EmptyBody()) : Result<T>.Success(value);
+            return value is null ? Result<T>.Failure(CommunicationErrors.EmptyBody()) : Result<T>.Success(value);
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
-            return Result<T>.Failure(Error.Unexpected(
-                CommunicationErrorCodes.InvalidBody,
-                $"The response body is not valid JSON for {typeof(T).Name}."));
+            CommunicationRestLog.SuccessBodyUnreadable(RestLogger.For(response), typeof(T).FullName ?? typeof(T).Name, exception);
+            return Result<T>.Failure(CommunicationErrors.InvalidBody(typeof(T)));
         }
     }
-
-    private static Error EmptyBody() =>
-        Error.Unexpected(CommunicationErrorCodes.EmptyBody, "The success response has no body.");
 }

@@ -17,7 +17,8 @@
 | `SmartEnum<TEnum, TValue>` + `SmartEnumJsonConverter<TEnum, TValue>` | Enumerations carry behaviour, lookups fail loudly, and the underlying value is the JSON contract |
 | `IIdGenerator` / `UuidV7IdGenerator` | Time-ordered ids that keep B-tree inserts local |
 | `IReadinessProbe`, `ReadinessReport`, `AddReadinessProbe` | Every provider reports readiness through one contract, with no health-checks dependency |
-| `WellKnownHeaders`, `WellKnownBaggageKeys`, `WellKnownTagKeys`, `LoggingEventIdRanges` | Header, baggage, tag names and `EventId` blocks exist exactly once platform-wide |
+| `WellKnownHeaders`, `WellKnownBaggageKeys`, `WellKnownTagKeys`, `WellKnownOutcomes`, `LoggingEventIdRanges` | Header, baggage, tag names, outcome values and `EventId` blocks exist exactly once platform-wide |
+| `activity.RecordResult` / `RecordException` / `RecordFailure`, `TelemetryVersion.Of(assembly)` | A failed span carries the same status, `error.*` tags and exception event in every package, and every `ActivitySource` reports its real version |
 
 ## Contents
 
@@ -44,7 +45,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Target framework | `net10.0` |
 | Tier | Foundation — reference it from **any** project |
 | Depends on | `Microsoft.Extensions.DependencyInjection.Abstractions` only (for `AddClock()` and `AddReadinessProbe()`) |
-| Namespaces | `SharedKernel.Primitives.Results`, `.Errors`, `.Clocks`, `.Enums`, `.Identifiers`, `.Health`, `.Propagation`, `.Logging` |
+| Namespaces | `SharedKernel.Primitives.Results`, `.Errors`, `.Clocks`, `.Enums`, `.Identifiers`, `.Health`, `.Propagation`, `.Logging`, `.Telemetry` |
 
 The operations on these types — railway chaining (`Map`, `Bind`, `Ensure`, `Tap`), exception boundaries, guard clauses
 and the exception hierarchy — live in
@@ -149,8 +150,9 @@ turns every probe into a `ready`-tagged check. A host without ASP.NET Core resol
 | --- | --- | --- |
 | `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id`, `Idempotency-Key`, `x-sk-actor-id`, `x-sk-actor-kind`, `x-sk-client-id` | HTTP headers, gRPC metadata, message and workflow headers |
 | `WellKnownBaggageKeys` | `correlation.id`, `TenantId` | `Activity.SetBaggage` / `AddBaggage` |
-| `WellKnownTagKeys` | `tenant.id`, `correlation.id`, `error.type`, `error.code` | `Activity.SetTag` |
-| `LoggingEventIdRanges` | One 1000-wide `EventId` block per domain (`Core` = 1000 … `Reporting` = 20000), `PackageSubBlockWidth` = 100 | `[LoggerMessage(EventId = …)]` |
+| `WellKnownTagKeys` | `tenant.id`, `correlation.id`, `error.type`, `error.code`, `outcome` | `Activity.SetTag`, metric dimensions |
+| `WellKnownOutcomes` | `success`, `failure`, `exception`, `canceled` — the values of the `outcome` tag | `activity.RecordResult(…)` returns them |
+| `LoggingEventIdRanges` | One 1000-wide `EventId` block per domain (`Core` = 1000 … `Reporting` = 20000), `PackageSubBlockWidth` = 100, `SubBlockStart`/`IsInSubBlock` for tests | `[LoggerMessage(EventId = …)]` |
 
 `SharedKernel.Execution`'s `RequestContextPropagation` writes and reads the correlation, tenant and caller headers on every
 hop. Tags are span-local; baggage crosses process boundaries on every outbound call, so its registry stays small. The
@@ -224,12 +226,23 @@ builder.Services.AddReadinessProbe<OrderStoreProbe>();
 ### 4. Take an `EventId` from the domain's block
 
 ```csharp
+// One class per package, constant arithmetic over the domain base. A method cannot be used:
+// [LoggerMessage(EventId = …)] needs a compile-time constant.
+internal static class CachingLoggingEventIds
+{
+    internal const int Base = LoggingEventIdRanges.Caching + 1 * LoggingEventIdRanges.PackageSubBlockWidth;   // 2100
+    internal const int BackplaneReconnected = Base + 1;
+}
+
 [LoggerMessage(
-    EventId = LoggingEventIdRanges.Caching + 100,
+    EventId = CachingLoggingEventIds.BackplaneReconnected,
     Level = LogLevel.Warning,
-    Message = "Cache backplane reconnected after {AttemptCount} attempts")]
+    Message = "The cache backplane reconnected after {AttemptCount} attempts.")]
 public static partial void BackplaneReconnected(ILogger logger, int attemptCount);
 ```
+
+Tests and governance rules assert a package stays inside its sub-block with
+`LoggingEventIdRanges.IsInSubBlock(eventId, LoggingEventIdRanges.Caching, 1)` (`SubBlockStart` gives the first id).
 
 ### 5. Work with a `TResponse` you cannot name (pipeline code)
 
@@ -245,6 +258,52 @@ static TResponse BuildFailure<TResponse>(Error error)
 
 `IHasSuccessFlag` (both result types), `IResultOfT<T>` and `IFailureFactory<TSelf>` (`Result<T>` only) exist for pipeline
 behaviors; application code should not need them. `where TResponse : IResultOfT<TResponse>` does not compile (`CS0311`).
+
+### 6. Telemetry helpers: version, span failure, outcome
+
+```csharp
+using System.Diagnostics;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
+
+internal static class OrderTelemetry
+{
+    // Hold the version in a static readonly field: the helper keeps no cache.
+    internal static readonly ActivitySource Source =
+        new("SharedKernel.Orders", TelemetryVersion.Of(typeof(OrderTelemetry).Assembly));
+}
+
+public async Task<Result<Order>> PlaceAsync(PlaceOrder command, CancellationToken ct)
+{
+    using var activity = OrderTelemetry.Source.StartActivity("orders.place");
+    try
+    {
+        Result<Order> result = await orders.PlaceAsync(command, ct);
+        string outcome = activity.RecordResult(result);          // success touches nothing; failure sets status + error.*
+        metrics.Placed.Add(1, new KeyValuePair<string, object?>(WellKnownTagKeys.Outcome, outcome));
+        return result;
+    }
+    catch (Exception exception)
+    {
+        string outcome = activity.RecordException(exception);    // cancellation records nothing and returns "canceled"
+        metrics.Placed.Add(1, new KeyValuePair<string, object?>(WellKnownTagKeys.Outcome, outcome));
+        throw;
+    }
+}
+```
+
+| Call | Span effect | Returns |
+| --- | --- | --- |
+| `RecordResult(result)` success | Nothing (status stays `Unset`, never `Ok`) | `success` |
+| `RecordResult(result)` / `RecordFailure(error)` failure | Status `Error` described by `Error.Code`; tags `error.code`, `error.type` (the `ErrorType` name) | `failure` |
+| `RecordException(exception)` | Status `Error` described by the exception full name (never its message); `error.type` = full name; `error.code` when the exception implements `IHasError`; the full exception event (one per inner of an `AggregateException`) | `exception` |
+| `RecordException(cancellation)` | Nothing | `canceled` |
+| `AddExceptionEvents(exception)` | The exception event(s) only | none |
+
+All of them are no-ops on a `null`, stopped or non-sampled activity and still return the outcome. `error.type` is bounded
+(an enum name or a CLR type name), so it is safe as a metric dimension. `TelemetryVersion.Of` returns the MinVer
+informational version with build metadata (`1.4.0+3f2a9c1`), else the assembly version, else `0.0.0`.
 
 ## Reference
 
@@ -266,19 +325,22 @@ behaviors; application code should not need them. `where TResponse : IResultOfT<
 | `Error` | `Code`, `Message`, `Type`, `Details`, `MessageArguments`; `Error.None`; `Validation`, `NotFound`, `Conflict`, `Unauthorized`, `Forbidden`, `BusinessRule`, `Unexpected`, `Unavailable`, `Timeout`, `Validation(errors)` |
 | `IClock` | `UtcNow` (`DateTimeOffset`), `Today` (`DateOnly`) — both UTC |
 | `ReadinessReport` | `Status` (`Healthy`/`Degraded`/`Unhealthy`), `Latency`, `Description`, `Data`; `Healthy(…)`, `Degraded(…)`, `Unhealthy(…)` |
+| `ActivityFailureExtensions` (`SharedKernel.Primitives.Telemetry`) | `RecordFailure(error)`, `RecordException(exception)`, `RecordResult(result)` / `RecordResult<T>(result)`, `AddExceptionEvents(exception)` — extensions on `Activity?` |
+| `TelemetryVersion` | `Of(assembly)`, `Unknown` (`"0.0.0"`) |
+| `IHasError` | `Error` — implemented by `SharedKernelException`; lets the recorder read `error.code` from an exception |
 
 ### Error codes (`ErrorCodes`)
 
 | Class | Constants |
 | --- | --- |
 | `Validation` | `Failed` (`validation.failed`), `Required`, `InvalidFormat`, `MaxLength`, `MinLength`, `OutOfRange` |
-| `NotFound` / `Unexpected` | `not_found.default` / `unexpected.exception` |
+| `NotFound` / `Unexpected` | `not_found.default` / `unexpected.default` |
 | `Conflict` | `Default` (`conflict.default`), `Duplicate` (`conflict.duplicate`) |
 | `Unauthorized` | `Default` (`unauthorized.default`), `Expired` (`unauthorized.expired`) |
 | `Forbidden` | `Default` (`forbidden.default`), `InsufficientPermission` (`forbidden.insufficient_permission`) |
 | `Unavailable` / `Timeout` | `unavailable.default` / `timeout.default` |
-| `Idempotency` | `KeyRequired`, `KeyInvalid`, `KeyReused`, `InProgress` (`idempotency.*`) |
-| `Domain` | `RuleViolated` (`domain.rule.violated`) |
+| `Idempotency` | `KeyRequired`, `KeyInvalid`, `KeyReused`, `InProgress`, `StoreUnavailable` (`idempotency.*`) |
+| `Domain` | `RuleViolated` (`domain.rule_violated`) |
 
 ### Logging
 
@@ -330,6 +392,19 @@ nothing silently replaces `Guid.NewGuid()`.
 and Primitives is the one package every consumer already references.
 
 **Why no local-time member on `IClock`?** Local time is a presentation concern.
+
+**Why do the span helpers live here and not in `SharedKernel.Core`?** They need only `Error`, `ErrorType` and the BCL's
+`System.Diagnostics`, and `Execution` and every adapter reference Primitives. `IHasError` is a one-property interface so
+the recorder reads `error.code` from `SharedKernelException` without referencing `Core`.
+
+**Why is the status description a code or a type name and never a message?** A status description appears in trace
+summaries and alert text, while the full exception event (with the message and stack) stays in the trace body.
+
+**Why does `RecordResult` never set `Ok`?** `Unset` is the correct status of a span that succeeded; `Ok` is reserved for
+an operator's explicit override.
+
+**Why `EventId` const arithmetic and not a helper?** `[LoggerMessage(EventId = …)]` accepts only constants, so
+`SubBlockStart`/`IsInSubBlock` exist for tests and governance, not for the attribute.
 
 **Is it AOT-safe?** Yes — no reflection, `dynamic`, expression trees or runtime code generation; `SmartEnum` lookups use
 lists built at type initialization and are verified under a `TrimMode=full` publish.

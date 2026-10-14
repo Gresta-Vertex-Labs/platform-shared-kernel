@@ -1,5 +1,4 @@
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 
@@ -16,14 +15,9 @@ namespace SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 /// </remarks>
 public sealed class TenantKeyShreddedException : SharedKernelException
 {
-    /// <summary>The error code carried by this exception.</summary>
-    public const string ErrorCode = "Persistence.Encryption.TenantKeyShredded";
-
     /// <summary>Initialises a new <see cref="TenantKeyShreddedException"/>.</summary>
     public TenantKeyShreddedException()
-        : base(
-            "The tenant's data key was shredded; its encrypted values can no longer be read or written.",
-            Error.NotFound(ErrorCode, "The tenant's data was erased and can no longer be read or written."))
+        : base(EncryptionErrors.TenantKeyShredded())
     {
     }
 }

@@ -7,7 +7,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Storage.Obs;
+using SharedKernel.Testing.Telemetry;
+using System.Diagnostics;
 using Testcontainers.Minio;
 
 namespace SharedKernel.Storage.Obs.Tests;
@@ -136,12 +139,78 @@ public sealed class ObsStorageTests(MinioFixture minio) : IClassFixture<MinioFix
         createOnlyUrl.Error.Code.Should().Be(StorageErrorCodes.NotSupported);
     }
 
+
+    [Fact]
+    public async Task A_refused_feature_is_recorded_through_the_s3_core_and_obs_adds_no_source_or_meter()
+    {
+        using ServiceProvider host = minio.CreateHost(s => s["SharedKernel:Storage:Obs:Endpoint"] = "http://127.0.0.1:1");
+        IFileStorage archive = host.GetRequiredKeyedService<IFileStorage>("archive");
+        using var activities = ActivityRecorder.StartRecordingPrefix("SharedKernel");
+        using var metrics = MetricRecorder.StartRecordingPrefix("SharedKernel");
+
+        Result<FileReference> result = await archive.UploadAsync(
+            "a",
+            new MemoryStream([1]),
+            new FileUploadOptions { Condition = WriteCondition.IfNotExists });
+
+        result.Error.Code.Should().Be(StorageErrorCodes.NotSupported);
+        Activity span = activities.RecordedActivities.ShouldHaveSingleSpan("storage upload")
+            .ShouldBeRecordedFailure(result.Error)
+            .ShouldHaveSource(StorageTelemetryNames.SourceName)
+            .ShouldHaveTag(StorageTagKeys.Provider, "Obs")
+            .ShouldHaveTag(WellKnownTagKeys.ErrorType, "Unexpected");
+        span.GetTagItem(WellKnownTagKeys.ErrorCode).Should().Be(StorageErrorCodes.NotSupported);
+        activities.RecordedActivities.Select(a => a.Source.Name).Should().OnlyContain(n => n == StorageTelemetryNames.SourceName);
+        metrics.Instruments.Select(i => i.MeterName).Should().OnlyContain(n => n == StorageTelemetryNames.MeterName);
+        metrics.MeasurementsOf(StorageTelemetryNames.OperationDurationInstrumentName).Should().ContainSingle()
+            .Which.TryGetTag(WellKnownTagKeys.Outcome, out object? outcome).Should().BeTrue();
+        outcome.Should().Be(WellKnownOutcomes.Failure);
+    }
+
     [Theory]
     [InlineData("https://obs.tr-west-1.myhuaweicloud.com", null, "tr-west-1")]
     [InlineData("https://obs.ap-southeast-3.myhuaweicloud.com", "cn-north-4", "cn-north-4")]
     [InlineData("https://storage.example.internal", null, null)]
     public void The_signing_region_comes_from_the_endpoint_unless_configured(string endpoint, string? region, string? expected) =>
         ObsStorageOptionsValidator.ResolveRegion(new ObsStorageOptions { Endpoint = endpoint, Region = region }).Should().Be(expected);
+
+    [Fact]
+    public void A_non_standard_endpoint_without_a_region_names_Region_and_never_the_endpoint_host()
+    {
+        using ServiceProvider host = minio.CreateHost(s =>
+        {
+            s["SharedKernel:Storage:Obs:Endpoint"] = "https://storage.example.internal:9443";
+            s.Remove("SharedKernel:Storage:Obs:Region");
+        });
+
+        Action resolve = () => _ = host.GetRequiredService<IOptions<ObsStorageOptions>>().Value;
+
+        IEnumerable<string> failures = resolve.Should().Throw<OptionsValidationException>().Which.Failures;
+        failures.Should().ContainSingle().Which.Should()
+            .Contain(nameof(ObsStorageOptions.Region))
+            .And.NotContain("storage.example.internal")
+            .And.NotContain("9443");
+    }
+
+    [Fact]
+    public void Every_obs_validation_failure_is_a_sentence_that_quotes_no_endpoint_or_key()
+    {
+        var options = new ObsStorageOptions
+        {
+            Endpoint = "https://storage.example.internal:9443",
+            AccessKeyId = "access-key-value",
+            MaxRetries = 99,
+            RequestTimeout = TimeSpan.Zero,
+        };
+
+        var result = new ObsStorageOptionsValidator().Validate(null, options);
+
+        result.Failures.Should().HaveCount(4).And.AllSatisfy(f =>
+        {
+            f.Should().EndWith(".");
+            f.Should().NotContain("storage.example.internal").And.NotContain("9443").And.NotContain("access-key-value");
+        });
+    }
 
     [Fact]
     public void Missing_credentials_and_an_unknown_region_are_reported_at_startup()

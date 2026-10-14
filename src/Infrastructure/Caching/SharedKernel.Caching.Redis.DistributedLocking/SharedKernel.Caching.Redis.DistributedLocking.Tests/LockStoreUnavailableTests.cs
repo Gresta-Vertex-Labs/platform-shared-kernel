@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
+using SharedKernel.Primitives.Errors;
 using StackExchange.Redis;
 using Testcontainers.Redis;
 using Xunit;
@@ -39,6 +40,8 @@ public sealed class LockStoreUnavailableTests : IAsyncDisposable
 
         Assert.Equal(resource, ex.Resource);
         Assert.NotNull(ex.InnerException);
+        Assert.Equal(CachingErrorCodes.LockUnavailable, ex.Error.Code);
+        Assert.Equal(ErrorType.Unavailable, ex.Error.Type);
     }
 
     [Fact]
@@ -64,6 +67,8 @@ public sealed class LockStoreUnavailableTests : IAsyncDisposable
 
         Assert.Equal(resource, ex.Resource);
         Assert.NotNull(ex.InnerException);
+        Assert.Equal(CachingErrorCodes.LockUnavailable, ex.Error.Code);
+        Assert.Equal(ErrorType.Unavailable, ex.Error.Type);
     }
 
     [Fact]

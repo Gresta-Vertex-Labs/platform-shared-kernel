@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using FluentAssertions;
 using SharedKernel.Primitives.Results;
@@ -34,7 +35,7 @@ public sealed class HtmlConverterBaseTests
     [Fact]
     public async Task ConvertAsync_WhenRenderingFails_StoresNothing()
     {
-        var converter = new FakeConverter(Dependencies()) { Failure = ReportingErrors.ConverterUnavailable("down") };
+        var converter = new FakeConverter(Dependencies()) { Failure = ReportingErrors.ConverterUnavailable() };
 
         Result<PdfDocumentOutcome> result = await converter.ConvertAsync("<p>hi</p>", new ReportDestination { Store = "documents", Key = "a.pdf" });
 
@@ -65,7 +66,7 @@ public sealed class HtmlConverterBaseTests
         { "<p/>", new HtmlToPdfOptions { Assets = [new HtmlAsset("a.png", Array.Empty<byte>()), new HtmlAsset("A.png", Array.Empty<byte>())] } },
     };
 
-    private ReportingDependencies Dependencies() => new(storageFactory: InMemoryStorage.CreateFactory(_documents));
+    private ReportingDependencies Dependencies() => new(NullLogger<ReportingDependencies>.Instance, storageFactory: InMemoryStorage.CreateFactory(_documents));
 
     private FakeConverter Converter() => new(Dependencies());
 

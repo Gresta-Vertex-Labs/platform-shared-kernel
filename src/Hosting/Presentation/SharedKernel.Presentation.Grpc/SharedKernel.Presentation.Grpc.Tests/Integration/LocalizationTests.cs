@@ -55,6 +55,7 @@ public sealed class LocalizationTests
             ("order.lines_empty", "An order needs at least one line.", "order.lines_empty"));
     }
 
+[Fact]    public async Task UnexpectedDefault_GenericMessage_IsTranslatedIntoTheRequestCulture()    {        await using var app = await StartAsync();        var exception = await FailAsync(app, Failures.Unknown, "tr-TR");        var status = exception.ShouldHaveRichStatus(StatusCode.Internal);        status.Message.Should().Be("Beklenmeyen bir hata oluştu.");        status.ErrorInfo().Reason.Should().Be(SharedKernel.Primitives.Errors.ErrorCodes.Unexpected.Default);    }
     [Fact]
     public async Task R31_SummaryOfTheFieldViolationsLeftOut_IsTranslated_WithItsCount()
     {
@@ -74,6 +75,7 @@ public sealed class LocalizationTests
                     new LocalizationCatalogBuilder()
                         .Add("order.not_found", Turkish, "{orderId} numaralı sipariş bulunamadı.")
                         .Add("customer.name_required", Turkish, "Ad zorunludur.")
+                        .Add(SharedKernel.Primitives.Errors.ErrorCodes.Unexpected.Default, Turkish, "Beklenmeyen bir hata oluştu.")
                         .Add(GrpcErrorCodes.MoreFieldViolations, Turkish, "… ve {count} alan hatası daha.")
                         .Build());
                 builder.Services.AddRequestLocalization(options =>

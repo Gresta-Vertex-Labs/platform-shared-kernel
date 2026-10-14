@@ -1,6 +1,9 @@
 using System.Text;
 using SharedKernel.Primitives.Errors;
 
+// The validation helpers are public API with a "null means valid" contract that providers chain with `??`;
+// an Error.None sentinel would break every `is Error` consumer. Recorded as a deviation in the domain brain.
+#pragma warning disable SK0004
 namespace SharedKernel.Storage;
 
 /// <summary>

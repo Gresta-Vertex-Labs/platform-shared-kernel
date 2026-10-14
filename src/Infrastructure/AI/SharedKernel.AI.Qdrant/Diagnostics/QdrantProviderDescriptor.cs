@@ -48,7 +48,7 @@ internal sealed class QdrantProviderDescriptor : IVectorProviderDescriptor
         if (query.Vector.Length > MaxVectorDimension)
         {
             return Result.Failure(IntelligenceErrors.InvalidQuery(
-                $"Query vector dimension {query.Vector.Length} exceeds the provider's MaxVectorDimension ceiling of {MaxVectorDimension}."));
+                $"Query vector dimension {query.Vector.Length} must not exceed the ceiling of {MaxVectorDimension}."));
         }
 
         if (query.Filter is { } filter)

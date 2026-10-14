@@ -40,7 +40,7 @@ flowchart LR
   src_Application -->|1| src_Testing
   src_Foundation -->|1| src_Application
   src_Foundation -->|1| src_Testing
-  src_Hosting_Presentation -->|14| src_Foundation
+  src_Hosting_Presentation -->|15| src_Foundation
   src_Hosting_Presentation -->|1| src_Hosting_Security
   src_Hosting_Presentation -->|2| src_Model_Contracts
   src_Hosting_Security -->|5| src_Foundation
@@ -48,35 +48,35 @@ flowchart LR
   src_Hosting_ServiceDefaults -->|4| src_Hosting_Security
   src_Hosting_ServiceDefaults -->|1| src_Infrastructure_Caching
   src_Hosting_ServiceDefaults -->|3| src_Infrastructure_Persistence
-  src_Infrastructure_AI -->|6| src_Foundation
-  src_Infrastructure_Caching -->|9| src_Foundation
-  src_Infrastructure_Communication -->|8| src_Foundation
+  src_Infrastructure_AI -->|7| src_Foundation
+  src_Infrastructure_Caching -->|10| src_Foundation
+  src_Infrastructure_Communication -->|9| src_Foundation
   src_Infrastructure_Communication -->|1| src_Model_Domain
-  src_Infrastructure_Idempotency -->|3| src_Foundation
+  src_Infrastructure_Idempotency -->|4| src_Foundation
   src_Infrastructure_Idempotency -->|1| src_Infrastructure_Caching
   src_Infrastructure_Idempotency -->|1| src_Infrastructure_Persistence
   src_Infrastructure_Integration -->|8| src_Foundation
   src_Infrastructure_Integration -->|1| src_Infrastructure_Messaging
   src_Infrastructure_Integration -->|2| src_Infrastructure_Storage
   src_Infrastructure_Integration -->|2| src_Model_Contracts
-  src_Infrastructure_Messaging -->|5| src_Foundation
+  src_Infrastructure_Messaging -->|6| src_Foundation
   src_Infrastructure_Messaging -->|1| src_Infrastructure_Idempotency
   src_Infrastructure_Messaging -->|3| src_Model_Contracts
-  src_Infrastructure_Persistence -->|11| src_Foundation
+  src_Infrastructure_Persistence -->|12| src_Foundation
   src_Infrastructure_Persistence -->|1| src_Model_Contracts
   src_Infrastructure_Persistence -->|2| src_Model_Domain
   src_Infrastructure_Persistence -->|1| src_Testing
-  src_Infrastructure_Reporting -->|6| src_Foundation
+  src_Infrastructure_Reporting -->|7| src_Foundation
   src_Infrastructure_Reporting -->|2| src_Infrastructure_Storage
   src_Infrastructure_Reporting -->|1| src_Testing
   src_Infrastructure_Scheduling -->|1| src_Application
   src_Infrastructure_Scheduling -->|3| src_Foundation
   src_Infrastructure_Scheduling -->|1| src_Infrastructure_Caching
-  src_Infrastructure_Search -->|6| src_Foundation
+  src_Infrastructure_Search -->|7| src_Foundation
   src_Infrastructure_Search -->|1| src_Model_Contracts
-  src_Infrastructure_Storage -->|3| src_Foundation
+  src_Infrastructure_Storage -->|4| src_Foundation
   src_Infrastructure_Workflows -->|1| src_Application
-  src_Infrastructure_Workflows -->|4| src_Foundation
+  src_Infrastructure_Workflows -->|5| src_Foundation
   src_Model_Contracts -->|1| src_Foundation
   src_Model_Domain -->|3| src_Foundation
   src_Testing -->|4| src_Foundation
@@ -156,7 +156,9 @@ flowchart LR
   SharedKernel_Cryptography_Testing --> SharedKernel_Cryptography
   SharedKernel_Cryptography_Testing --> SharedKernel_Testing
   SharedKernel_DataPrivacy --> SharedKernel_Primitives
+  SharedKernel_Execution --> SharedKernel_Core
   SharedKernel_Execution --> SharedKernel_Primitives
+  SharedKernel_FeatureManagement --> SharedKernel_Core
   SharedKernel_FeatureManagement --> SharedKernel_Execution
   SharedKernel_FeatureManagement --> SharedKernel_Primitives
   SharedKernel_FeatureManagement_Testing --> SharedKernel_FeatureManagement
@@ -193,6 +195,9 @@ flowchart LR
   SharedKernel_Presentation_Core --> SharedKernel_Primitives
   SharedKernel_Presentation_Core --> SharedKernel_Security_Abstractions
   SharedKernel_Presentation_GraphQL --> SharedKernel_Contracts
+  SharedKernel_Presentation_GraphQL --> SharedKernel_Core
+  SharedKernel_Presentation_GraphQL --> SharedKernel_Presentation_Core
+  SharedKernel_Presentation_GraphQL --> SharedKernel_Presentation_WebApi
   SharedKernel_Presentation_GraphQL --> SharedKernel_Primitives
   SharedKernel_Presentation_Grpc --> SharedKernel_Configuration
   SharedKernel_Presentation_Grpc --> SharedKernel_Core
@@ -298,8 +303,10 @@ flowchart LR
     SharedKernel_AI_Testing["AI.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_AI_Abstractions --> SharedKernel_Core
   SharedKernel_AI_Abstractions --> SharedKernel_Execution
   SharedKernel_AI_Abstractions --> SharedKernel_Primitives
   SharedKernel_AI_Qdrant --> SharedKernel_AI_Abstractions
@@ -327,9 +334,11 @@ flowchart LR
     SharedKernel_Caching_Testing["Caching.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Cryptography(["Cryptography<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_Caching_Abstractions --> SharedKernel_Core
   SharedKernel_Caching_Abstractions --> SharedKernel_Execution
   SharedKernel_Caching_FusionCache --> SharedKernel_Caching_Abstractions
   SharedKernel_Caching_FusionCache --> SharedKernel_Configuration
@@ -363,10 +372,12 @@ flowchart LR
     SharedKernel_Communication_Testing["Communication.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Domain(["Domain<br/><i>src/Model/Domain</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
   SharedKernel_Communication --> SharedKernel_Configuration
+  SharedKernel_Communication --> SharedKernel_Core
   SharedKernel_Communication --> SharedKernel_Execution
   SharedKernel_Communication --> SharedKernel_Primitives
   SharedKernel_Communication_Grpc --> SharedKernel_Communication
@@ -391,9 +402,11 @@ flowchart LR
     SharedKernel_Idempotency_Testing["Idempotency.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Caching_Redis_Core(["Caching.Redis.Core<br/><i>src/Infrastructure/Caching</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Persistence_EfCore(["Persistence.EfCore<br/><i>src/Infrastructure/Persistence</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_Idempotency_Abstractions --> SharedKernel_Core
   SharedKernel_Idempotency_Abstractions --> SharedKernel_Execution
   SharedKernel_Idempotency_EfCore --> SharedKernel_Idempotency_Abstractions
   SharedKernel_Idempotency_EfCore --> SharedKernel_Persistence_EfCore
@@ -456,6 +469,7 @@ flowchart LR
   SharedKernel_Compression(["Compression<br/><i>src/Foundation</i>"])
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
   SharedKernel_Contracts(["Contracts<br/><i>src/Model/Contracts</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Cryptography(["Cryptography<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Idempotency_Abstractions(["Idempotency.Abstractions<br/><i>src/Infrastructure/Idempotency</i>"])
@@ -466,6 +480,7 @@ flowchart LR
   SharedKernel_Messaging_MassTransit --> SharedKernel_Compression
   SharedKernel_Messaging_MassTransit --> SharedKernel_Configuration
   SharedKernel_Messaging_MassTransit --> SharedKernel_Contracts
+  SharedKernel_Messaging_MassTransit --> SharedKernel_Core
   SharedKernel_Messaging_MassTransit --> SharedKernel_Cryptography
   SharedKernel_Messaging_MassTransit --> SharedKernel_Idempotency_Abstractions
   SharedKernel_Messaging_MassTransit --> SharedKernel_Messaging_Abstractions
@@ -502,6 +517,7 @@ flowchart LR
   SharedKernel_Persistence_Abstractions --> SharedKernel_Execution
   SharedKernel_Persistence_Abstractions --> SharedKernel_Primitives
   SharedKernel_Persistence_Dapper --> SharedKernel_Configuration
+  SharedKernel_Persistence_Dapper --> SharedKernel_Core
   SharedKernel_Persistence_Dapper --> SharedKernel_Persistence_Npgsql
   SharedKernel_Persistence_EfCore --> SharedKernel_Configuration
   SharedKernel_Persistence_EfCore --> SharedKernel_Core
@@ -537,10 +553,12 @@ flowchart LR
     SharedKernel_Reporting_Testing["Reporting.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
   SharedKernel_Storage_Abstractions(["Storage.Abstractions<br/><i>src/Infrastructure/Storage</i>"])
   SharedKernel_Testing(["Testing<br/><i>src/Testing</i>"])
+  SharedKernel_Reporting_Abstractions --> SharedKernel_Core
   SharedKernel_Reporting_Abstractions --> SharedKernel_Primitives
   SharedKernel_Reporting_Abstractions --> SharedKernel_Storage_Abstractions
   SharedKernel_Reporting_Csv --> SharedKernel_Configuration
@@ -590,9 +608,11 @@ flowchart LR
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
   SharedKernel_Contracts(["Contracts<br/><i>src/Model/Contracts</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
   SharedKernel_Search_Abstractions --> SharedKernel_Contracts
+  SharedKernel_Search_Abstractions --> SharedKernel_Core
   SharedKernel_Search_Abstractions --> SharedKernel_Execution
   SharedKernel_Search_Abstractions --> SharedKernel_Primitives
   SharedKernel_Search_ElasticSearch --> SharedKernel_Configuration
@@ -615,8 +635,10 @@ flowchart LR
     SharedKernel_Storage_Testing["Storage.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_Storage_Abstractions --> SharedKernel_Core
   SharedKernel_Storage_Abstractions --> SharedKernel_Execution
   SharedKernel_Storage_Abstractions --> SharedKernel_Primitives
   SharedKernel_Storage_Obs --> SharedKernel_Storage_S3
@@ -635,11 +657,13 @@ flowchart LR
   end
   SharedKernel_Application(["Application<br/><i>src/Application</i>"])
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Cryptography(["Cryptography<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
   SharedKernel_Workflows_Temporal --> SharedKernel_Application
   SharedKernel_Workflows_Temporal --> SharedKernel_Configuration
+  SharedKernel_Workflows_Temporal --> SharedKernel_Core
   SharedKernel_Workflows_Temporal --> SharedKernel_Cryptography
   SharedKernel_Workflows_Temporal --> SharedKernel_Execution
   SharedKernel_Workflows_Temporal --> SharedKernel_Primitives

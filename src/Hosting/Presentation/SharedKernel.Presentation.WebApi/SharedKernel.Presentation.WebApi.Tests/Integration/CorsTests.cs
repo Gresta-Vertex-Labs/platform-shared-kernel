@@ -132,7 +132,8 @@ public sealed class CorsTests
         (await act.Should().ThrowAsync<OptionsValidationException>()).Which.Message.Should().Contain("AllowCredentials");
         var logger = logs.GetLogger("SharedKernel.Presentation.WebApi.WebApiOptionsValidator");
         logger.Records.Should().Contain(record =>
-            record.EventId.Id == LoggingEventIdRanges.Presentation + 4 && record.LogLevel == LogLevel.Critical);
+            record.EventId.Id == LoggingEventIdRanges.Presentation + 4 && record.LogLevel == LogLevel.Warning);
+        logger.Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
     }
 
     [Theory]
@@ -156,7 +157,8 @@ public sealed class CorsTests
 
         await act.Should().ThrowAsync<OptionsValidationException>();
         logs.GetLogger("SharedKernel.Presentation.WebApi.WebApiOptionsValidator").Records.Should().Contain(record =>
-            record.EventId.Id == LoggingEventIdRanges.Presentation + 4 && record.LogLevel == LogLevel.Critical);
+            record.EventId.Id == LoggingEventIdRanges.Presentation + 4 && record.LogLevel == LogLevel.Warning);
+        logs.GetLogger("SharedKernel.Presentation.WebApi.WebApiOptionsValidator").Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
     }
 
     [Theory]
@@ -193,6 +195,7 @@ public sealed class CorsTests
         await response.ShouldBeProblemAsync(StatusCodes.Status403Forbidden, PresentationErrorCodes.OriginNotAllowed);
         logs.GetLogger("SharedKernel.Presentation.WebApi.Cors.WebSocketOriginMiddleware").Records.Should().ContainSingle(record =>
             record.EventId.Id == LoggingEventIdRanges.Presentation + 13 && record.LogLevel == LogLevel.Warning);
+        logs.GetLogger("SharedKernel.Presentation.WebApi.Cors.WebSocketOriginMiddleware").Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
     }
 
     [Theory]

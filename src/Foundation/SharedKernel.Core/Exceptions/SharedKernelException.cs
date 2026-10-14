@@ -28,7 +28,7 @@ namespace SharedKernel.Core.Exceptions;
 /// String-only constructors are deliberately absent, and analyzer <c>SK0005</c> reports one on a subclass.
 /// </para>
 /// </remarks>
-public abstract class SharedKernelException : Exception
+public abstract class SharedKernelException : Exception, IHasError
 {
     /// <summary>Initialises the exception with <paramref name="error"/>, using its message as the exception message.</summary>
     /// <param name="error">The error describing the failure.</param>

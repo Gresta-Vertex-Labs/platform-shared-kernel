@@ -48,7 +48,7 @@ public sealed class InMemoryNotificationSenderTests
     {
         var sender = new InMemoryNotificationSender(NotificationChannel.Email);
         var message = CreateMessage();
-        var expected = new NotificationDeliveryResult(message.NotificationDeliveryId, false, null, "provider rejected");
+        var expected = NotificationDeliveryResult.Failed(message.NotificationDeliveryId, NotificationErrors.ProviderRejected(400));
         sender.SetSendResult<ReceiptModel>(_ => expected);
 
         var result = await sender.SendAsync(message, CancellationToken.None);

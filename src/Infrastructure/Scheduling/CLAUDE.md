@@ -18,7 +18,7 @@ Composition is expected: a recurring trigger here may *start* a Temporal workflo
 
 Also in the folder: `SharedKernel.Scheduling.Testing` (Testing tier, catalogued by `16.Testing`), `SharedKernel.Scheduling/SharedKernel.Scheduling.Tests`, and `consumer-verify/` (package-reference consumer harness).
 
-References: `SharedKernel.Primitives`, `.Execution`, `.Configuration`; `SharedKernel.Caching.Abstractions` (`IDistributedLockService`); `SharedKernel.Application` (`ISender`, `ICommand`); `Quartz` (`CronExpression` only, pinned directly in `Directory.Packages.props`).
+References: `SharedKernel.Primitives`, `.Execution`, `.Configuration`; `Microsoft.Extensions.Diagnostics` (`AddMetrics()` for `IMeterFactory`); `SharedKernel.Caching.Abstractions` (`IDistributedLockService`); `SharedKernel.Application` (`ISender`, `ICommand`); `Quartz` (`CronExpression` only, pinned directly in `Directory.Packages.props`).
 
 ## Public Entry Points
 
@@ -28,7 +28,7 @@ Overloads, option defaults and the configuration table: `SharedKernel.Scheduling
 - `IScheduledJobRegistry.AddRecurring<TCommand>(jobName, cron, commandFactory, configure)` / `.AddDeferred<TCommand>(jobName, fireAtUtc, commandFactory, configure)`; `commandFactory` is `Func<ScheduledJobExecutionContext, TCommand>`.
 - `ScheduledJobOptions`: `MisfirePolicy`, `OverlapPolicy` (both mandatory), `TenantScope`, `LockExpiry`.
 - `ScheduledJobExecutionContext` (job name, scheduled/actual fire time, tenant scope, `FencingToken` — `null` in single-replica mode); `ScheduledCommandJob<TCommand>` (closed-generic `ISender` bridge).
-- `SchedulerReadiness.ProbeName` = `"scheduler"`; `SchedulingTelemetry.Name` = `SharedKernel.Scheduling` (`ActivitySource` + `Meter`, `scheduling.job.*`/`scheduling.lock.*` counters), subscribed by ServiceDefaults' `WithSchedulingTelemetry()`.
+- `SchedulerReadiness.ProbeName` = `"scheduler"`; `SchedulingTelemetry.Name` = `SharedKernel.Scheduling` (public const; `ActivitySource` `scheduling fire` and `sharedkernel.scheduling.*` instruments from `IMeterFactory` stay internal), subscribed by `AddServiceDefaults`' `SharedKernel.*` wildcard.
 - Cross-replica single execution: the host registers an `IDistributedLockService` (e.g. `AddRedisConnection(configuration).AddRedisDistributedLocking()`).
 
 ## Rules & Invariants
@@ -41,7 +41,7 @@ Overloads, option defaults and the configuration table: `SharedKernel.Scheduling
 6. **`MisfirePolicy` and `OverlapPolicy` are mandatory.** `AddRecurring`/`AddDeferred` throw `ArgumentException` when either is unset. Never add a default.
 7. **Misfire semantics are fixed and tested:** `Skip` → zero catch-up runs; `FireOnce` → exactly one catch-up run, then the next occurrence after now; `RunImmediatelyThenReschedule` → replays every missed occurrence, one per tick, computing each next fire from the previous missed occurrence (keeps the cron grid).
 8. **Misfire detection is in-process.** Compare `IClock.UtcNow` against the loop's own last-known next-fire time; never persist a "last fired" record. Overlap is a separate in-process guard. Lease, misfire and overlap protections are independent and additive.
-9. **Every execution runs as a system caller in its own scope:** `RequestContextScope.Begin(new SystemRequestContext([], identity: jobName, tenantId: options.TenantScope.Tenant, correlationId: CorrelationIds.New()))`, then a fresh DI scope. The context carries **no permissions** — a job whose command has `[RequirePermission]` must open its own scope with exactly the permissions it needs, or the command fails with `Error.Forbidden`.
+9. **Every execution runs as a system caller in its own scope:** `RequestContextScope.Begin(new SystemRequestContext([], identity: jobName, tenantId: options.TenantScope.Tenant, correlationId: CorrelationIds.New()))`, then a fresh DI scope. The scope is opened as the first statement of the fire (rule 17). The context carries **no permissions** — a job whose command has `[RequirePermission]` must open its own scope with exactly the permissions it needs, or the command fails with `Error.Forbidden`.
 10. **The command is an outermost command.** Fresh scope → fresh `ICommandScope`: `TransactionBehavior` commits once, `OnCompleted` callbacks run before the fire is reported. Validation/authorization failures come back as a failed `Result`, logged as a failed fire, never thrown.
 11. **Zero reflection in dispatch.** `ScheduledCommandJob<TCommand>` is a closed generic calling `ISender`; never `MakeGenericMethod` + `Invoke`, never MediatR directly.
 12. **`TenantScope` is optional here on purpose** (default `Global`): a job is registered once at startup as a system actor. A per-tenant recurring job is one registration whose handler iterates the tenant directory; the scheduler never fans out per tenant. A set tenant becomes the job's `IRequestContext.TenantId`. Keep the XML-doc rationale so nobody "fixes" it.
@@ -49,6 +49,8 @@ Overloads, option defaults and the configuration table: `SharedKernel.Scheduling
 14. **The readiness probe is zero-I/O**: in-process state only (`IsRunning`, `RegisteredJobCount`, `LastTickUtc` in `ReadinessReport.Data`). This package ships no `IHealthCheck`.
 15. **Reference `SharedKernel.Caching.Abstractions` only**, never `Caching.Redis.DistributedLocking` (an undeclared Adapter→Adapter edge). Only the `.Tests` project references the Redis package, for the real multi-replica proof.
 16. `FencingToken` is a propagation seam only; this package owns no protected resource and never re-checks it.
+17. **Every log is emitted under a system caller.** The occurrence scope of rule 9 is opened as the first statement of the fire (before the span, the lease claim and the first log) and disposed after the catch blocks; loop-level logs (start, stop, faulted, drain, misfire and overlap decisions) run under a loop scope with identity `scheduler`, `TenantScope.Global` and no permissions. The scope never leaks to the caller of `StartAsync`/`StopAsync`. Span status and logs never carry `Error.Message` or `ex.Message`: status comes from the shared recorders (`error.code`, or the exception full name), logs carry codes and types.
+18. **Telemetry vocabulary.** One `outcome` tag with the shared values (`success`, `failure`, `exception`, `canceled`), taken from the recorder's return value, never a literal; the lease result is a separate `scheduling.claim` tag (`acquired`, `not_acquired`, `store_unavailable`) because a claim lost to another replica is neither success nor failure. Instruments are `sharedkernel.scheduling.*`, built by one `SchedulingMetrics` singleton from `IMeterFactory`, every one with a unit; durations are seconds measured with `IClock`. The package mints no `Error` values (no `SchedulingErrorCodes`); exception messages and XML docs cite the reason, never an invariant number.
 
 ## Decisions
 
@@ -62,17 +64,24 @@ Overloads, option defaults and the configuration table: `SharedKernel.Scheduling
 | Options via `AddOptions().BindConfiguration(SectionName).ValidateDataAnnotations().ValidateOnStart()` | `AddSharedKernelScheduling` takes no `IConfiguration`; `BindConfiguration` resolves it lazily with the same fail-fast contract. |
 | Declined mandatory `TenantScope` / per-tenant fan-out | A scheduled job is a startup-registered system actor; fan-out belongs in the handler. |
 | Declined multi-step job chains | Crash-resumable multi-step execution is `17.Workflows`. |
+| Loop-level logs run under an `scheduler` system scope, per-occurrence logs under the job's scope | "Every scheduler log has a caller" without inventing a per-tick correlation id for decisions that precede any occurrence; misfire and overlap logs identify the job by `{JobName}`. |
+| Cancellation logs (19014, 19015) pass no exception | Cancellation is not a failure (T5); a stack trace on every graceful shutdown is noise. Failure logs (19006, 19013, 19016) always pass it. |
+| `fired`, `succeeded`, `failed` merge into `job.executions` + `outcome`; `fired` is dropped | One outcome vocabulary; `fired` is derivable from executions plus the two lock counters. A duration histogram (`s`, `IClock`) is added. |
+| No `SchedulingErrorCodes` / `SchedulingErrors` | C2 applies to a capability that produces `Error` values; a fire's `Result` is the command's, the claim outage carries `caching.lock_unavailable`, registration mistakes are `ArgumentException` (E2). Revisit only if the package starts returning `Result`. |
+| `SchedulingTelemetry` is public with one const (`Name`); source and instruments stay internal | The source/meter-name check (G3) needs a public constant; nothing else needs to be public. |
+| Boundary catches in `ExecuteOneAsync` and the loop stay | A job's exception must not stop the loop; each logs, records the span and counts the outcome (E4's "catch only classifiable faults" targets library calls, not an isolation boundary). The silent catch in `StopAsync` becomes a logged one. |
 
 ## Logging
 
-EventId block **19000–19999** (`LoggingEventIdRanges.Scheduling`). Single package, so no sub-blocks: `Diagnostics/SchedulingLogs.cs` uses `Scheduling + 0` … `+ 16` (start/stop, `SingleReplicaWarning` (+2), fire, success, failure, unhandled exception, overlap skip/queue, misfire, misfire discard, claim not acquired / acquired, loop faulted (+13, Critical), shutdown cancellation, drain timeout, `LockStoreUnavailable` (+16)). Next free: `+17`. Telemetry tag keys live in `SchedulingTagKeys`.
+EventId block **19000–19999** (`LoggingEventIdRanges.Scheduling`). The single package owns sub-block 0 (19000 to 19099) through the internal `Diagnostics/SchedulingLoggingEventIds` (`Base = Scheduling + 0 * PackageSubBlockWidth`, one named const per log); the log class is `SchedulingLog` in `Diagnostics/SchedulingLog.cs`. Ids `+0` to `+17`: start/stop, `SingleReplicaWarning` (+2), fire, success (Debug), failure (Warning), unhandled exception, overlap skip (Warning) / queue, misfire, misfire discard (Warning), claim not acquired / acquired, loop faulted (+13, Critical), shutdown cancellation, drain timeout, `LockStoreUnavailable` (+16), `ShutdownDrainFaulted` (+17). Next free: `+18`. Templates follow L3 (one sentence, quoted identifiers, `{RequestType}` full name, `{ElapsedMilliseconds}`, `{ErrorType}`/`{ErrorCode}`). Telemetry tag keys live in `SchedulingTagKeys`, claim values in `SchedulingClaimResults`.
 
 ## Cross-Domain Couplings
 
 - **01.Core:** `IClock`, `LoggingEventIdRanges`, `IReadinessProbe`/`AddReadinessProbe` (Primitives); `SystemRequestContext`, `RequestContextScope`, `CorrelationIds`, `TenantScope` (Execution).
 - **02.Caching:** consumes `IDistributedLockService.TryAcquireLeaseAsync`, `DistributedLease.FencingToken`, `DistributedLockUnavailableException` from Abstractions; the host supplies the Redis implementation.
 - **05.Application:** `ISender`, `ICommand`; the host must register a mediator adapter (`UseMediatR()`); `[RequirePermission]` commands need their own permissioned scope.
-- **13.ServiceDefaults:** `AddSharedKernelReadiness()` maps the `scheduler` probe; `WithSchedulingTelemetry()` subscribes to the source/meter.
+- **13.ServiceDefaults:** `AddSharedKernelReadiness()` maps the `scheduler` probe; `AddServiceDefaults` subscribes `SharedKernel.*` by wildcard (`WithSchedulingTelemetry()` is gone).
+- **WO-087:** `01.Core` recorders/outcomes/`TelemetryVersion`, `16.Testing` capture helpers (`ActivityRecorder`, `MetricRecorder`, `LoggerAssertions`), `00.Governance` report-only checks, `02.Caching` lock-unavailable error code (the lock-outage span's `error.code`, asserted in the span contract tests).
 - **16.Testing:** `SharedKernel.Scheduling.Testing` (`InMemoryScheduledJobRegistry`) takes this domain's job execution model as its contract.
 - **17.Workflows:** composition only (a trigger that starts a workflow); no reference either way.
 
@@ -82,6 +91,8 @@ EventId block **19000–19999** (`LoggingEventIdRanges.Scheduling`). Single pack
 - Pinned behaviours: `Policies/MisfirePolicyTests` (12-occurrence downtime → 0/1/12 runs), `Policies/OverlapPolicyTests`, `Locking/OccurrenceLeaseTests`, `Cron/CronExpressionCorrectnessTests` (DST against a real zone).
 - `TestSupport/SchedulingTestHarness.StartAsync` waits for `SchedulingHostedService.IsRunning`: `BackgroundService.StartAsync` returns before `ExecuteAsync` computes the first fire, so advancing `FakeClock` at once races it. Apply the same wait to any hosted-loop test.
 - Fakes: `SharedKernel.Scheduling.Testing` — catalogue in `src/Testing/CLAUDE.md`.
+- Telemetry and log assertions go through the `SharedKernel.Testing.Telemetry` helpers, never string search. `Hosting/SchedulerLogContextTests` is the log-scope matrix: the test-local `TestSupport/AmbientContextLoggerFactory` (wrapped by `SchedulingTestHarness`) snapshots the ambient request context per record, the matrix drives a scenario per EventId and fails when a declared EventId has no scenario or no loop/occurrence classification; it also pins span status, log text without messages, and no ambient leak after `StartAsync`/fire/`StopAsync`.
+- Telemetry contract: `Diagnostics/SchedulingTelemetryContractTests` pins the seven instruments (name, unit, kind, tag set), the span shape and every path's counts; duration assertions advance `FakeClock` inside the handler. Metric and span recorders listen process-wide, so every scenario uses a unique job name and filters on `scheduling.job_name`. `SchedulerLogContextTests` also pins every EventId's level and template (the 19000 to 19017 table), the log convention and the sub-block.
 
 ## Known Limitations
 

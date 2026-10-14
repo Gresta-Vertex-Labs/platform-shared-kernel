@@ -97,7 +97,7 @@ public sealed class PostgresDbUpdateExceptionClassifierIntegrationTests : IAsync
         var actorContext = new FakeAuditActorContext();
         var clock = new FakeClock();
         var audit = PersistenceContextDependencies.Create(actorContext, clock);
-        var classifiers = new IDbUpdateExceptionClassifier[] { new PostgresDbUpdateExceptionClassifier() };
+        var classifiers = new IDbUpdateExceptionClassifier[] { new PostgresDbUpdateExceptionClassifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgresDbUpdateExceptionClassifier>.Instance) };
 
         var ctx = new ClassifierTestDbContext(options, audit);
         await ctx.Database.EnsureCreatedAsync();

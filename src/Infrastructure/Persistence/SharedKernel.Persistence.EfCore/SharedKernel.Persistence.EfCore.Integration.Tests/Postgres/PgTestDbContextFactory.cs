@@ -69,7 +69,7 @@ internal static class PgTestDbContextFactory
                 modelConventionFactories: null,
                 modelConfigurators: null,
                 optionsExtensions: null,
-                exceptionClassifiers ?? [new PostgresDbUpdateExceptionClassifier()],
+                exceptionClassifiers ?? [new PostgresDbUpdateExceptionClassifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgresDbUpdateExceptionClassifier>.Instance)],
                 keyGenerator: null,
                 loggerFactory: null));
         // Actor identity from actorContext, tenant from tenantContext — the two roles the former

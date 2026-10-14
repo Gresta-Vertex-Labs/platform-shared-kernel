@@ -1,3 +1,8 @@
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Messaging.Abstractions.Errors;
+using SharedKernel.Messaging.MassTransit.Internal;
+using SharedKernel.Primitives.Errors;
+
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
 /// <summary>
@@ -20,37 +25,36 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// Do not add this type to a <c>ConsumerDefinitionBase.NonRetryableExceptions</c> list — retry is
 /// precisely the desired behaviour.
 /// </para>
+/// <para>
+/// A <see cref="SharedKernelException"/>: <see cref="SharedKernelException.Error"/> carries
+/// <see cref="MessagingErrorCodes.ConcurrentDelivery"/> with <see cref="ErrorType.Conflict"/>
+/// (HTTP 409, gRPC <c>Aborted</c> through the edge maps).
+/// </para>
 /// </remarks>
-public sealed class ConcurrentMessageDeliveryException : Exception
+public sealed class ConcurrentMessageDeliveryException : SharedKernelException
 {
     /// <summary>Creates the exception for a message id already being consumed elsewhere.</summary>
     /// <param name="messageId">The contended message identifier.</param>
     /// <param name="messageType">The message CLR type being consumed.</param>
     public ConcurrentMessageDeliveryException(Guid messageId, Type messageType)
-        : base($"Message '{messageId}' of type '{messageType?.Name}' is already being consumed by another " +
-               "delivery. It is left unacknowledged so the broker redelivers it.")
+        : base(MassTransitErrors.ConcurrentDelivery(messageId, messageType))
     {
         MessageId = messageId;
         MessageType = messageType;
     }
 
-    /// <summary>Creates the exception with an explicit message.</summary>
-    /// <param name="message">The exception message.</param>
-    public ConcurrentMessageDeliveryException(string message)
-        : base(message)
+    /// <summary>Creates the exception from an explicit <see cref="Primitives.Errors.Error"/>.</summary>
+    /// <param name="error">The error describing the failure.</param>
+    public ConcurrentMessageDeliveryException(Error error)
+        : base(error)
     {
     }
 
-    /// <summary>Creates the exception with an explicit message and inner exception.</summary>
-    /// <param name="message">The exception message.</param>
+    /// <summary>Creates the exception from an explicit <see cref="Primitives.Errors.Error"/> and its cause.</summary>
+    /// <param name="error">The error describing the failure.</param>
     /// <param name="innerException">The cause.</param>
-    public ConcurrentMessageDeliveryException(string message, Exception innerException)
-        : base(message, innerException)
-    {
-    }
-
-    /// <summary>Creates the exception with no message.</summary>
-    public ConcurrentMessageDeliveryException()
+    public ConcurrentMessageDeliveryException(Error error, Exception innerException)
+        : base(error, innerException)
     {
     }
 

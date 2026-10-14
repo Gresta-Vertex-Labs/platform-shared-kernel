@@ -371,7 +371,7 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
 
         var logger = _host.Logs.GetLogger(typeof(SharedKernelAuthorizationResultHandler).FullName!);
         logger.Records.Should().Contain(record =>
-            record.EventId.Id == LoggingEventIdRanges.Presentation + 2
+            record.EventId.Id == LoggingEventIdRanges.Presentation + 500
             && record.Message.Contains(path, StringComparison.Ordinal)
             && record.Message.Contains(PresentationErrorCodes.StepUpRequired, StringComparison.Ordinal));
     }
@@ -404,10 +404,11 @@ public sealed class AuthorizationTests : IClassFixture<FullStackHost>
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         var logger = _host.Logs.GetLogger(typeof(SharedKernelAuthorizationResultHandler).FullName!);
-        var record = logger.Records.Last(r => r.EventId.Id == LoggingEventIdRanges.Presentation + 2);
+        var record = logger.Records.Last(r => r.EventId.Id == LoggingEventIdRanges.Presentation + 500);
         record.LogLevel.Should().Be(Microsoft.Extensions.Logging.LogLevel.Warning);
         record.Message.Should().Contain(ErrorCodes.Forbidden.InsufficientPermission);
         record.Message.Should().NotContain("alice-secret-id");
+        logger.Records.ShouldFollowLogConvention().ShouldNotLeak("alice-secret-id").ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 5);
     }
 
     private static HttpRequestMessage GrpcRequest(string path) => new(HttpMethod.Post, path)

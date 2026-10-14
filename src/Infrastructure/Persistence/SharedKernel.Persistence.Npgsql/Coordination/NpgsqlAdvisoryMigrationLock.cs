@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using global::Npgsql;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.Npgsql.Diagnostics;
 
@@ -36,14 +35,15 @@ internal sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
 
     /// <summary>Initialises a new <see cref="NpgsqlAdvisoryMigrationLock"/>.</summary>
     /// <param name="dataSource">The data source the dedicated lock-holding connection is opened from.</param>
-    /// <param name="logger">Optional logger.</param>
+    /// <param name="logger">The logger of the lock lifecycle.</param>
     public NpgsqlAdvisoryMigrationLock(
         NpgsqlDataSource dataSource,
-        ILogger<NpgsqlAdvisoryMigrationLock>? logger = null)
+        ILogger<NpgsqlAdvisoryMigrationLock> logger)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
+        ArgumentNullException.ThrowIfNull(logger);
         _dataSource = dataSource;
-        _logger = logger ?? NullLogger<NpgsqlAdvisoryMigrationLock>.Instance;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -65,13 +65,13 @@ internal sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
             {
                 if (await TryAdvisoryLockAsync(connection, key, cancellationToken).ConfigureAwait(false))
                 {
-                    _logger.AdvisoryMigrationLockAcquired(lockName, stopwatch.ElapsedMilliseconds);
+                    NpgsqlLog.AdvisoryMigrationLockAcquired(_logger, lockName, stopwatch.ElapsedMilliseconds);
                     return new LockHandle(connection, key, lockName, _logger);
                 }
 
                 if (stopwatch.Elapsed >= timeout)
                 {
-                    _logger.AdvisoryMigrationLockTimedOut(lockName, (long)timeout.TotalMilliseconds);
+                    NpgsqlLog.AdvisoryMigrationLockTimedOut(_logger, lockName, (long)timeout.TotalMilliseconds);
                     throw new TimeoutException(
                         $"Advisory migration lock '{lockName}' was not acquired within {timeout}.");
                 }
@@ -120,7 +120,7 @@ internal sealed class NpgsqlAdvisoryMigrationLock : IMigrationLock
                 command.CommandText = "SELECT pg_advisory_unlock($1)";
                 command.Parameters.Add(new NpgsqlParameter { Value = key });
                 await command.ExecuteScalarAsync().ConfigureAwait(false);
-                logger.AdvisoryMigrationLockReleased(lockName);
+                NpgsqlLog.AdvisoryMigrationLockReleased(logger, lockName);
             }
             finally
             {

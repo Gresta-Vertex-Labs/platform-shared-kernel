@@ -19,11 +19,14 @@ The tier check itself is MSBuild (`eng/SharedKernelTiers.targets`, `SKTIER000`�
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
-None — every phase in this domain is complete. `SharedKernel.Analyzers`, `.ArchitectureTests` and `.Linter` ship with root P-577 (release train).
+None — every phase in this domain is complete.
 
 ## Blocked
 
@@ -31,4 +34,5 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open.
+- **01.Core, 13.ServiceDefaults (inbound):** the `## Logging` ownership tables are parsed by the EventId assertion; keep one machine-readable shape (family base at 1-49, Adapters at 50-99) and tell this domain if it changes.
+- **11.Communication, 14.Presentation, 12.Security (inbound note):** protocol-mirror prefixes (`grpc`, `http`) and any protocol value reaching an `Error` constructor are exempted by caller-supplied entries that cite the domain `CLAUDE.md`; keep those entries written down there.

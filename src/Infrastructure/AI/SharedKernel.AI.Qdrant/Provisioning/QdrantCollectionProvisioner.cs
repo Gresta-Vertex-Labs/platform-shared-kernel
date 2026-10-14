@@ -8,8 +8,8 @@ using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Errors;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Constants;
+using SharedKernel.AI.Qdrant.Diagnostics;
 using SharedKernel.AI.Qdrant.Errors;
-using SharedKernel.AI.Qdrant.Logging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -41,74 +41,79 @@ namespace SharedKernel.AI.Qdrant.Provisioning;
 /// </remarks>
 internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
 {
-    private const string ProviderName = IntelligenceWellKnown.QdrantProviderName;
-
     private readonly QdrantClient _client;
+    private readonly QdrantTelemetry _telemetry;
     private readonly ILogger<QdrantCollectionProvisioner> _logger;
 
-    public QdrantCollectionProvisioner(QdrantClient client, ILogger<QdrantCollectionProvisioner> logger)
+    public QdrantCollectionProvisioner(QdrantClient client, QdrantTelemetry telemetry, ILogger<QdrantCollectionProvisioner> logger)
     {
         ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(telemetry);
         ArgumentNullException.ThrowIfNull(logger);
 
         _client = client;
+        _telemetry = telemetry;
         _logger = logger;
     }
 
-    public async Task<Result> EnsureCollectionAsync(VectorCollectionDefinition definition, CancellationToken cancellationToken = default)
+    public Task<Result> EnsureCollectionAsync(VectorCollectionDefinition definition, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
-        try
+        return QdrantOperationRunner.RunAsync(
+            _telemetry,
+            _logger,
+            IntelligenceOperations.EnsureCollection,
+            definition.Name,
+            cancellationToken,
+            () => EnsureCollectionCoreAsync(definition, cancellationToken));
+    }
+
+    private async Task<Result> EnsureCollectionCoreAsync(VectorCollectionDefinition definition, CancellationToken cancellationToken)
+    {
+        var exists = await _client.CollectionExistsAsync(definition.Name, cancellationToken).ConfigureAwait(false);
+        if (!exists && await TryCreateCollectionAsync(definition, cancellationToken).ConfigureAwait(false))
         {
-            var exists = await _client.CollectionExistsAsync(definition.Name, cancellationToken).ConfigureAwait(false);
-            if (!exists && await TryCreateCollectionAsync(definition, cancellationToken).ConfigureAwait(false))
-            {
-                foreach (var field in definition.Fields.Where(f => f.Filterable))
-                {
-                    await _client
-                        .CreatePayloadIndexAsync(definition.Name, field.Name, MapPayloadSchemaType(field.Kind), wait: true, cancellationToken: cancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                _logger.QdrantCollectionEnsured(definition.Name, definition.Fields.Count(f => f.Filterable));
-                return Result.Success();
-            }
-
-            var info = await _client.GetCollectionInfoAsync(definition.Name, cancellationToken).ConfigureAwait(false);
-            var existingFingerprint = info.Config.Metadata.TryGetValue(QdrantWellKnown.FingerprintMetadataKey, out var fingerprintValue)
-                ? fingerprintValue.StringValue
-                : null;
-
-            if (existingFingerprint is not null && !string.Equals(existingFingerprint, definition.Fingerprint, StringComparison.Ordinal))
-            {
-                _logger.QdrantSchemaFingerprintMismatch(definition.Name, definition.Fingerprint, existingFingerprint);
-                return Result.Failure(IntelligenceErrors.CollectionDefinitionConflict(definition.Name, "schema fingerprint"));
-            }
-
-            // Additive-only: create an index for any Filterable field the live collection is missing —
-            // never drop or rewrite an existing field's index.
-            foreach (var field in definition.Fields.Where(f => f.Filterable && !info.PayloadSchema.ContainsKey(f.Name)))
+            foreach (var field in definition.Fields.Where(f => f.Filterable))
             {
                 await _client
                     .CreatePayloadIndexAsync(definition.Name, field.Name, MapPayloadSchemaType(field.Kind), wait: true, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
 
-            if (existingFingerprint is null)
-            {
-                // A legacy collection created before fingerprint tracking existed — stamp it now.
-                await _client
-                    .UpdateCollectionAsync(definition.Name, new Dictionary<string, Value> { [QdrantWellKnown.FingerprintMetadataKey] = definition.Fingerprint }, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
+            QdrantLog.QdrantCollectionEnsured(_logger, definition.Name, definition.Fields.Count(f => f.Filterable));
             return Result.Success();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+
+        var info = await _client.GetCollectionInfoAsync(definition.Name, cancellationToken).ConfigureAwait(false);
+        var existingFingerprint = info.Config.Metadata.TryGetValue(QdrantWellKnown.FingerprintMetadataKey, out var fingerprintValue)
+            ? fingerprintValue.StringValue
+            : null;
+
+        if (existingFingerprint is not null && !string.Equals(existingFingerprint, definition.Fingerprint, StringComparison.Ordinal))
         {
-            return Result.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(EnsureCollectionAsync), definition.Name));
+            QdrantLog.QdrantSchemaFingerprintMismatch(_logger, definition.Name, definition.Fingerprint, existingFingerprint);
+            return Result.Failure(IntelligenceErrors.CollectionDefinitionConflict(definition.Name, "schema fingerprint"));
         }
+
+        // Additive-only: create an index for any Filterable field the live collection is missing —
+        // never drop or rewrite an existing field's index.
+        foreach (var field in definition.Fields.Where(f => f.Filterable && !info.PayloadSchema.ContainsKey(f.Name)))
+        {
+            await _client
+                .CreatePayloadIndexAsync(definition.Name, field.Name, MapPayloadSchemaType(field.Kind), wait: true, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (existingFingerprint is null)
+        {
+            // A legacy collection created before fingerprint tracking existed — stamp it now.
+            await _client
+                .UpdateCollectionAsync(definition.Name, new Dictionary<string, Value> { [QdrantWellKnown.FingerprintMetadataKey] = definition.Fingerprint }, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return Result.Success();
     }
 
     /// <summary>
@@ -138,91 +143,103 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
         }
     }
 
-    public async Task<Result<bool>> CollectionExistsAsync(string collectionName, CancellationToken cancellationToken = default)
+    public Task<Result<bool>> CollectionExistsAsync(string collectionName, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(collectionName);
 
-        try
-        {
-            var exists = await _client.CollectionExistsAsync(collectionName, cancellationToken).ConfigureAwait(false);
-            return Result<bool>.Success(exists);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Result<bool>.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(CollectionExistsAsync), collectionName));
-        }
+        return QdrantOperationRunner.RunAsync(
+            _telemetry,
+            _logger,
+            IntelligenceOperations.CollectionExists,
+            collectionName,
+            cancellationToken,
+            () => CollectionExistsCoreAsync(collectionName, cancellationToken));
     }
 
-    public async Task<Result> DeleteCollectionAsync(string collectionName, CancellationToken cancellationToken = default)
+    private async Task<Result<bool>> CollectionExistsCoreAsync(string collectionName, CancellationToken cancellationToken)
+    {
+        var exists = await _client.CollectionExistsAsync(collectionName, cancellationToken).ConfigureAwait(false);
+        return Result<bool>.Success(exists);
+    }
+
+    public Task<Result> DeleteCollectionAsync(string collectionName, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(collectionName);
 
-        try
-        {
-            await _client.DeleteCollectionAsync(collectionName, cancellationToken: cancellationToken).ConfigureAwait(false);
-            return Result.Success();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Result.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(DeleteCollectionAsync), collectionName));
-        }
+        return QdrantOperationRunner.RunAsync(
+            _telemetry,
+            _logger,
+            IntelligenceOperations.DeleteCollection,
+            collectionName,
+            cancellationToken,
+            () => DeleteCollectionCoreAsync(collectionName, cancellationToken));
     }
 
-    public async Task<Result> CutoverAsync(VectorCollectionCutoverRequest request, CancellationToken cancellationToken = default)
+    private async Task<Result> DeleteCollectionCoreAsync(string collectionName, CancellationToken cancellationToken)
+    {
+        await _client.DeleteCollectionAsync(collectionName, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return Result.Success();
+    }
+
+    public Task<Result> CutoverAsync(VectorCollectionCutoverRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        try
+        return QdrantOperationRunner.RunAsync(
+            _telemetry,
+            _logger,
+            IntelligenceOperations.Cutover,
+            request.LiveCollectionName,
+            cancellationToken,
+            () => CutoverCoreAsync(request, cancellationToken));
+    }
+
+    private async Task<Result> CutoverCoreAsync(VectorCollectionCutoverRequest request, CancellationToken cancellationToken)
+    {
+        var stagingExists = await _client.CollectionExistsAsync(request.StagingCollectionName, cancellationToken).ConfigureAwait(false);
+        if (!stagingExists)
         {
-            var stagingExists = await _client.CollectionExistsAsync(request.StagingCollectionName, cancellationToken).ConfigureAwait(false);
-            if (!stagingExists)
-            {
-                return Result.Failure(IntelligenceErrors.CutoverFailed(
-                    request.StagingCollectionName, request.LiveCollectionName, "staging collection does not exist"));
-            }
-
-            var existingAliases = await _client.ListAliasesAsync(cancellationToken).ConfigureAwait(false);
-            var previousCollectionName = existingAliases
-                .FirstOrDefault(alias => string.Equals(alias.AliasName, request.LiveCollectionName, StringComparison.Ordinal))
-                ?.CollectionName;
-
-            var operations = new List<AliasOperations>();
-            if (previousCollectionName is not null)
-            {
-                operations.Add(new AliasOperations { DeleteAlias = new DeleteAlias { AliasName = request.LiveCollectionName } });
-            }
-
-            operations.Add(new AliasOperations
-            {
-                CreateAlias = new CreateAlias { AliasName = request.LiveCollectionName, CollectionName = request.StagingCollectionName },
-            });
-
-            await _client.UpdateAliasesAsync(operations, cancellationToken: cancellationToken).ConfigureAwait(false);
-            _logger.QdrantCollectionsCutOver(request.StagingCollectionName, request.LiveCollectionName);
-
-            // "Staging" here names the neutral-contract's Meilisearch-oriented field — on Qdrant's alias
-            // model, the collection left over after cutover is whatever the LIVE ALIAS previously
-            // pointed at (now orphaned), never request.StagingCollectionName itself (which is the
-            // collection now actively serving traffic through the alias).
-            if (previousCollectionName is not null &&
-                !string.Equals(previousCollectionName, request.StagingCollectionName, StringComparison.Ordinal))
-            {
-                if (request.DeleteStagingAfterCutover)
-                {
-                    await _client.DeleteCollectionAsync(previousCollectionName, cancellationToken: cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    _logger.QdrantStagingCollectionRetained(previousCollectionName);
-                }
-            }
-
-            return Result.Success();
+            return Result.Failure(IntelligenceErrors.CutoverFailed(
+                request.StagingCollectionName, request.LiveCollectionName, "The staging collection does not exist."));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+
+        var existingAliases = await _client.ListAliasesAsync(cancellationToken).ConfigureAwait(false);
+        var previousCollectionName = existingAliases
+            .FirstOrDefault(alias => string.Equals(alias.AliasName, request.LiveCollectionName, StringComparison.Ordinal))
+            ?.CollectionName;
+
+        var operations = new List<AliasOperations>();
+        if (previousCollectionName is not null)
         {
-            return Result.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(CutoverAsync), request.LiveCollectionName));
+            operations.Add(new AliasOperations { DeleteAlias = new DeleteAlias { AliasName = request.LiveCollectionName } });
         }
+
+        operations.Add(new AliasOperations
+        {
+            CreateAlias = new CreateAlias { AliasName = request.LiveCollectionName, CollectionName = request.StagingCollectionName },
+        });
+
+        await _client.UpdateAliasesAsync(operations, cancellationToken: cancellationToken).ConfigureAwait(false);
+        QdrantLog.QdrantCollectionsCutOver(_logger, request.StagingCollectionName, request.LiveCollectionName);
+
+        // "Staging" here names the neutral-contract's Meilisearch-oriented field — on Qdrant's alias
+        // model, the collection left over after cutover is whatever the LIVE ALIAS previously
+        // pointed at (now orphaned), never request.StagingCollectionName itself (which is the
+        // collection now actively serving traffic through the alias).
+        if (previousCollectionName is not null &&
+            !string.Equals(previousCollectionName, request.StagingCollectionName, StringComparison.Ordinal))
+        {
+            if (request.DeleteStagingAfterCutover)
+            {
+                await _client.DeleteCollectionAsync(previousCollectionName, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                QdrantLog.QdrantStagingCollectionRetained(_logger, previousCollectionName);
+            }
+        }
+
+        return Result.Success();
     }
 
     public async Task<Result<VectorCollectionHealth>> ProbeAsync(string collectionName, CancellationToken cancellationToken = default)
@@ -237,10 +254,15 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
             var health = await _client.HealthAsync(cancellationToken).ConfigureAwait(false);
             engineVersion = health.Version;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.IsCancellationOf(ex, cancellationToken))
         {
+            throw QdrantFaults.CanceledBy(ex, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // A failed measurement degrades the report instead of throwing; the first exception reaches the log.
             stopwatch.Stop();
-            _logger.QdrantProbeDegraded(collectionName, reachable: false, collectionAddressable: false, queryable: false);
+            QdrantLog.QdrantProbeDegraded(_logger, collectionName, reachable: false, collectionAddressable: false, queryable: false, ex);
             return Result<VectorCollectionHealth>.Success(new VectorCollectionHealth
             {
                 Reachable = false,
@@ -256,6 +278,7 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
         long vectorCount = 0;
         string? fingerprint = null;
         long? pendingWriteCount = null;
+        Exception? firstFault = null;
 
         try
         {
@@ -267,9 +290,14 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
                 : null;
             pendingWriteCount = info.UpdateQueue is { } queue ? checked((long)queue.Length) : null;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.IsCancellationOf(ex, cancellationToken))
+        {
+            throw QdrantFaults.CanceledBy(ex, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             addressable = false;
+            firstFault ??= ex;
         }
 
         var queryable = false;
@@ -280,9 +308,14 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
                 await _client.CountAsync(collectionName, filter: null, exact: false, cancellationToken: cancellationToken).ConfigureAwait(false);
                 queryable = true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (QdrantFaults.IsCancellationOf(ex, cancellationToken))
+            {
+                throw QdrantFaults.CanceledBy(ex, cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 queryable = false;
+                firstFault ??= ex;
             }
         }
 
@@ -290,7 +323,7 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
 
         if (!addressable || !queryable)
         {
-            _logger.QdrantProbeDegraded(collectionName, reachable: true, addressable, queryable);
+            QdrantLog.QdrantProbeDegraded(_logger, collectionName, reachable: true, addressable, queryable, firstFault);
         }
 
         return Result<VectorCollectionHealth>.Success(new VectorCollectionHealth
@@ -311,7 +344,7 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
         VectorDistanceMetric.Cosine => Distance.Cosine,
         VectorDistanceMetric.DotProduct => Distance.Dot,
         VectorDistanceMetric.Euclidean => Distance.Euclid,
-        _ => throw new InvalidOperationException($"Unknown VectorDistanceMetric '{metric}'."),
+        _ => throw new UnreachableException($"Unknown VectorDistanceMetric '{metric}'."),
     };
 
     private static PayloadSchemaType MapPayloadSchemaType(VectorFieldKind kind) => kind switch
@@ -321,6 +354,6 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
         VectorFieldKind.Double => PayloadSchemaType.Float,
         VectorFieldKind.Boolean => PayloadSchemaType.Bool,
         VectorFieldKind.DateTimeOffset => PayloadSchemaType.Datetime,
-        _ => throw new InvalidOperationException($"Unknown VectorFieldKind '{kind}'."),
+        _ => throw new UnreachableException($"Unknown VectorFieldKind '{kind}'."),
     };
 }

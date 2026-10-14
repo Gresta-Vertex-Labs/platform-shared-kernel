@@ -20,7 +20,10 @@ Test doubles: `FakeUserContext`, test certificates and DPoP proofs in `src/Hosti
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | :---: |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -32,4 +35,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. (`01.Core`'s TOTP primitives, P-451, and the `ITotpReplayGuard` change, P-514/P-528, have shipped.)
+None open.

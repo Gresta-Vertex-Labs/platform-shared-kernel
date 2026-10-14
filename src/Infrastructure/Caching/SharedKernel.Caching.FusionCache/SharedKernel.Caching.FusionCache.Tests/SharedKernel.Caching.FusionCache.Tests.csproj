@@ -19,5 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Caching.FusionCache.csproj" />
+    <!-- MetricRecorder, ActivityRecorder and the logger assertions -->
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 </Project>

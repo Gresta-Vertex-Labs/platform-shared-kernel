@@ -59,7 +59,7 @@ public sealed class OccurrenceLeaseTests
     {
         string jobName = UniqueJobName("contended");
         var lockService = new FakeDistributedLockService { SimulateContention = true };
-        using var outcomes = new OutcomeRecorder(jobName);
+        using var claims = new ClaimRecorder(jobName);
         await using SchedulingTestHarness harness = BuildHarness(jobName, lockService);
 
         await harness.StartAsync();
@@ -71,7 +71,7 @@ public sealed class OccurrenceLeaseTests
             .Should().BeTrue("a replica that did not win the lease must never run the job");
 
         HasLog(harness, LockStoreUnavailableEventId).Should().BeFalse();
-        (await Eventually.UntilAsync(() => outcomes.Contains("lock-not-acquired"))).Should().BeTrue();
+        (await Eventually.UntilAsync(() => claims.Contains(SchedulingClaimResults.NotAcquired))).Should().BeTrue();
 
         await harness.StopAsync();
     }
@@ -81,7 +81,7 @@ public sealed class OccurrenceLeaseTests
     {
         string jobName = UniqueJobName("store-down");
         var lockService = new FakeDistributedLockService { SimulateUnavailable = true };
-        using var outcomes = new OutcomeRecorder(jobName);
+        using var claims = new ClaimRecorder(jobName);
         await using SchedulingTestHarness harness = BuildHarness(jobName, lockService);
 
         await harness.StartAsync();
@@ -97,7 +97,7 @@ public sealed class OccurrenceLeaseTests
 
         harness.Recorder.InvocationCount.Should().Be(0, "no replica may run an occurrence it cannot prove it owns");
         HasLog(harness, LockAcquisitionFailedEventId).Should().BeFalse("an outage must never be reported as another replica's claim");
-        (await Eventually.UntilAsync(() => outcomes.Contains("lock-store-unavailable"))).Should().BeTrue();
+        (await Eventually.UntilAsync(() => claims.Contains(SchedulingClaimResults.StoreUnavailable))).Should().BeTrue();
 
         // The store recovers: the next occurrence runs normally.
         lockService.SimulateUnavailable = false;
@@ -172,13 +172,13 @@ public sealed class OccurrenceLeaseTests
         await replicaB.StopAsync();
     }
 
-    /// <summary>Collects the outcome tag of every stopped fire activity for one job.</summary>
-    private sealed class OutcomeRecorder : IDisposable
+    /// <summary>Collects the claim tag of every stopped fire activity for one job.</summary>
+    private sealed class ClaimRecorder : IDisposable
     {
         private readonly ActivityListener _listener;
         private readonly ConcurrentQueue<string> _outcomes = new();
 
-        public OutcomeRecorder(string jobName)
+        public ClaimRecorder(string jobName)
         {
             _listener = new ActivityListener
             {
@@ -187,7 +187,7 @@ public sealed class OccurrenceLeaseTests
                 ActivityStopped = activity =>
                 {
                     if (activity.GetTagItem(SchedulingTagKeys.JobName) as string == jobName
-                        && activity.GetTagItem(SchedulingTagKeys.Outcome) is string outcome)
+                        && activity.GetTagItem(SchedulingTagKeys.Claim) is string outcome)
                     {
                         _outcomes.Enqueue(outcome);
                     }

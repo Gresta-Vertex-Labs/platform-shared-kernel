@@ -10,7 +10,6 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.SemanticKernel.Diagnostics;
 using SharedKernel.AI.SemanticKernel.Embeddings;
 
-using SharedKernel.AI.SemanticKernel.Logging;
 using SharedKernel.AI.SemanticKernel.Options;
 using SharedKernel.AI.SemanticKernel.Orchestration;
 using SharedKernel.AI.SemanticKernel.Plugins;
@@ -70,6 +69,7 @@ public sealed class SemanticKernelBuilder
                 options.EmbeddingModelId,
                 options.EmbeddingDimension,
                 options.MaxEmbeddingBatchSize,
+                sp.GetRequiredService<SemanticKernelTelemetry>(),
                 sp.GetRequiredService<ILogger<SemanticKernelEmbeddingGenerator>>());
         });
 
@@ -79,8 +79,8 @@ public sealed class SemanticKernelBuilder
             var openAiClient = sp.GetRequiredService<OpenAIClient>();
             var chatService = new OpenAIChatCompletionService(options.ChatModelId, openAiClient, sp.GetService<ILoggerFactory>());
 
-            sp.GetRequiredService<ILogger<OpenAIChatCompletionService>>()
-                .SemanticKernelClientConfigured(options.ChatModelId, options.EmbeddingModelId);
+            SemanticKernelLog.SemanticKernelClientConfigured(
+                sp.GetRequiredService<ILogger<SemanticKernelBuilder>>(), options.ChatModelId, options.EmbeddingModelId);
 
             return chatService;
         });
@@ -92,6 +92,7 @@ public sealed class SemanticKernelBuilder
                 sp.GetRequiredService<IChatCompletionService>(),
                 options.ChatModelId,
                 retryOptions,
+                sp.GetRequiredService<SemanticKernelTelemetry>(),
                 sp.GetRequiredService<ILogger<SemanticKernelOrchestrator>>());
         });
 
@@ -112,7 +113,7 @@ public sealed class SemanticKernelBuilder
         {
             _services.AddSingleton<IKernelRawClientAccessor>(sp =>
             {
-                sp.GetRequiredService<ILogger<KernelRawClientAccessor>>().SemanticKernelRawClientAccessEnabled();
+                SemanticKernelLog.SemanticKernelRawClientAccessEnabled(sp.GetRequiredService<ILogger<SemanticKernelBuilder>>());
                 return new KernelRawClientAccessor(sp.GetRequiredService<OpenAIClient>());
             });
         }

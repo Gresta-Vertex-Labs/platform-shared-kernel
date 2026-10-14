@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using SharedKernel.ServiceDefaults.Logging;
+using SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.ServiceDefaults.Security;
@@ -113,23 +113,16 @@ public static class MtlsClientCertificateExtensions
         var result = validator.ValidateAsync(certificate, CancellationToken.None).GetAwaiter().GetResult();
 
         var logger = scope.ServiceProvider
-            .GetService<ILoggerFactory>()?
-            .CreateLogger("SharedKernel.ServiceDefaults.Security.MtlsClientCertificateExtensions");
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger<ServiceDefaultsSecurityMtlsLogCategory>();
 
-        if (logger is not null)
+        if (result.IsValid)
         {
-            if (result.IsValid)
-            {
-                MtlsLog.MtlsCertificateAccepted(logger, certificate.Thumbprint, certificate.Subject);
-            }
-            else
-            {
-                MtlsLog.MtlsCertificateRejected(
-                    logger,
-                    certificate.Thumbprint,
-                    certificate.Subject,
-                    "rejected by IMtlsCertificateValidator");
-            }
+            ServiceDefaultsSecurityMtlsLog.CertificateAccepted(logger, certificate.Thumbprint);
+        }
+        else
+        {
+            ServiceDefaultsSecurityMtlsLog.CertificateRejected(logger, certificate.Thumbprint);
         }
 
         return result.IsValid;

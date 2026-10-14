@@ -37,7 +37,7 @@ public sealed class ResultFailureStatusTests
         { "conflict", Error.Conflict("order.version_conflict", "The order was changed by someone else.") },
         { "business rule", new Error("order.closed", "The order is closed.", ErrorType.BusinessRule) },
         { "unexpected", Error.Unexpected("ledger.corrupt", "Ledger row 7 failed its checksum.") },
-        { "unavailable", Error.Unavailable("search.unreachable", "Search cluster http://10.0.0.5:9200 is unreachable.") },
+        { "unavailable", Error.Unavailable("search.unavailable", "Search cluster http://10.0.0.5:9200 is unreachable.") },
         { "timeout", Error.Timeout("search.timeout", "Query against replica db-7 timed out after 30 s.") },
         { "one validation error", Field(Error.Validation("customer.name_required", "Name is required."), "customer.name") },
         {
@@ -103,7 +103,7 @@ public sealed class ResultFailureStatusTests
     [InlineData(ErrorType.Unexpected, StatusCode.Internal, "An unexpected error occurred.")]
     public async Task ServerErrors_ThrownByCoreAsDomainException_KeepTheirStatusCode_AndAreRedacted(ErrorType type, StatusCode expected, string generic)
     {
-        var error = new Error("search.unreachable", "Search cluster http://10.0.0.5:9200 is unreachable.", type);
+        var error = new Error("search.unavailable", "Search cluster http://10.0.0.5:9200 is unreachable.", type);
 
         var exception = await ThrowsThroughTheInterceptorAsync(
             TestServerCallContext.Create(),
@@ -111,7 +111,7 @@ public sealed class ResultFailureStatusTests
 
         var status = exception.ShouldHaveRichStatus(expected);
         status.Message.Should().Be(generic);
-        status.ErrorInfo().Reason.Should().Be("search.unreachable");
+        status.ErrorInfo().Reason.Should().Be("search.unavailable");
     }
 
     [Fact]

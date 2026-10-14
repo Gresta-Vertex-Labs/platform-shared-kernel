@@ -2,8 +2,9 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Metadata;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
-using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.Abstractions.Repositories;
+using SharedKernel.Persistence.EfCore.Exceptions;
+using SharedKernel.Persistence.EfCore.Extensibility;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -20,22 +21,22 @@ internal static class BulkSpecificationGuard
         ArgumentNullException.ThrowIfNull(spec);
 
         if (spec.Includes.Count > 0)
-            throw new UnsupportedSpecificationException("Includes are not supported for bulk mutation operations.");
+            throw Unsupported("Includes are not supported; remove them from the specification.");
 
         if (spec.StringIncludes.Count > 0)
-            throw new UnsupportedSpecificationException("StringIncludes are not supported for bulk mutation operations.");
+            throw Unsupported("StringIncludes are not supported; remove them from the specification.");
 
         if (spec.OrderBy is not null || spec.OrderByDescending is not null || spec.ThenBys.Count > 0)
-            throw new UnsupportedSpecificationException("Ordering is not supported for bulk mutation operations.");
+            throw Unsupported("Ordering is not supported; remove it from the specification.");
 
         if (spec.Skip.HasValue || spec.Take.HasValue)
-            throw new UnsupportedSpecificationException("Paging (Skip/Take) is not supported for bulk mutation operations.");
+            throw Unsupported("Paging (Skip/Take) is not supported; remove it from the specification.");
 
         if (spec.Criteria is null && spec is not AllRowsSpecification<T>)
         {
-            throw new UnsupportedSpecificationException(
+            throw Unsupported(
                 "A bulk mutation specification must declare Criteria (a WHERE clause), or use "
-                + $"'AllRowsSpecification<{typeof(T).Name}>' to explicitly opt in to matching every row.");
+                + $"'AllRowsSpecification<{typeof(T).Name}>' to match every row on purpose.");
         }
     }
 
@@ -54,7 +55,7 @@ internal static class BulkSpecificationGuard
         ArgumentNullException.ThrowIfNull(entityType);
 
         if (setters.Targets.Count == 0)
-            throw new UnsupportedSpecificationException("A bulk update must set at least one property.");
+            throw Unsupported("A bulk update must set at least one property.");
 
         var targets = setters.Targets;
         var resolved = new List<IProperty>(targets.Count);
@@ -68,6 +69,9 @@ internal static class BulkSpecificationGuard
         return resolved;
     }
 
+    private static UnsupportedSpecificationException Unsupported(string reason) =>
+        new(EfCoreErrors.BulkSpecificationNotSupported(reason));
+
     // Walks the member chain from the entity through complex properties to the final scalar property. Anything
     // else (a navigation, an owned type, EF.Property, a method call) fails closed: an unresolved target would
     // otherwise skip every check below, which is how x => x.Contact.Ssn once wrote plaintext into an encrypted
@@ -75,24 +79,24 @@ internal static class BulkSpecificationGuard
     private static IProperty Resolve(IEntityType entityType, LambdaExpression target)
     {
         var segments = MemberPath.TryGetSegments(target)
-            ?? throw new UnsupportedSpecificationException(
-                $"A bulk update target must be a plain member path such as x => x.Status or x => x.Contact.Email; "
-                + $"'{target}' is not. EF.Property and computed targets are rejected because they can name a "
+            ?? throw Unsupported(
+                "A bulk update target must be a plain member path such as x => x.Status or x => x.Contact.Email, "
+                + $"and '{target}' is not; EF.Property and computed targets are rejected because they can name a "
                 + "protected column without this check seeing it.");
 
         ITypeBase current = entityType;
         for (var i = 0; i < segments.Count - 1; i++)
         {
             var complex = current.FindComplexProperty(segments[i])
-                ?? throw new UnsupportedSpecificationException(
-                    $"'{string.Join('.', segments)}': '{segments[i]}' is not a complex property of '{current.DisplayName()}'. "
-                    + "Bulk updates can only set the aggregate's own columns, including complex-type members.");
+                ?? throw Unsupported(
+                    $"'{string.Join('.', segments)}': '{segments[i]}' is not a complex property of '{current.DisplayName()}'; "
+                    + "bulk updates set only the aggregate's own columns, including complex-type members.");
 
             current = complex.ComplexType;
         }
 
         return current.FindProperty(segments[^1])
-            ?? throw new UnsupportedSpecificationException(
+            ?? throw Unsupported(
                 $"'{string.Join('.', segments)}' is not a mapped property of '{current.DisplayName()}'.");
     }
 
@@ -102,34 +106,33 @@ internal static class BulkSpecificationGuard
         var isRootMember = property.DeclaringType is IEntityType;
 
         if (property.IsPrimaryKey())
-            throw new UnsupportedSpecificationException($"'{path}' is part of the primary key and cannot be set by a bulk update.");
+            throw Unsupported($"'{path}' is part of the primary key and must not be set by a bulk update.");
 
         if (property.IsConcurrencyToken)
         {
-            throw new UnsupportedSpecificationException(
-                $"'{path}' is a concurrency token; setting it would forge the row version.");
+            throw Unsupported(
+                $"'{path}' is a concurrency token and must not be set by a bulk update, because that would forge the row version.");
         }
 
         if (isRootMember && typeof(IHasTenant).IsAssignableFrom(typeof(T)) && property.Name == nameof(IHasTenant.TenantId))
         {
-            throw new UnsupportedSpecificationException(
-                $"'{nameof(IHasTenant.TenantId)}' cannot be set by a bulk update; it would move rows to another tenant "
-                + "without the tenant write guard.");
+            throw Unsupported(
+                $"'{nameof(IHasTenant.TenantId)}' must not be set by a bulk update, because that would move rows to another "
+                + "tenant without the tenant write guard.");
         }
 
         if (isRootMember
             && typeof(IHasCreatedAudit).IsAssignableFrom(typeof(T))
             && property.Name is nameof(IHasCreatedAudit.CreatedBy) or nameof(IHasCreatedAudit.CreatedOn))
         {
-            throw new UnsupportedSpecificationException($"'{property.Name}' cannot be set by a bulk update; creation provenance is immutable.");
+            throw Unsupported($"'{property.Name}' must not be set by a bulk update, because creation provenance is immutable.");
         }
 
         if (property.FindAnnotation(PersistenceModelAnnotationNames.Encrypt) is not null)
         {
-            throw new UnsupportedSpecificationException(
-                $"'{path}' is an encrypted column. A bulk update bypasses the encryption interceptor and would store "
-                + "the value as plaintext.");
+            throw Unsupported(
+                $"'{path}' is an encrypted column and must not be set by a bulk update, because that bypasses the "
+                + "encryption interceptor and stores the value as plaintext.");
         }
-
     }
 }

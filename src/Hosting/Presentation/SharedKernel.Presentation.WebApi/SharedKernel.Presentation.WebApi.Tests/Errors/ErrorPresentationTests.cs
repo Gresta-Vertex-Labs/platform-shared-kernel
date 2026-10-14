@@ -92,7 +92,7 @@ public sealed class ErrorPresentationTests
     [InlineData(ErrorType.Timeout, "The operation did not complete in time.")]
     public void GetClientMessage_HidesServerErrors_OutsideDevelopment(ErrorType type, string expected)
     {
-        var error = new Error("search.unreachable", "Engine at http://search.internal:7700 did not answer.", type);
+        var error = new Error("search.unavailable", "Engine at http://search.internal:7700 did not answer.", type);
 
         ErrorPresentation.GetClientMessage(error, Context(Environments.Production)).Should().Be(expected);
         ErrorPresentation.GetClientMessage(error, httpContext: null).Should().Be(expected);

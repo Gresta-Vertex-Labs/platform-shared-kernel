@@ -12,8 +12,8 @@ namespace SharedKernel.MultiTenancy.Resolution;
 internal sealed class UnavailableDatabaseTenantResolutionStrategy : ITenantResolutionStrategy
 {
     internal const string Reason =
-        "The \"Database\" tenant resolution strategy needs an IDbConnectionFactory (SharedKernel.Persistence.Npgsql, "
-        + "registered by AddSharedKernelNpgsql or AddSharedKernelPostgres). Register one, or omit \"Database\" from "
+        "The tenant resolution strategy 'Database' needs an IDbConnectionFactory, but none is registered. "
+        + "Register one with AddSharedKernelNpgsql or AddSharedKernelPostgres, or remove 'Database' from "
         + "SharedKernel:MultiTenancy:StrategyOrder.";
 
     public string StrategyName => TenantResolutionStrategyNames.Database;

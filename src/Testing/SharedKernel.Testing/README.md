@@ -18,7 +18,9 @@
 | Bogus fakers (`EntityFaker`, `SingleValueObjectFaker`, `AggregateRootFaker`, `IntegrationEventFaker`, `MoneyFaker`) + `FakerSeeding` | Test data is realistic and reproducible across CI runs |
 | Domain, specification and paging assertions | Domain events, business rules, specifications and `PagedList<T>` are checked without a database |
 | `ValidationSampleGenerator` | Checksum-correct valid and invalid IBANs, cards, VAT numbers and national ids on demand |
-| `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler`, `CultureScope`, `FakeHttpMessageHandler`, `ActivityRecorder` | Privacy, localization, HTTP and tracing code is tested with plain BCL doubles |
+| `ActivityRecorder` / `MetricRecorder` + `ActivityAssertions` / `MetricAssertions` | Spans and metrics are captured and asserted structurally: name, kind, tags, status, exception event, instrument, unit, tag set, and the platform's failure shape |
+| `LoggerAssertions` template, exception and convention checks | Log templates, the exception parameter, leaks, EventId sub-blocks and the L3/L4/L5 message conventions are asserted |
+| `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler`, `CultureScope`, `FakeHttpMessageHandler` | Privacy, localization and HTTP code is tested with plain BCL doubles |
 
 ## Contents
 
@@ -36,6 +38,7 @@
   - [8. Prove masking and data-subject requests](#8-prove-masking-and-data-subject-requests)
   - [9. Pin the culture](#9-pin-the-culture)
   - [10. Fake an HTTP endpoint and record spans](#10-fake-an-http-endpoint-and-record-spans)
+  - [11. Assert telemetry](#11-assert-telemetry)
 - [Reference](#reference)
 - [Testing](#testing)
 - [Pitfalls](#pitfalls)
@@ -58,7 +61,7 @@ brings this one with it.
 | Target framework | `net10.0` |
 | Tier | Testing — reference it from your **test projects** only |
 | Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.DataPrivacy`, `SharedKernel.Validation`, `SharedKernel.Domain`, `SharedKernel.Contracts`, `Bogus`, `Microsoft.Extensions.Logging.Abstractions`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
-| Namespaces | `SharedKernel.Testing.Clocks`, `.Logging`, `.Execution`, `.Application`, `.Fakers`, `.Domain`, `.Persistence`, `.Contracts`, `.Validation`, `.DataPrivacy`, `.Localization`, `.Communication` |
+| Namespaces | `SharedKernel.Testing.Clocks`, `.Logging`, `.Execution`, `.Application`, `.Fakers`, `.Domain`, `.Persistence`, `.Contracts`, `.Validation`, `.DataPrivacy`, `.Localization`, `.Communication`, `.Telemetry` |
 
 ## Quick start
 
@@ -100,8 +103,8 @@ public sealed class InvoiceServiceTests
   `MoneyFaker` and `ValidationSampleGenerator` use their own fixed-seed randomizer (`8675309`); your own Bogus fakers
   become reproducible after `FakerSeeding.Apply()`, which sets the process-wide `Randomizer.Seed`.
 - **Thread-safe.** `FakeClock`, `InMemoryLogger`, `InMemoryLoggerFactory`, `FakeExchangeRateProvider`,
-  `RecordingDataSubjectRequestHandler`, `FakeHttpMessageHandler` and `ActivityRecorder` tolerate parallel test
-  collections. `InMemoryLogger` keeps its scope stack in an `AsyncLocal`, so scopes survive `await` and never leak
+  `RecordingDataSubjectRequestHandler`, `FakeHttpMessageHandler`, `ActivityRecorder` and `MetricRecorder` tolerate
+  parallel test collections. `InMemoryLogger` keeps its scope stack in an `AsyncLocal`, so scopes survive `await` and never leak
   between collections, and copies the log state when it is written (some generators reuse a pooled state object).
 - **Fail-closed callers.** `TestRequestContext` grants no permission until told, and has no tenant unless given one —
   like the platform's authorization and tenant filters.
@@ -260,7 +263,7 @@ http.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))
 http.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.OK));        // then DefaultResponse (200)
 var client = new HttpClient(http) { BaseAddress = new Uri("https://inventory.test") };
 
-using var spans = ActivityRecorder.StartRecording("SharedKernel.Application");
+using var spans = ActivityRecorder.StartRecording("SharedKernel.Application");   // SharedKernel.Testing.Telemetry
 // … exercise the code …
 Assert.Equal(2, http.Requests.Count);
 Assert.NotEmpty(spans.RecordedActivities);
@@ -269,6 +272,54 @@ Assert.NotEmpty(spans.RecordedActivities);
 `AmbientActivityTestHelper.Start(traceId)` sets `Activity.Current` for a block and restores it on dispose. For a typed
 REST client with the platform's resilience and propagation, use `StubHttpMessageHandler` from
 [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md).
+
+### 11. Assert telemetry
+
+```csharp
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Testing.Logging;
+using SharedKernel.Testing.Telemetry;
+
+static KeyValuePair<string, object?> Tag(string key, object? value) => new(key, value);
+
+using var spans = ActivityRecorder.StartRecording(MessagingDiagnostics.ActivitySourceName);
+using var metrics = MetricRecorder.StartRecording(MessagingDiagnostics.MeterName);
+await sut.PublishAsync(message, ct);
+
+spans.RecordedActivities.ShouldHaveSingleSpan("messaging publish")
+    .ShouldHaveKind(ActivityKind.Producer)
+    .ShouldHaveTag(MessagingTagKeys.Destination, "orders")
+    .ShouldBeRecordedFailure(MessagingErrors.Unavailable());
+metrics.ShouldHaveMeasurement("sharedkernel.messaging.publish.count", 1,
+        Tag(WellKnownTagKeys.Outcome, WellKnownOutcomes.Failure))
+    .ShouldUseOutcomeVocabulary("sharedkernel.messaging.publish.count");
+
+logger.Records.ShouldHaveLoggedTemplate(eventId, "Publish to '{DestinationName}' failed.")
+    .ShouldHaveLoggedWithException(eventId, typeof(TimeoutException));
+logger.Records.ShouldFollowLogConvention();
+```
+
+`MessagingDiagnostics`, `MessagingTagKeys` and `MessagingErrors` stand for the types of the package under test.
+
+- **One recorder, one listener.** `ActivityRecorder` and `MetricRecorder` register one process-scoped listener each, for
+  the exact names you pass (`StartRecording(a, b)`) or a prefix (`StartRecordingPrefix("SharedKernel.")`). Reads are
+  snapshots; `Dispose` is idempotent and stops recording; earlier snapshots stay readable.
+- **Stop order versus start order.** `RecordedActivities` holds stopped spans in stop order (a child before its
+  parent); `StartedActivities` holds every started span in start order, including ones never stopped.
+  `ShouldHaveStoppedAll()` fails when a span leaked.
+- **The failure shapes.** `ShouldBeRecordedFailure(error)`, `ShouldBeRecordedException(type[, errorCode])`,
+  `ShouldBeRecordedCancellation()` and `ShouldBeRecordedSuccess()` state what `ActivityFailureExtensions` records
+  (status `Error` described by the error code or the exception type name, never a message; `error.code`/`error.type`;
+  the `exception` event; `Unset` for cancellation and success, never `Ok`). They are written out literally, not computed
+  by calling the recorder, so a change there fails them. `ShouldHaveOutcome(outcome)` is limited to `WellKnownOutcomes`.
+- **Static sources and meters are shared.** A static `ActivitySource` or `Meter` also produces the spans and
+  measurements of tests running in parallel. Start the operation under a trace the test owns and read
+  `spans.ForTrace(traceId)`, filter with tags (`metrics.Sum(name, tags)`, `ShouldHaveMeasurement(name, value, tags)`), or
+  keep the collection serial. A `Meter` made through a per-test `IMeterFactory` is isolated.
+- **Metric tags are `KeyValuePair<string, object?>`.** Write them as `new KeyValuePair<string, object?>(key, value)` or
+  through a small local helper; target-typed `new(…)` does not compile inside a `params` array.
+- **Conventions list everything.** `ShouldFollowSpanConvention`, `ShouldFollowMetricConvention` and
+  `ShouldFollowLogConvention` report every violation in one exception, so a conformance test shows the whole backlog.
 
 ## Reference
 
@@ -286,8 +337,9 @@ REST client with the platform's resilience and propagation, use `StubHttpMessage
 | `.Clocks` | `FakeClock(DateTimeOffset? initial = null)` | `IClock`; `UtcNow` (settable), `Today`, `Set`, `SetUtcNow`, `Advance(TimeSpan)` |
 | `.Logging` | `InMemoryLogger`, `InMemoryLogger<T>` | `ILogger` / `ILogger<T>`; `Records`, `MinLevel` (default `Trace`), `Clear()` |
 | | `InMemoryLoggerFactory` | `ILoggerFactory`; `GetLogger(category)`, `Loggers` |
-| | `LogRecord` | `EventId`, `LogLevel`, `Message`, `State`, `Exception`, `Scopes`, `TryGetProperty` |
-| | `LoggerAssertions` | `ShouldHaveLogged(eventId[, level])`, `ShouldHaveLoggedWithProperty(eventId, name, value)`, `ShouldNotHaveLogged`, `ShouldHaveLoggedCount` |
+| | `LogRecord` | `EventId`, `LogLevel`, `Message`, `Template` (`{OriginalFormat}`), `State`, `Exception`, `Scopes`, `TryGetProperty` |
+| | `LoggerAssertions` | `ShouldHaveLogged(eventId[, level])`, `ShouldHaveLoggedWithProperty(eventId, name, value)`, `ShouldNotHaveLogged`, `ShouldHaveLoggedCount`, `ShouldHaveLoggedTemplate(eventId, template)`, `ShouldHaveLoggedWithException(eventId, type)`, `ShouldHaveLoggedWithoutException(eventId)`, `ShouldNotLeak(values)`, `ShouldFollowLogConvention()`, `ShouldOnlyLogEventIdsInSubBlock(domainBase, subBlockIndex)` |
+| | `LoggerFactoryAssertions` | `ShouldHaveCategory(type)`, `ShouldOnlyHaveCategoriesStartingWith(prefix)` on `InMemoryLoggerFactory` |
 | `.Execution` | `TestRequestContext` | `IRequestContext`; `ForUser`, `ForTenant`, `Service`, `System`, `Anonymous`, `WithTenant`, `WithPermissions`, `WithSession`, `WithImpersonator`, settable properties, `DefaultUserId = "test-user"` |
 | `.Application` | `FakeRequestContext` | `TestRequestContext` with a fixed user id and case-insensitive `HasPermission` |
 | `.Fakers` | `EntityFaker<TEntity, TId>`, `SingleValueObjectFaker<TValueObject, TValue>` | Abstract `Faker<T>` bases |
@@ -304,7 +356,11 @@ REST client with the platform's resilience and propagation, use `StubHttpMessage
 | `.DataPrivacy` | `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler` | `ShouldBeMasked`; `IDataSubjectRequestHandler` with `ExportRequests`, `ErasureRequests`, `Set*Result`, `ShouldHaveExported`, `ShouldHaveErased` |
 | `.Localization` | `CultureScope` | `IDisposable`; `(string cultureName)` or `(CultureInfo)` |
 | `.Communication` | `FakeHttpMessageHandler` | `HttpMessageHandler`; `EnqueueResponse`, `DefaultResponse`, `Requests` |
-| | `HttpClientHandlerTestFactory`, `ActivityRecorder`, `AmbientActivityTestHelper` | `WithInnerHandler`, `WithCorrelationIdHandler`, `WithTenantIdHandler`, `Build`; `StartRecording(source)`, `RecordedActivities`; `Start(traceId, parentSpanId?)` |
+| | `HttpClientHandlerTestFactory`, `AmbientActivityTestHelper` | `WithInnerHandler`, `WithCorrelationIdHandler`, `WithTenantIdHandler`, `Build`; `Start(traceId, parentSpanId?)` |
+| `.Telemetry` | `ActivityRecorder` | `IDisposable`; `StartRecording(name)`, `StartRecording(params names)`, `StartRecordingPrefix(prefix)`, `RecordedActivities` (stop order), `StartedActivities` (start order), `ForTrace(traceId)`, `Clear()`, `ShouldHaveStoppedAll()` |
+| | `ActivityAssertions` | Select: `ShouldHaveSpan`, `ShouldHaveSingleSpan`, `ShouldNotHaveSpan`, `ShouldHaveSpanCount`. Shape: `ShouldHaveKind`, `ShouldHaveSource`, `ShouldHaveTag`, `ShouldHaveTagKeys`, `ShouldNotHaveTag`, `ShouldHaveEvent`, `ShouldHaveParent`. Status: `ShouldHaveStatus`, `ShouldBeUnset`. Platform shapes: `ShouldBeRecordedFailure(error)`, `ShouldBeRecordedException(type[, code])`, `ShouldBeRecordedCancellation`, `ShouldBeRecordedSuccess`, `ShouldHaveOutcome`. Hygiene and conventions: `ShouldNotLeak`, `ShouldFollowSpanConvention` |
+| | `MetricRecorder`, `RecordedInstrument`, `RecordedMeasurement`, `InstrumentKind` | `IDisposable`; `StartRecording(params meterNames)`, `StartRecordingPrefix(prefix)`, `Instruments`, `Measurements`, `MeasurementsOf(instrument)`, `Collect()`, `Clear()`, `Sum(instrument, tags)`, `Count(instrument, tags)` |
+| | `MetricAssertions` | `ShouldHaveInstrument(name[, unit, kind])`, `ShouldHaveMeasurement(instrument[, value, tags])`, `ShouldHaveTagSet`, `ShouldNotHaveTagKey`, `ShouldHaveSum`, `ShouldUseOutcomeVocabulary`, `ShouldNotLeak`, `ShouldFollowMetricConvention` |
 
 ### Errors returned by the doubles
 
@@ -331,7 +387,12 @@ This package is the test toolkit; nothing tests it from your side. For a capabil
 | Expect `SpecificationAssert` to apply ordering, paging or soft delete | Use `FakeRepository` or PostgreSQL | It evaluates `Criteria` only |
 | Expect permissions on a fresh `TestRequestContext` | `WithPermissions(…)` | It grants none, like production authorization |
 | Use `HttpClientHandlerTestFactory` to test the platform's header propagation | Test typed clients with `SharedKernel.Communication.Testing` | Its handlers are simple stand-ins |
-| Keep an `ActivityRecorder` or `CultureScope` alive past the test | `using` them | Listeners and culture are process- or flow-wide |
+| Keep an `ActivityRecorder`, `MetricRecorder` or `CultureScope` alive past the test | `using` them | Listeners and culture are process- or flow-wide |
+| Count spans or measurements of a static `ActivitySource`/`Meter` in a parallel collection | `ForTrace`, tag filters, or a serial collection | Other tests write to the same static source |
+| Build the expected span shape by calling `RecordFailure`/`RecordException` in the test | `ShouldBeRecordedFailure`, `ShouldBeRecordedException` | The assertions state the shape literally; calling the producer makes the check circular |
+| Read `RecordedActivities` for a span that has not ended | `StartedActivities` | `RecordedActivities` holds stopped spans only |
+| Pass `new(key, value)` as a metric tag filter | `new KeyValuePair<string, object?>(key, value)` | Target-typed `new` cannot create a `params` array element |
+| Expect `ShouldFollowLogConvention` to accept a record logged without a template | Log through a `[LoggerMessage]` method | A record without `{OriginalFormat}` cannot be checked and is reported |
 
 ---
 

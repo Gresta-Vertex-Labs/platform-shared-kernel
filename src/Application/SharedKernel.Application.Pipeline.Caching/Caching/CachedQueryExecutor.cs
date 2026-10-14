@@ -41,8 +41,8 @@ internal abstract class CachedQueryExecutor<TResponse>
         if (valueTypes.Length != 1)
         {
             throw new InvalidOperationException(
-                $"{queryType.Name} must implement ICacheableQuery<TValue> exactly once to be cached, "
-                    + $"but implements it {valueTypes.Length} time(s).");
+                $"The query '{queryType.Name}' must implement ICacheableQuery<TValue> exactly once to be cached, "
+                    + $"but it implements it {valueTypes.Length} times.");
         }
 
         return (CachedQueryExecutor<TResponse>)Activator.CreateInstance(

@@ -1,7 +1,14 @@
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Application.Commands;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Pipeline.Commands;
+using SharedKernel.Application.Pipeline.Diagnostics;
+using SharedKernel.Application.Pipeline.Shared;
+using SharedKernel.Application.Pipeline.Tracing;
 using SharedKernel.Execution.Transactions;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Application.Pipeline.Transaction;
 
@@ -33,10 +40,19 @@ namespace SharedKernel.Application.Pipeline.Transaction;
 /// <c>ExecuteInTransactionAsync</c> — only the outermost command commits, and a joined command that
 /// fails (a failed <c>Result</c> or an exception) marks the transaction rollback-only, so its staged
 /// changes never commit with the outer command's. A nested command
-/// (<see cref="ICommandScope.IsNested"/>) with no active transaction calls <c>next()</c> directly.
+/// (<see cref="ICommandScope.IsNested"/>) with no active transaction calls <c>next()</c> directly, with no span.
+/// </para>
+/// <para>
+/// <b>Telemetry.</b> The outermost transaction and a joined one each get an <c>application transaction</c> span (tag
+/// <c>application.transaction_joined</c>) that counts how often the unit of work ran the delegate
+/// (<c>application.attempts</c>). A rollback caused by a failed <c>Result</c> (Warning) or an exception (Error) is
+/// logged by the command that owns the transaction, and a replay is logged when the delegate ran more than once.
 /// </para>
 /// </remarks>
-internal sealed class TransactionBehavior<TRequest, TResponse>(IUnitOfWork unitOfWork, ICommandScope commandScope)
+internal sealed class TransactionBehavior<TRequest, TResponse>(
+    IUnitOfWork unitOfWork,
+    ICommandScope commandScope,
+    ILogger<TransactionBehavior<TRequest, TResponse>> logger)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : ICommandBase, IRequest<TResponse>
 {
@@ -46,26 +62,84 @@ internal sealed class TransactionBehavior<TRequest, TResponse>(IUnitOfWork unitO
         RequestHandlerContinuation<TResponse> next,
         CancellationToken cancellationToken)
     {
-        if (unitOfWork.IsTransactionActive)
-        {
-            // Joins: a failure marks the transaction rollback-only instead of committing with the outer command.
-            return await unitOfWork.ExecuteInTransactionAsync(_ => next(), cancellationToken).ConfigureAwait(false);
-        }
+        var joined = unitOfWork.IsTransactionActive;
 
-        if (commandScope.IsNested)
+        if (!joined && commandScope.IsNested)
             return await next().ConfigureAwait(false);
 
-        // Callbacks queued on this command's frame before the transaction starts (by an outer
-        // behavior) survive a retry; anything a discarded attempt queued is dropped before the next.
-        var scope = commandScope as CommandScope;
-        var callbacksBeforeTransaction = scope?.CurrentFrameCallbackCount ?? 0;
+        var requestType = typeof(TRequest).FullName ?? typeof(TRequest).Name;
+        using var activity = ApplicationDiagnostics.ActivitySource.StartActivity(
+            ApplicationSpanNames.Transaction,
+            ActivityKind.Internal);
+        activity?.SetTag(ApplicationTagKeys.TransactionJoined, joined);
 
-        return await unitOfWork.ExecuteInTransactionAsync(
-            async _ =>
+        var attempts = 0;
+
+        try
+        {
+            TResponse response;
+
+            if (joined)
             {
-                scope?.TruncateCurrentFrame(callbacksBeforeTransaction);
-                return await next().ConfigureAwait(false);
-            },
-            cancellationToken).ConfigureAwait(false);
+                // Joins: a failure marks the transaction rollback-only instead of committing with the outer command.
+                response = await unitOfWork.ExecuteInTransactionAsync(
+                    _ =>
+                    {
+                        attempts++;
+                        return next();
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                // Callbacks queued on this command's frame before the transaction starts (by an outer
+                // behavior) survive a retry; anything a discarded attempt queued is dropped before the next.
+                var scope = commandScope as CommandScope;
+                var callbacksBeforeTransaction = scope?.CurrentFrameCallbackCount ?? 0;
+
+                response = await unitOfWork.ExecuteInTransactionAsync(
+                    async _ =>
+                    {
+                        attempts++;
+                        scope?.TruncateCurrentFrame(callbacksBeforeTransaction);
+                        return await next().ConfigureAwait(false);
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            activity?.SetTag(ApplicationTagKeys.Attempts, attempts);
+
+            var error = ResponseOutcome.TryGetError(response);
+            if (error is null)
+            {
+                activity?.SetTag(WellKnownTagKeys.Outcome, WellKnownOutcomes.Success);
+            }
+            else
+            {
+                activity?.SetTag(WellKnownTagKeys.Outcome, activity.RecordFailure(error));
+                if (!joined)
+                    PipelineLog.TransactionRolledBackByResult(logger, requestType, error.Type.ToString(), error.Code);
+            }
+
+            if (attempts > 1)
+                PipelineLog.TransactionReplayed(logger, requestType, attempts);
+
+            return response;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetTag(ApplicationTagKeys.Attempts, attempts);
+            var outcome = activity.RecordException(exception);
+            activity?.SetTag(WellKnownTagKeys.Outcome, outcome);
+
+            // A joined command's exception reaches the command that owns the transaction, which logs it once.
+            if (!joined && outcome == WellKnownOutcomes.Exception)
+                PipelineLog.TransactionRolledBackByException(logger, requestType, exception);
+
+            if (attempts > 1)
+                PipelineLog.TransactionReplayed(logger, requestType, attempts);
+
+            throw;
+        }
     }
 }

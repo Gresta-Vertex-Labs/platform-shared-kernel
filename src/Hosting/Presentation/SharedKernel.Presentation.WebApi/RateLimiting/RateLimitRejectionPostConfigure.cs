@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.WebApi.Diagnostics;
 
 namespace SharedKernel.Presentation.WebApi.RateLimiting;
 
@@ -13,7 +13,7 @@ namespace SharedKernel.Presentation.WebApi.RateLimiting;
 /// <see cref="RateLimiterOptions.OnRejected"/>, a rejected request is answered 429 <c>rate_limit.exceeded</c> with
 /// <c>Retry-After</c> when the limiter suggests one.
 /// </summary>
-internal sealed partial class RateLimitRejectionPostConfigure : IPostConfigureOptions<RateLimiterOptions>
+internal sealed class RateLimitRejectionPostConfigure : IPostConfigureOptions<RateLimiterOptions>
 {
     private const string TooManyRequestsMessage = "Too many requests. Retry later.";
 
@@ -37,7 +37,7 @@ internal sealed partial class RateLimitRejectionPostConfigure : IPostConfigureOp
     {
         var httpContext = context.HttpContext;
 
-        Log.RateLimitRejected(_logger, RequestFacts.GetEndpointDisplayName(httpContext));
+        WebApiLog.RateLimitRejected(_logger, RequestFacts.GetEndpointDisplayName(httpContext));
 
         // The lease is null when the request was cancelled while queued.
         if (context.Lease is { } lease && lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
@@ -64,14 +64,5 @@ internal sealed partial class RateLimitRejectionPostConfigure : IPostConfigureOp
                     PresentationErrorCodes.RateLimitExceeded,
                     TooManyRequestsMessage))
             .ConfigureAwait(false);
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 5,
-            Level = LogLevel.Warning,
-            Message = "Rate limiting rejected a request to {EndpointDisplayName}.")]
-        public static partial void RateLimitRejected(ILogger logger, string endpointDisplayName);
     }
 }

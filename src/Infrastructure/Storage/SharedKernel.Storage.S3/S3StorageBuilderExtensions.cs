@@ -3,9 +3,11 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Storage.S3;
+using SharedKernel.Storage.S3.Diagnostics;
 using SharedKernel.Storage.S3.Internal;
 
 namespace SharedKernel.Storage;
@@ -208,8 +210,13 @@ public static class S3StorageBuilderExtensions
 
         if (builder.Services.Any(d => d.ServiceType == typeof(S3Connection) && Equals(d.ServiceKey, connectionName)))
         {
-            throw new InvalidOperationException($"An S3 storage connection named '{connectionName}' is already registered.");
+            throw new InvalidOperationException(
+                $"An S3 storage connection named '{connectionName}' is already registered. Connection names are unique, so choose another name.");
         }
+
+        // The provider telemetry is created from the host's IMeterFactory; AddMetrics is a no-op when the host already added it.
+        builder.Services.AddMetrics();
+        builder.Services.TryAddSingleton<StorageTelemetry>();
 
         builder.Services.AddKeyedSingleton<S3Connection>(
             connectionName,

@@ -3,6 +3,9 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Symmetric;
+using NSubstitute;
+using SharedKernel.Integration.Webhooks.Dispatch;
+using SharedKernel.Integration.Webhooks.Options;
 using SharedKernel.Integration.Webhooks.Signing;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Integration.Webhooks.Tests.TestSupport;
@@ -149,7 +152,7 @@ public sealed class WebhookPayloadEncryptionTests
     }
 
     [Fact]
-    public async Task DispatchToSubscriptionAsync_EncryptPayloadEnabledWithoutRegisteredService_FailsClearlyRatherThanSilently()
+    public void ResolvingDispatcher_EncryptPayloadEnabledWithoutRegisteredService_FailsAtResolutionNotAtDelivery()
     {
         var subscription = Subscription("secret");
         var store = new FakeWebhookSubscriptionStore([subscription]);
@@ -161,12 +164,46 @@ public sealed class WebhookPayloadEncryptionTests
             o.EncryptPayload = true;
         });
 
-        var act = async () => await harness.Dispatcher.DispatchToSubscriptionAsync(
-            subscription,
-            new TestOrderShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid()),
-            CancellationToken.None);
+        var act = () => harness.Dispatcher;
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*ISymmetricEncryptionService*");
+        act.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>()
+            .WithMessage("*ISymmetricEncryptionService*AddSymmetricEncryption*");
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void ConstructingDispatcher_EncryptPayloadEnabledWithoutRegisteredService_StillFailsWithInvalidOperation()
+    {
+        // The resolution-time guard is the backstop behind the startup validation: a dispatcher built around
+        // options that skipped that validation still refuses to run without the encryption service.
+        var options = Microsoft.Extensions.Options.Options.Create(new WebhookDeliveryOptions { EncryptPayload = true });
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        using var meters = new ServiceCollection().AddMetrics().BuildServiceProvider();
+
+        var act = () => new WebhookDispatcher(
+            new FakeWebhookSubscriptionStore([]),
+            Substitute.For<IHttpClientFactory>(),
+            new WebhookSignatureProvider(),
+            new AlwaysAllowWebhookUrlValidator(),
+            Substitute.For<SharedKernel.Messaging.Abstractions.EventPublisher.IEventPublisher>(),
+            [],
+            options,
+            provider,
+            new WebhookMetrics(meters.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>()),
+            new SharedKernel.Primitives.Clocks.SystemClock(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<WebhookDispatcher>.Instance);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ISymmetricEncryptionService*AddSymmetricEncryption*");
+    }
+
+    [Fact]
+    public void ResolvingDispatcher_EncryptPayloadDisabledWithoutRegisteredService_Resolves()
+    {
+        var store = new FakeWebhookSubscriptionStore([]);
+
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        using var harness = new WebhookTestHarness(handler, store, o => o.MaxAttempts = 1);
+
+        harness.Dispatcher.Should().NotBeNull();
     }
 }

@@ -102,7 +102,7 @@ public sealed class ReportDefinitionBuilder<TRow>
 
     /// <summary>Builds the definition.</summary>
     /// <returns>The definition.</returns>
-    /// <exception cref="InvalidOperationException">No column was added, or a column is invalid.</exception>
+    /// <exception cref="InvalidReportDefinitionException">No column was added, or a column is invalid.</exception>
     public ReportDefinition<TRow> Build()
     {
         var definition = new ReportDefinition<TRow>
@@ -114,7 +114,7 @@ public sealed class ReportDefinitionBuilder<TRow>
 
         if (Internal.ReportRequestValidator.ValidateDefinition(definition) is { IsFailure: true } invalid)
         {
-            throw new InvalidOperationException(invalid.Error.Message);
+            throw new InvalidReportDefinitionException(invalid.Error);
         }
 
         return definition;

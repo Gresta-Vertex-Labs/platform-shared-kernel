@@ -24,7 +24,7 @@ internal sealed class EfAuditQueryService(
     public Task<CursorPagedList<AuditRecord>> QueryAsync(AuditRecordQuery query, CancellationToken cancellationToken = default)
     {
         Validate(query, crossTenant: false);
-        var tenantId = Scope.ResolveCallerTenant("Querying the audit ledger");
+        var tenantId = Scope.ResolveCallerTenant();
         return PageAsync(query, tenantFilter: true, tenantId, cancellationToken);
     }
 
@@ -64,7 +64,7 @@ internal sealed class EfAuditQueryService(
         if (from > to)
             throw new ArgumentException("The export range starts after it ends.", nameof(from));
 
-        var tenantId = Scope.ResolveCallerTenant("Exporting the audit ledger");
+        var tenantId = Scope.ResolveCallerTenant();
 
         await selfAudit.RecordAsync(
             tenantId,
@@ -97,7 +97,7 @@ internal sealed class EfAuditQueryService(
     public Task<AuditChainVerificationResult> VerifyChainAsync(string resourceType, bool requirePayloads = false, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
-        var tenantId = Scope.ResolveCallerTenant("Verifying an audit chain");
+        var tenantId = Scope.ResolveCallerTenant();
         return checkpoints.Verifier.VerifyAsync(new ChainId(tenantId, resourceType), null, null, requirePayloads, cancellationToken);
     }
 
@@ -116,7 +116,7 @@ internal sealed class EfAuditQueryService(
             throw new ArgumentException("The expected head names a different chain than the checkpoint.", nameof(expectedHead));
         }
 
-        Scope.RequireAccess(checkpoint.TenantId, nameof(VerifyChainFromCheckpointAsync));
+        Scope.RequireAccess(checkpoint.TenantId);
 
         AuditChainCheckpoint[] candidates = expectedHead is null ? [checkpoint] : [checkpoint, expectedHead];
         foreach (var candidate in candidates)

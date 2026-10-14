@@ -1,10 +1,12 @@
+using System.Security.Cryptography;
 using System.Text;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Errors;
-using SharedKernel.Workflows.Temporal.Logging;
+using SharedKernel.Workflows.Temporal.Exceptions;
+using SharedKernel.Workflows.Temporal.Diagnostics;
 using Temporalio.Api.Common.V1;
 using Temporalio.Converters;
 
@@ -46,7 +48,7 @@ namespace SharedKernel.Workflows.Temporal.Codec;
 /// when one is resolvable, <see cref="Array.Empty{T}"/> otherwise (see <see cref="DeriveAssociatedData"/>).
 /// A ciphertext captured for one workflow execution can never be replayed to decode successfully
 /// under a different <c>WorkflowId</c>'s context — a mismatch fails authentication exactly like a
-/// tampered ciphertext or wrong key, surfacing as <see cref="WorkflowErrors.PayloadCodecFailure"/>.
+/// tampered ciphertext or wrong key, surfacing as <see cref="WorkflowPayloadCodecException"/> (<see cref="WorkflowErrorCodes.PayloadCodecFailure"/>).
 /// </para>
 /// <para>
 /// <b>Why <c>RunId</c> is deliberately excluded, corrected from the commissioning brief's original
@@ -73,6 +75,8 @@ namespace SharedKernel.Workflows.Temporal.Codec;
 internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerializationContext<IPayloadCodec>
 {
     private const string EncodingMetadataKey = "encoding";
+    private const string EncodeOperation = "encode";
+    private const string DecodeOperation = "decode";
 
     /// <summary>
     /// The encoding marker. Versioned: <c>-v2</c> payloads hold <see cref="EncryptedPayload.ToBytes"/> in
@@ -83,17 +87,19 @@ internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerialization
 
     private readonly ISymmetricEncryptionService _encryptionService;
     private readonly byte[] _associatedData;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Initialises the base, unbound codec instance — registered once in DI and resolved into
     /// <c>DataConverter.PayloadCodec</c> by <c>.WithPayloadEncryption()</c>.
     /// </summary>
     /// <param name="encryptionService">The AES-256-GCM encryption service to encrypt/decrypt payloads with.</param>
-    /// <param name="logger">The replay-safe logger this codec logs its configuration through.</param>
+    /// <param name="logger">The logger this codec logs its configuration and failures through.</param>
     public EncryptionPayloadCodec(ISymmetricEncryptionService encryptionService, ILogger<EncryptionPayloadCodec> logger)
     {
         _encryptionService = encryptionService;
         _associatedData = [];
+        _logger = logger;
         WorkflowLog.PayloadEncryptionConfigured(logger);
     }
 
@@ -108,6 +114,7 @@ internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerialization
     {
         _encryptionService = source._encryptionService;
         _associatedData = associatedData;
+        _logger = source._logger;
     }
 
     /// <summary>
@@ -168,9 +175,19 @@ internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerialization
     private async Task<Payload> EncodeOneAsync(Payload original)
     {
         byte[] plaintext = original.ToByteArray();
-        EncryptedPayload encrypted = await _encryptionService
-            .EncryptAsync(plaintext, _associatedData, CancellationToken.None)
-            .ConfigureAwait(false);
+        EncryptedPayload encrypted;
+        try
+        {
+            encrypted = await _encryptionService
+                .EncryptAsync(plaintext, _associatedData, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (CryptographicException cryptographicException)
+        {
+            // A key of the wrong length is the only classifiable encrypt fault; an unreachable key provider
+            // is not the codec's to classify and propagates unchanged.
+            throw Failed(EncodeOperation, cryptographicException);
+        }
 
         var result = new Payload
         {
@@ -191,8 +208,7 @@ internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerialization
 
         if (!EncryptedPayload.TryParse(encoded.Data.Span, out EncryptedPayload? encryptedPayload))
         {
-            throw new InvalidOperationException(
-                WorkflowErrors.PayloadCodecFailure("encoded payload is not a well-formed encrypted payload").Message);
+            throw Failed(DecodeOperation, innerException: null);
         }
 
         Result<byte[]> decryptResult = await _encryptionService
@@ -200,10 +216,28 @@ internal sealed class EncryptionPayloadCodec : IPayloadCodec, IWithSerialization
             .ConfigureAwait(false);
         if (decryptResult.IsFailure)
         {
-            throw new InvalidOperationException(
-                WorkflowErrors.PayloadCodecFailure(decryptResult.Error.Message).Message);
+            // The cryptography error (tamper, wrong key, unknown key id, wrong associated data) stays out of the
+            // message and the log: it can name a key id.
+            throw Failed(DecodeOperation, innerException: null);
         }
 
-        return Payload.Parser.ParseFrom(decryptResult.Value);
+        try
+        {
+            return Payload.Parser.ParseFrom(decryptResult.Value);
+        }
+        catch (InvalidProtocolBufferException parseException)
+        {
+            throw Failed(DecodeOperation, parseException);
+        }
+    }
+
+    /// <summary>Logs event 17006 with the exception, then returns the classified exception to throw.</summary>
+    private WorkflowPayloadCodecException Failed(string operation, Exception? innerException)
+    {
+        WorkflowPayloadCodecException failure = innerException is null
+            ? new WorkflowPayloadCodecException(WorkflowErrors.PayloadCodecFailure())
+            : new WorkflowPayloadCodecException(WorkflowErrors.PayloadCodecFailure(), innerException);
+        WorkflowLog.PayloadCodecFailed(_logger, operation, failure);
+        return failure;
     }
 }

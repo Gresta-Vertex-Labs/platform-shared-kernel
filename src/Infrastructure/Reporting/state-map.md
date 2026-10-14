@@ -20,7 +20,10 @@ Test doubles: `InMemoryReportExporter`/`InMemoryReportExporterFactory`/`InMemory
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | :---: |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -32,4 +35,7 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. The domain never references persistence (the caller supplies the `IAsyncEnumerable<TRow>`); delivery goes through `08.Storage`'s `IFileStorageFactory`.
+The domain never references persistence (the caller supplies the `IAsyncEnumerable<TRow>`); delivery goes through `08.Storage`'s `IFileStorageFactory`.
+
+- **08.Storage** — an `IFileStorage.UploadAsync` that reads a faulted pipe sees `ReportAbortedException` (a `SharedKernelException`); a provider that wraps it should keep it as the inner exception so its span can carry the cause `error.code`. No change is required of Storage.
+- **15.Integration** — same propagation shape (`RequestContextPropagation.WriteHeaders` with a null context and explicit correlation id); the planners keep the two in line.

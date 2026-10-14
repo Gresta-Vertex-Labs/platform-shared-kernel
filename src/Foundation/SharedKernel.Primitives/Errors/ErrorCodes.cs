@@ -123,7 +123,7 @@ public static class ErrorCodes
         /// unexpected failure occurred" code for any other <see cref="Error.Unexpected(string, string)"/>
         /// call site that has no more specific code of its own.
         /// </summary>
-        public const string Default = "unexpected.exception";
+        public const string Default = "unexpected.default";
     }
 
     /// <summary>
@@ -198,6 +198,12 @@ public static class ErrorCodes
         /// <see cref="ErrorType.Conflict"/>.
         /// </summary>
         public const string KeyReused = "idempotency.key_reused";
+
+        /// <summary>
+        /// The idempotency store could not be reached, so the request was not run. Retry later.
+        /// Raised as <see cref="ErrorType.Unavailable"/>.
+        /// </summary>
+        public const string StoreUnavailable = "idempotency.store_unavailable";
     }
 
     /// <summary>
@@ -217,6 +223,6 @@ public static class ErrorCodes
         /// Canonical code for <c>BusinessRuleViolationException</c> in
         /// <c>SharedKernel.Domain</c>.
         /// </summary>
-        public const string RuleViolated = "domain.rule.violated";
+        public const string RuleViolated = "domain.rule_violated";
     }
 }

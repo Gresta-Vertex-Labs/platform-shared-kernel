@@ -16,7 +16,10 @@ Test double: `InMemoryWorkflowDispatcher` in `src/Infrastructure/Workflows/Share
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -28,4 +31,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. (`01.Core`'s P-491/P-492 shipped; downstream `13.ServiceDefaults` telemetry and readiness and the `16.Testing` dispatcher double have shipped.)
+- **16.Testing / 00.Governance (note):** the SDK-named instruments on meter `SharedKernel.Workflows` cannot follow T6 naming or the `s` unit; `ShouldFollowMetricConvention` has no exemption for them, so no test calls it on that meter, and the governance IL check does not see them. An allow-list is needed before either is pointed at it.

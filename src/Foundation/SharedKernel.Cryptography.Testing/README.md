@@ -207,7 +207,7 @@ Resolve `FakeEncryptionKeyProvider` or `FakeSigningKeyProvider` from the contain
 
 | Type | Implements | Inspection and control |
 | --- | --- | --- |
-| `FakeEncryptionKeyProvider(string currentKeyId = "v1")` | `IEncryptionKeyProvider`, `ISynchronousEncryptionKeyProvider` | `CurrentKeyId`, `AddKey(id)`, `SetCurrentKey(id)` (unknown id → `KeyNotFoundException`), `RemoveKey(id)` |
+| `FakeEncryptionKeyProvider(string currentKeyId = "v1")` | `IEncryptionKeyProvider`, `ISynchronousEncryptionKeyProvider` | `CurrentKeyId`, `AddKey(id)`, `SetCurrentKey(id)` (unknown id → `ArgumentException`), `RemoveKey(id)` |
 | `FakeRemoteEncryptionKeyProvider(string currentKeyId = "v1")` | `IEncryptionKeyProvider` | Same key methods; `CurrentKeyCallCount`, `KeyCallCount` |
 | `FakeSymmetricEncryptionService(FakeEncryptionKeyProvider? keyProvider = null)` | `ISymmetricEncryptionService`, `ISynchronousSymmetricEncryptionService` | `KeyProvider`, `EncryptedPayloads` (`(Payload, AssociatedData)`), `SimulateDecryptFailure` |
 | `FakeEnvelopeEncryptionProvider(string masterKeyId = "fake-master/v1")` | `IEnvelopeEncryptionProvider` | `MasterKeyId`, `GenerateCallCount`, `UnwrapCallCount`, `SimulateUnwrapFailure` |

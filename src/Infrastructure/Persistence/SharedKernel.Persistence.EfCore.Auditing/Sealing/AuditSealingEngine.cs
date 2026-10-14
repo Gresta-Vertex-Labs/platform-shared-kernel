@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Diagnostics;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
 using SharedKernel.Persistence.Npgsql.Coordination;
@@ -60,7 +61,22 @@ internal sealed class AuditSealingEngine(
     /// <summary>Runs one pass. Returns whether the lock was acquired and how many records were sealed.</summary>
     public async Task<AuditSealPassResult> SealOnceAsync(CancellationToken cancellationToken)
     {
-        using var activity = AuditingMeter.ActivitySource.StartActivity("audit.seal");
+        using var activity = AuditTracing.Start(AuditTracing.SealSpan);
+        try
+        {
+            var pass = await SealOnceCoreAsync(activity, cancellationToken).ConfigureAwait(false);
+            AuditTracing.Succeed(activity);
+            return pass;
+        }
+        catch (Exception ex)
+        {
+            AuditTracing.Fail(activity, ex);
+            throw;
+        }
+    }
+
+    private async Task<AuditSealPassResult> SealOnceCoreAsync(Activity? activity, CancellationToken cancellationToken)
+    {
         var startedAt = Stopwatch.GetTimestamp();
         var batchSize = options.Value.Sealer.BatchSize;
 
@@ -114,11 +130,11 @@ internal sealed class AuditSealingEngine(
                 // transaction is now sealed; when the batch was not full, every record below the horizon is.
                 sealedFloor.Advance(batch.Count < batchSize ? horizon : batch[^1].InsertXid);
 
-                var elapsed = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                var elapsed = Stopwatch.GetElapsedTime(startedAt);
                 var oldestAge = (clock.UtcNow - batch.Min(b => b.Record.OccurredOn)).TotalSeconds;
-                AuditingMeter.RecordSealPass(links.Count, elapsed, oldestAge);
-                AuditingLog.SealPassCompleted(logger, links.Count, elapsed);
-                activity?.SetTag("audit.sealed_records", links.Count);
+                AuditingInstruments.RecordSealPass(links.Count, elapsed.TotalSeconds, oldestAge);
+                AuditingLog.SealPassCompleted(logger, links.Count, elapsed.TotalMilliseconds);
+                activity?.SetTag(PersistenceTagKeys.AuditSealedRecords, links.Count);
                 return new AuditSealPassResult(true, links.Count);
             }
         }

@@ -41,12 +41,12 @@ public sealed class FakeRemoteEncryptionKeyProvider : IEncryptionKeyProvider
 
     /// <summary>Makes an existing key current.</summary>
     /// <param name="keyId">The key id.</param>
-    /// <exception cref="System.Collections.Generic.KeyNotFoundException">No key has <paramref name="keyId"/>.</exception>
+    /// <exception cref="ArgumentException">No key has <paramref name="keyId"/>; call <c>AddKey</c> first.</exception>
     public void SetCurrentKey(string keyId)
     {
         if (!_keys.ContainsKey(keyId))
         {
-            throw new System.Collections.Generic.KeyNotFoundException($"No fake key has the id '{keyId}'.");
+            throw new ArgumentException($"No fake key is registered under '{keyId}'. Call AddKey first.", nameof(keyId));
         }
 
         _currentKeyId = keyId;

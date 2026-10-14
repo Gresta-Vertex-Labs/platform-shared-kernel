@@ -42,6 +42,14 @@ public sealed record LogRecord
     public required IReadOnlyList<object?> Scopes { get; init; }
 
     /// <summary>
+    /// The message template (the <c>{OriginalFormat}</c> state property), for example
+    /// <c>"Index '{IndexName}' was created."</c>; <see langword="null"/> when the state carries none.
+    /// </summary>
+    public string? Template => TryGetProperty(OriginalFormatKey, out var template) ? template as string : null;
+
+    private const string OriginalFormatKey = "{OriginalFormat}";
+
+    /// <summary>
     /// Attempts to read a structured property from <see cref="State"/> by exact, case-sensitive
     /// key match — never parses <see cref="Message"/>.
     /// </summary>

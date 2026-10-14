@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Communication.Internal;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -117,7 +118,7 @@ public sealed class ClientAuthenticationHandlerTests
     }
 
     [Fact]
-    public async Task A_provider_failure_keeps_its_message_under_the_platform_code()
+    public async Task A_provider_failure_gets_a_fixed_message_under_the_platform_code()
     {
         var provider = new FailingProvider();
 
@@ -125,8 +126,10 @@ public sealed class ClientAuthenticationHandlerTests
 
         AccessTokenUnavailableException failure = (await send.Should().ThrowAsync<AccessTokenUnavailableException>()).Which;
         failure.Error.Code.Should().Be(CommunicationErrorCodes.AccessTokenUnavailable);
-        failure.Error.Message.Should().Be("managed identity endpoint down");
-        failure.Should().BeAssignableTo<HttpRequestException>();
+        failure.Error.Message.Should().Be("The access token provider could not supply a token.");
+        failure.Message.Should().Be(failure.Error.Message);
+        failure.ClientName.Should().Be("orders");
+        failure.Should().NotBeAssignableTo<HttpRequestException>();
     }
 
     private ClientAuthenticationOptions ClientCredentials() => new()
@@ -150,7 +153,7 @@ public sealed class ClientAuthenticationHandlerTests
         }
 
         IServiceProvider serviceProvider = services.BuildServiceProvider();
-        using var invoker = new HttpMessageInvoker(new ClientAuthenticationHandler("orders", () => options, serviceProvider) { InnerHandler = _service });
+        using var invoker = new HttpMessageInvoker(new ClientAuthenticationHandler("orders", () => options, serviceProvider, serviceProvider.GetRequiredService<ILogger<ClientAuthenticationHandler>>()) { InnerHandler = _service });
         using var request = new HttpRequestMessage(method, "http://orders/x");
         prepare?.Invoke(request);
         return await invoker.SendAsync(request, CancellationToken.None);

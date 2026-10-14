@@ -127,6 +127,41 @@ public sealed class ScheduledJobRegistryTests
     }
 
     [Fact]
+    public void RegistrationMessages_AreSentences_WithTheRemedy_AndNoInvariantNumber()
+    {
+        ISchedulingBuilder builder = NewBuilder();
+        builder.AddRecurring<RecordingCommand>(
+            "message-job",
+            "0 0 2 * * ?",
+            _ => new RecordingCommand(),
+            options =>
+            {
+                options.MisfirePolicy = MisfirePolicy.Skip;
+                options.OverlapPolicy = OverlapPolicy.Skip;
+            });
+
+        (Action Act, string ParamName)[] cases =
+        [
+            (() => builder.AddRecurring<RecordingCommand>("m1", "0 0 2 * * ?", _ => new RecordingCommand(), o => o.OverlapPolicy = OverlapPolicy.Skip), "configure"),
+            (() => builder.AddRecurring<RecordingCommand>("m2", "0 0 2 * * ?", _ => new RecordingCommand(), o => o.MisfirePolicy = MisfirePolicy.Skip), "configure"),
+            (() => builder.AddRecurring<RecordingCommand>("m3", "not a cron", _ => new RecordingCommand(), o => { o.MisfirePolicy = MisfirePolicy.Skip; o.OverlapPolicy = OverlapPolicy.Skip; }), "cronExpression"),
+            (() => builder.AddRecurring<RecordingCommand>("message-job", "0 0 2 * * ?", _ => new RecordingCommand(), o => { o.MisfirePolicy = MisfirePolicy.Skip; o.OverlapPolicy = OverlapPolicy.Skip; }), "jobName"),
+        ];
+
+        foreach ((Action act, string paramName) in cases)
+        {
+            ArgumentException thrown = act.Should().Throw<ArgumentException>().Which;
+
+            thrown.ParamName.Should().Be(paramName);
+            // ArgumentException appends " (Parameter 'x')" to Message; the sentence is what precedes it.
+            string sentence = thrown.Message[..thrown.Message.IndexOf(" (Parameter", StringComparison.Ordinal)];
+            sentence.Should().EndWith(".");
+            sentence.Should().NotContain("Invariant").And.NotContain("—");
+            sentence.Should().Contain(";", "each message names the remedy after the problem");
+        }
+    }
+
+    [Fact]
     public void AddRecurring_ReturnsSameBuilder_ForFluentChaining()
     {
         ISchedulingBuilder builder = NewBuilder();

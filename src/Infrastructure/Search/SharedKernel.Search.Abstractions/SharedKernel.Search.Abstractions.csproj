@@ -3,7 +3,7 @@
     <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <!-- WO-055/P-354 (P-10): MINOR bump — new public SearchBulkWriteOptions type, additive only -->
-    <Description>Full-text search abstraction contracts for Platform.SharedKernel microservices: ISearchIndex&lt;TDocument&gt; (index/delete/bulk/search/get/count/enumerate), ISearchIndexProvisioner (ensure/exists/delete/cutover/probe), ISearchProviderDescriptor (ceilings + zero-I/O pre-flight validation), IQueryBuilder&lt;TDocument&gt; over the closed 8-node SearchFilter AST and the closed five-kind SearchValue scalar union, plus the Result-valued SearchErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives and SharedKernel.Contracts. Implemented by SharedKernel.Search.Meilisearch and SharedKernel.Search.ElasticSearch.</Description>
+    <Description>Full-text search abstraction contracts for Platform.SharedKernel microservices: ISearchIndex&lt;TDocument&gt; (index/delete/bulk/search/get/count/enumerate), ISearchIndexProvisioner (ensure/exists/delete/cutover/probe), ISearchProviderDescriptor (ceilings + zero-I/O pre-flight validation), IQueryBuilder&lt;TDocument&gt; over the closed 8-node SearchFilter AST and the closed five-kind SearchValue scalar union, plus the Result-valued SearchErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives, SharedKernel.Execution, SharedKernel.Core and SharedKernel.Contracts. Implemented by SharedKernel.Search.Meilisearch and SharedKernel.Search.ElasticSearch.</Description>
     <PackageTags>search;full-text-search;meilisearch;elasticsearch;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!--
@@ -19,7 +19,7 @@
   <ItemGroup>
     <!--
       Zero third-party NuGet dependencies (the seam rule) — the only references are
-      SharedKernel.Primitives (Result<T>/Result/Error) and SharedKernel.Contracts (PagedList<T>, for
+      SharedKernel.Primitives (Result<T>/Result/Error), SharedKernel.Execution (TenantScope), SharedKernel.Core (SharedKernelException, for SearchStreamException) and SharedKernel.Contracts (PagedList<T>, for
       the guarded SearchResults<T>.ToPagedList() bridge only). No engine SDK, no
       Microsoft.Extensions.* package (not even DependencyInjection.Abstractions — no DI extension
       lives here), and no hashing package may ever be added here: System.Security.Cryptography
@@ -27,6 +27,7 @@
     -->
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
     <ProjectReference Include="..\..\..\Model\Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>

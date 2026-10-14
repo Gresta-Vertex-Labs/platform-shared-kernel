@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.WebApi.Diagnostics;
 
 namespace SharedKernel.Presentation.WebApi.Startup;
 
@@ -10,7 +10,7 @@ namespace SharedKernel.Presentation.WebApi.Startup;
 /// <c>AddSharedKernelWebApi()</c> without <c>UseSharedKernelWebApi()</c>, and exception details exposed outside
 /// Development.
 /// </summary>
-internal sealed partial class WebApiStartupDiagnostics : IHostedLifecycleService
+internal sealed class WebApiStartupDiagnostics : IHostedLifecycleService
 {
     private readonly WebApiPipelineState _pipeline;
     private readonly IOptions<SharedKernelWebApiOptions> _options;
@@ -34,7 +34,7 @@ internal sealed partial class WebApiStartupDiagnostics : IHostedLifecycleService
     {
         if (_options.Value.Problems.IncludeExceptionDetails == true && !_environment.IsDevelopment())
         {
-            Log.ExceptionDetailsOutsideDevelopment(_logger, _environment.EnvironmentName);
+            WebApiLog.ExceptionDetailsOutsideDevelopment(_logger, _environment.EnvironmentName);
         }
 
         return Task.CompletedTask;
@@ -52,7 +52,7 @@ internal sealed partial class WebApiStartupDiagnostics : IHostedLifecycleService
     {
         if (!_pipeline.Applied)
         {
-            Log.PipelineNotApplied(_logger);
+            WebApiLog.PipelineNotApplied(_logger);
         }
 
         return Task.CompletedTask;
@@ -66,22 +66,4 @@ internal sealed partial class WebApiStartupDiagnostics : IHostedLifecycleService
 
     /// <inheritdoc />
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 11,
-            Level = LogLevel.Warning,
-            Message = "AddSharedKernelWebApi() was called but UseSharedKernelWebApi() was not: requests get no security "
-                + "headers, problem responses, CORS or required-header checks. Call "
-                + "app.UseSharedKernelWebApi() before mapping endpoints.")]
-        public static partial void PipelineNotApplied(ILogger logger);
-
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 12,
-            Level = LogLevel.Warning,
-            Message = "Problems:IncludeExceptionDetails is enabled in the {EnvironmentName} environment: unhandled "
-                + "exceptions return their type, message and stack trace to every caller. Enable it only in Development.")]
-        public static partial void ExceptionDetailsOutsideDevelopment(ILogger logger, string environmentName);
-    }
 }

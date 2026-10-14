@@ -936,7 +936,7 @@ public class SecureDefaultsAssertionTests
     /// T-318: Re-points <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the
     /// real, shipped <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c>
     /// registration method and confirms it still calls
-    /// <c>MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured</c>.
+    /// <c>ServiceDefaultsSecurityMtlsLog.ForwardedHeaderTrustNotConfigured</c>.
     /// </summary>
     /// <remarks>
     /// Originally tracked as a Cross-Domain Dependency pending <c>13.ServiceDefaults</c>
@@ -971,9 +971,9 @@ public class SecureDefaultsAssertionTests
         // Type's FullName against Mono.Cecil's TypeReference.FullName, never invokes a member
         // through it, so no accessibility violation occurs at runtime either.
         var calleeDeclaringType =
-            declaringType.Assembly.GetType("SharedKernel.ServiceDefaults.Logging.MtlsLog")
+            declaringType.Assembly.GetType("SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics.ServiceDefaultsSecurityMtlsLog")
             ?? throw new InvalidOperationException(
-                "Could not resolve SharedKernel.ServiceDefaults.Logging.MtlsLog via " +
+                "Could not resolve ServiceDefaultsSecurityMtlsLog via " +
                 "Assembly.GetType — has it been renamed or moved?");
 
         var act = () =>
@@ -981,11 +981,11 @@ public class SecureDefaultsAssertionTests
                 declaringType,
                 "AddMtlsForwardedHeaderCertificate",
                 calleeDeclaringType,
-                "ForwardedHeaderTrustBoundaryUnconfigured");
+                "ForwardedHeaderTrustNotConfigured");
 
         act.Should().NotThrow(
             because: "the real, shipped AddMtlsForwardedHeaderCertificate's PostConfigure lambda " +
-                     "still calls MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured " +
+                     "still calls ServiceDefaultsSecurityMtlsLog.ForwardedHeaderTrustNotConfigured " +
                      "when TrustedNetworks is left unconfigured (WO-061, C-50/C-53)");
     }
 
@@ -1353,17 +1353,26 @@ public class SecureDefaultsAssertionTests
     {
         // P-566 folded CorrelationIdMiddleware into SharedKernel.ServiceDefaults.Security's (internal)
         // RequestContextMiddleware, and the shape check moved to SharedKernel.Execution's CorrelationIds.IsValid,
-        // shared by every inbound channel. The lock follows the call site.
+        // shared by every inbound channel. WO-087 (SK.13.HostObservabilityFixes) routed the read through
+        // RequestContextPropagation.ReadHeaders, which applies CorrelationIds.IsValid; the lock follows both links.
         var declaringType = typeof(SharedKernel.ServiceDefaults.Security.RequestContextApplicationBuilderExtensions)
             .Assembly.GetType("SharedKernel.ServiceDefaults.Security.RequestContextMiddleware", throwOnError: true)!;
 
-        var act = () =>
+        var middlewareReads = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, "ResolveCorrelationId", typeof(SharedKernel.Execution.Context.CorrelationIds), "IsValid");
+                declaringType, "ResolveCorrelationId",
+                typeof(SharedKernel.Execution.Context.RequestContextPropagation), "ReadHeaders");
+        var propagationValidates = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                typeof(SharedKernel.Execution.Context.RequestContextPropagation), "ReadHeaders",
+                typeof(SharedKernel.Execution.Context.CorrelationIds), "IsValid");
 
-        act.Should().NotThrow(
-            because: "the real, shipped request-context middleware still validates a caller-supplied " +
-                     "correlation id with CorrelationIds.IsValid before preserving it (WO-063, C-65; P-566)");
+        middlewareReads.Should().NotThrow(
+            because: "the real, shipped request-context middleware reads the caller-supplied correlation id " +
+                     "through RequestContextPropagation.ReadHeaders (WO-087, P-594)");
+        propagationValidates.Should().NotThrow(
+            because: "ReadHeaders validates a caller-supplied correlation id with CorrelationIds.IsValid " +
+                     "before preserving it (WO-063, C-65; P-566)");
     }
 
     // ---------------------------------------------------------------------------

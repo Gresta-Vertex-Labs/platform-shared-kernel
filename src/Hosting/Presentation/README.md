@@ -25,8 +25,9 @@ versioned OpenAPI documents — so an endpoint is one line over `ISender`.**
 ## What you get
 
 - **One error contract.** Every HTTP failure is `application/problem+json` with `errorCode`, `traceId`, `correlationId`
-  and field errors; gRPC carries the same code in a rich `google.rpc.Status`, SignalR in a coded `HubException`,
-  GraphQL in `status`/`title`/`type` extensions. Server errors are redacted outside Development.
+  and field errors; gRPC carries the same code, trace id and correlation id in a rich `google.rpc.Status`, SignalR in a coded
+  `HubException` with an id trailer, GraphQL in `status`/`type`/`title`/`detail`/`errorCode`/`traceId`/`correlationId`
+  extensions. Server errors are redacted outside Development, and a failed server span is recorded once at the edge.
 - **One-line endpoints.** `sender.Send(command, ct).ToCreated(...)` and the other typed results (`ToOk`,
   `ToOkWithETag`, `ToNoContent`, …) that OpenAPI can read; `IEndpointModule`s are mapped by a generated `app.MapEndpoints()`.
 - **Edge checks before the handler.** `IdempotencyKey`, `IfMatch<TVersion>` and `ETag` (412, 428, 304) and validated
@@ -67,6 +68,7 @@ flowchart TD
     CORE["SharedKernel.Presentation.Core<br/>authorization attributes, ErrorType map"] -.-> E
     CORE -.-> G
     CORE -.-> S
+    CORE -.-> Q
     E --> SND["ISender to handlers to Result"]
     G --> SND
     S --> SND

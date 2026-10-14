@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using SharedKernel.Security.Oidc.Diagnostics;
 using SharedKernel.Security.Oidc.Internal;
 using SharedKernel.Security.Oidc.Options;
 
@@ -37,7 +38,7 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
         StringValues headers = context.Request.Headers[OidcAuthenticationDefaults.DpopScheme];
         if (headers.Count != 1 || string.IsNullOrWhiteSpace(headers[0]))
         {
-            return DpopResult.Fail(InvalidProof, headers.Count > 1 ? "MultipleProofs" : "MissingProof");
+            return DpopResult.Fail(InvalidProof, headers.Count > 1 ? DpopRejectionReasons.MultipleProofs : DpopRejectionReasons.MissingProof);
         }
 
         string proof = headers[0]!;
@@ -48,18 +49,18 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
         }
         catch (Exception ex) when (ex is SecurityTokenMalformedException or ArgumentException)
         {
-            return DpopResult.Fail(InvalidProof, "MalformedProof");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.MalformedProof);
         }
 
         IReadOnlyList<string> algorithms = OidcDefaults.ValidAlgorithms(options);
         if (!algorithms.Contains(proofJwt.Alg, StringComparer.Ordinal))
         {
-            return DpopResult.Fail(InvalidProof, "AlgorithmNotAllowed");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.AlgorithmNotAllowed);
         }
 
         if (!string.Equals(proofJwt.Typ, ProofType, StringComparison.OrdinalIgnoreCase))
         {
-            return DpopResult.Fail(InvalidProof, "InvalidType");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.InvalidType);
         }
 
         if (!TryReadPublicKey(proofJwt, out JsonWebKey? key, out string? keyFailure))
@@ -83,47 +84,47 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
 
         if (!signature.IsValid)
         {
-            return DpopResult.Fail(InvalidProof, "InvalidSignature");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.InvalidSignature);
         }
 
         if (!proofJwt.TryGetPayloadValue("htm", out string? method)
             || !string.Equals(method, context.Request.Method, StringComparison.Ordinal))
         {
-            return DpopResult.Fail(InvalidProof, "MethodMismatch");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.MethodMismatch);
         }
 
         if (!proofJwt.TryGetPayloadValue("htu", out string? uri) || !UriMatches(uri, context.Request))
         {
-            return DpopResult.Fail(InvalidProof, "UriMismatch");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.UriMismatch);
         }
 
         if (!proofJwt.TryGetPayloadValue("iat", out long issuedAtSeconds))
         {
-            return DpopResult.Fail(InvalidProof, "MissingIssuedAt");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.MissingIssuedAt);
         }
 
         DateTimeOffset issuedAt = DateTimeOffset.FromUnixTimeSeconds(issuedAtSeconds);
         if (issuedAt > now + options.ClockSkew || issuedAt < now - options.ProofLifetime - options.ClockSkew)
         {
-            return DpopResult.Fail(InvalidProof, "Expired");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.Expired);
         }
 
         if (!proofJwt.TryGetPayloadValue("jti", out string? jti) || string.IsNullOrEmpty(jti) || jti.Length > MaxJtiLength)
         {
-            return DpopResult.Fail(InvalidProof, "InvalidJti");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.InvalidJti);
         }
 
         string thumbprint = Base64Url.EncodeToString(key.ComputeJwkThumbprint());
         if (!string.Equals(thumbprint, expectedJwkThumbprint, StringComparison.Ordinal))
         {
-            return DpopResult.Fail(InvalidProof, "KeyMismatch");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.KeyMismatch);
         }
 
         string expectedHash = Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(accessToken)));
         if (!proofJwt.TryGetPayloadValue("ath", out string? tokenHash)
             || !CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expectedHash), Encoding.ASCII.GetBytes(tokenHash ?? string.Empty)))
         {
-            return DpopResult.Fail(InvalidProof, "AccessTokenHashMismatch");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.AccessTokenHashMismatch);
         }
 
         if (options.RequireNonce)
@@ -131,7 +132,7 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
             proofJwt.TryGetPayloadValue("nonce", out string? nonce);
             if (!nonces.IsValid(nonce))
             {
-                return DpopResult.Fail(UseNonce, "NonceInvalid");
+                return DpopResult.Fail(UseNonce, DpopRejectionReasons.NonceInvalid);
             }
         }
 
@@ -144,12 +145,12 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return DpopResult.Fail(InvalidProof, "ReplayCacheUnavailable");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.ReplayCacheUnavailable);
         }
 
         if (!firstUse)
         {
-            return DpopResult.Fail(InvalidProof, "Replayed");
+            return DpopResult.Fail(InvalidProof, DpopRejectionReasons.Replayed);
         }
 
         return DpopResult.Success;
@@ -166,7 +167,7 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
             using JsonDocument header = JsonDocument.Parse(Base64Url.DecodeFromChars(proof.EncodedHeader));
             if (!header.RootElement.TryGetProperty("jwk", out JsonElement jwk) || jwk.ValueKind != JsonValueKind.Object)
             {
-                failure = "MissingKey";
+                failure = DpopRejectionReasons.MissingKey;
                 return false;
             }
 
@@ -174,7 +175,7 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
             {
                 if (jwk.TryGetProperty(member, out _))
                 {
-                    failure = "PrivateKeyInProof";
+                    failure = DpopRejectionReasons.PrivateKeyInProof;
                     return false;
                 }
             }
@@ -183,7 +184,7 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
         }
         catch (Exception ex) when (ex is JsonException or FormatException or ArgumentException)
         {
-            failure = "MalformedKey";
+            failure = DpopRejectionReasons.MalformedKey;
             return false;
         }
 
@@ -192,12 +193,12 @@ internal sealed class DpopProofValidator(IDpopReplayCache replayCache, DpopNonce
             case JsonWebAlgorithmsKeyTypes.EllipticCurve:
                 break;
             case JsonWebAlgorithmsKeyTypes.RSA when string.IsNullOrEmpty(key.N) || Base64Url.DecodeFromChars(key.N).Length * 8 < MinRsaKeyBits:
-                failure = "WeakKey";
+                failure = DpopRejectionReasons.WeakKey;
                 return false;
             case JsonWebAlgorithmsKeyTypes.RSA:
                 break;
             default:
-                failure = "UnsupportedKeyType";
+                failure = DpopRejectionReasons.UnsupportedKeyType;
                 return false;
         }
 

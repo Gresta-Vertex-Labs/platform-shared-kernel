@@ -112,16 +112,41 @@ At least one of `From` and `MessagingServiceSid` must be set. Retry, timeout and
 | --- | --- |
 | `AddTwilioSmsNotifications(Action<TwilioNotificationOptions> configure)` | The options (validated on start); `INotificationSender` keyed by `NotificationChannel.Sms` (scoped); the named `HttpClient` with the standard resilience handler |
 
+### Errors
+
+`NotificationDeliveryResult.Error` is an `Error` (`null` exactly when the send succeeded) with a fixed message, never
+exception text. The codes are `NotificationErrorCodes` in `SharedKernel.Integration.Notifications.Abstractions`:
+
+| Code | `ErrorType` | When |
+| --- | --- | --- |
+| `integration.notification.provider_unavailable` | `Unavailable` | Twilio answered 5xx or 429, could not be reached, or the circuit is open |
+| `integration.notification.provider_timeout` | `Timeout` | The attempt or the whole send timed out |
+| `integration.notification.provider_rejected` | `Unexpected` | Twilio answered any other non-2xx status |
+
+The exception object goes to the failure log and, for an unexpected fault, to the span.
+
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 15300 | Information | Twilio SMS delivery succeeded |
-| 15301 | Warning | Twilio SMS delivery failed: `{Error}` |
-| 15302 | Warning | A delivery observer threw; the outcome is unaffected |
+| 15300 | Debug | Twilio SMS delivery `{NotificationDeliveryId}` succeeded |
+| 15301 | Warning | Delivery failed with `{ErrorType}` error `{ErrorCode}` and `{StatusCode}`; carries the exception when there was one |
+| 15302 | Error | A delivery observer threw; the outcome is unaffected (carries the exception) |
 
-Spans come from `NotificationIntegrationActivitySource` (`SharedKernel.Integration`); subscribe with
-`WithIntegrationTelemetry()`.
+No recipient, message body, template value, account sid or auth token is ever logged.
+
+### Telemetry
+
+`ActivitySource` and `Meter` `SharedKernel.Integration` (`AddServiceDefaults` subscribes by wildcard).
+
+| Signal | Name | Kind / unit | Tags |
+| --- | --- | --- | --- |
+| Span | `notification send` | Client | `notification.channel`, `notification.delivery_id`, `notification.attempt_count`, `outcome` (plus `error.code`/`error.type` on failure) |
+| Counter | `sharedkernel.integration.notification.sends` | `{message}` | `notification.channel`, `outcome` |
+| Histogram | `sharedkernel.integration.notification.send.duration` | `s` | `notification.channel`, `outcome` |
+
+`outcome` is `success`, `failure`, `exception` or `canceled`. The recipient and the delivery id are never metric tags.
+`NotificationMetrics` is a singleton built from `IMeterFactory`; the registration calls `AddMetrics()`.
 
 ## Testing
 

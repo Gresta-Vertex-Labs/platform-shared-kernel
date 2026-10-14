@@ -78,7 +78,7 @@ public sealed class InMemoryEmbeddingGenerator : IEmbeddingGenerator
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<EmbeddingResult>.Failure(
-                IntelligenceErrors.EngineFault(ModelId, nameof(EmbedAsync), "SimulateFailure enabled")));
+                IntelligenceErrors.EngineFault(ModelId, nameof(EmbedAsync))));
         }
 
         var vector = ComputeVector(text);
@@ -104,7 +104,7 @@ public sealed class InMemoryEmbeddingGenerator : IEmbeddingGenerator
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<EmbeddingBatchResult>.Failure(
-                IntelligenceErrors.EngineFault(ModelId, nameof(EmbedManyAsync), "SimulateFailure enabled")));
+                IntelligenceErrors.EngineFault(ModelId, nameof(EmbedManyAsync))));
         }
 
         var embeddings = new List<ReadOnlyMemory<float>>(texts.Count);

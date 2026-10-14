@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
@@ -72,4 +73,15 @@ internal static class RequestFacts
         var accessor = httpContext?.RequestServices?.GetService<IRequestContextAccessor>();
         return (accessor?.Current ?? RequestContextScope.Current)?.CorrelationId;
     }
+
+    /// <summary>
+    /// Returns the trace id every client-facing error of every protocol reports: the W3C id of the current
+    /// <see cref="Activity"/> (<see cref="Activity.Id"/>), else the request's own <see cref="HttpContext.TraceIdentifier"/>.
+    /// </summary>
+    /// <param name="httpContext">The current request, or <see langword="null"/> outside a request.</param>
+    /// <returns>The trace id, or <see langword="null"/> when there is neither an activity nor a request.</returns>
+    /// <remarks>
+    /// The one place the four edges (HTTP, gRPC, SignalR, GraphQL) read it, so the value cannot differ between them.
+    /// </remarks>
+    public static string? GetTraceId(HttpContext? httpContext) => Activity.Current?.Id ?? httpContext?.TraceIdentifier;
 }

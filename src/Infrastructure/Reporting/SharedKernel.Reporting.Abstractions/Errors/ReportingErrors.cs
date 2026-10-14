@@ -14,8 +14,8 @@ public static class ReportingErrorCodes
     /// <summary><c>reporting.invalid_destination</c> (<c>Validation</c>): the destination is missing a store or key, or is malformed.</summary>
     public const string InvalidDestination = "reporting.invalid_destination";
 
-    /// <summary><c>reporting.unsupported_format</c> (<c>Validation</c>): no exporter is registered for the requested format.</summary>
-    public const string UnsupportedFormat = "reporting.unsupported_format";
+    /// <summary><c>reporting.format_not_supported</c> (<c>Validation</c>): no exporter is registered for the requested format.</summary>
+    public const string FormatNotSupported = "reporting.format_not_supported";
 
     /// <summary>
     /// <c>reporting.row_limit_exceeded</c> (<c>Validation</c>): the rows exceed what the format or its configured limit
@@ -42,7 +42,7 @@ public static class ReportingErrors
     /// <summary>The report definition is invalid.</summary>
     /// <param name="reason">What is wrong, e.g. <c>"Columns must contain at least one column."</c>.</param>
     /// <returns>A validation error.</returns>
-    public static Error InvalidDefinition(string reason) =>
+    internal static Error InvalidDefinition(string reason) =>
         Error.Validation(ReportingErrorCodes.InvalidDefinition, $"The report definition is invalid: {reason}");
 
     /// <summary>The report destination is invalid.</summary>
@@ -55,11 +55,11 @@ public static class ReportingErrors
     /// <param name="format">The requested format, as the caller sent it.</param>
     /// <param name="supported">The formats that are registered.</param>
     /// <returns>A validation error.</returns>
-    public static Error UnsupportedFormat(string? format, IEnumerable<ReportFormat> supported)
+    public static Error FormatNotSupported(string? format, IEnumerable<ReportFormat> supported)
     {
         ArgumentNullException.ThrowIfNull(supported);
         return Error.Validation(
-            ReportingErrorCodes.UnsupportedFormat,
+            ReportingErrorCodes.FormatNotSupported,
             $"The report format '{format}' is not supported. Supported formats: {string.Join(", ", supported.Select(f => f.Name))}.");
     }
 
@@ -78,20 +78,20 @@ public static class ReportingErrors
     /// <summary>The HTML or the conversion options are invalid.</summary>
     /// <param name="reason">What is wrong.</param>
     /// <returns>A validation error.</returns>
-    public static Error InvalidRequest(string reason) =>
+    internal static Error InvalidRequest(string reason) =>
         Error.Validation(ReportingErrorCodes.InvalidRequest, $"The conversion request is invalid: {reason}");
 
     /// <summary>The converter refused the document.</summary>
-    /// <param name="reason">The converter's explanation.</param>
+    /// <remarks>A fixed sentence: the converter's own explanation may echo document content and is never carried.</remarks>
     /// <returns>A validation error.</returns>
-    public static Error ConversionFailed(string reason) =>
-        Error.Validation(ReportingErrorCodes.ConversionFailed, $"The document could not be converted: {reason}");
+    public static Error ConversionFailed() =>
+        Error.Validation(ReportingErrorCodes.ConversionFailed, "The document could not be converted.");
 
     /// <summary>The converter could not be reached, or failed.</summary>
-    /// <param name="reason">What happened.</param>
+    /// <remarks>A fixed sentence: the converter's host, route and response are never carried.</remarks>
     /// <returns>An unavailable error.</returns>
-    public static Error ConverterUnavailable(string reason) =>
-        Error.Unavailable(ReportingErrorCodes.ConverterUnavailable, $"The document converter is unavailable: {reason}");
+    public static Error ConverterUnavailable() =>
+        Error.Unavailable(ReportingErrorCodes.ConverterUnavailable, "The document converter is unavailable.");
 
     /// <summary>The conversion did not finish in time.</summary>
     /// <param name="timeout">The time allowed.</param>

@@ -3,8 +3,8 @@ namespace SharedKernel.DataPrivacy.DataSubjectRequests;
 /// <summary>The error codes an <see cref="IDataSubjectRequestHandler"/> fails with.</summary>
 /// <remarks>
 /// An unknown subject is not an error, and neither is data kept for a legal reason; see
-/// <see cref="IDataSubjectRequestHandler"/>. Any other failure is an
-/// <c>Error.Unexpected</c> with your own code.
+/// <see cref="IDataSubjectRequestHandler"/>. Any other failure is an <c>Error</c> with your own
+/// code of the type that matches the condition.
 /// </remarks>
 public static class DataPrivacyErrorCodes
 {
@@ -16,7 +16,7 @@ public static class DataPrivacyErrorCodes
 
     /// <summary>
     /// The request cannot be carried out yet, for example because a migration or a backup restore
-    /// is running; return it as <c>Error.Unexpected</c>. The orchestrator retries later.
+    /// is running; return it as <c>Error.Unavailable</c>. The orchestrator retries later.
     /// </summary>
-    public const string TemporarilyUnavailable = "data_privacy.temporarily_unavailable";
+    public const string Unavailable = "data_privacy.unavailable";
 }

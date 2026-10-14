@@ -53,14 +53,13 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project (or the Api/Worker host) |
-| Depends on | `SharedKernel.Storage.Abstractions`, `SharedKernel.Configuration`, `AWSSDK.S3` 4.x |
+| Depends on | `SharedKernel.Storage.Abstractions`, `SharedKernel.Configuration`, `AWSSDK.S3` 4.x, `Microsoft.Extensions.Diagnostics` |
 | Namespaces | `SharedKernel.Storage` (registration), `SharedKernel.Storage.S3` (options) |
 
 ## Quick start
 
 ```csharp
 using SharedKernel.ServiceDefaults.HealthChecks;
-using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage()
@@ -69,7 +68,6 @@ builder.Services.AddSharedKernelStorage()
     .AddTenantStore("documents");          // SharedKernel:Storage:Stores:documents
 
 builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // "storage-invoices", "storage-documents"
-builder.WithStorageTelemetry();                                  // SharedKernel.Storage spans and metrics
 ```
 
 ```json
@@ -344,24 +342,37 @@ mapped as in [What happens on the wire](#what-happens-on-the-wire).
 
 ### Logging
 
-| Event id | Level | Event |
+EventIds 8100-8199, owned by this package (OBS logs through it). Placeholders are names, never keys, endpoints or tenant ids.
+
+| Event id | Level | Template |
 | --- | --- | --- |
-| 8100 | Warning | Store `{Store}` (bucket `{Bucket}`) denied `{Operation}` (403) |
-| 8101 | Warning | Store `{Store}` was unavailable for `{Operation}` (`storage.unavailable`) |
-| 8102 | Error | Store `{Store}` rejected `{Operation}` for another reason (`storage.provider_error`) |
-| 8103 | Debug | An expected answer: not found, a failed condition, a bad range or checksum |
-| 8104 | Warning | Store `{Store}` failed its reachability probe |
-| 8105 | Error | Bucket `{Bucket}` is not served by the configured endpoint or region; set the connection's `Region` |
+| 8100 | Warning | Store `'{Store}'` on bucket `'{Bucket}'` denied operation `'{Operation}'` with status `{StatusCode}`, error code `'{ErrorCode}'` and request `'{RequestId}'`. |
+| 8101 | Warning | Store `'{Store}'` on bucket `'{Bucket}'` was unavailable for operation `'{Operation}'` with status `{StatusCode}`, error code `'{ErrorCode}'` and request `'{RequestId}'`. (exception last) |
+| 8102 | Error | Store `'{Store}'` on bucket `'{Bucket}'` rejected operation `'{Operation}'` with status `{StatusCode}`, error code `'{ErrorCode}'` and request `'{RequestId}'`. (exception last) |
+| 8103 | Debug | Store `'{Store}'` on bucket `'{Bucket}'` answered operation `'{Operation}'` with status `{StatusCode}` and error code `'{ErrorCode}'`. |
+| 8104 | Warning | Store `'{Store}'` on bucket `'{Bucket}'` failed its reachability probe. (exception last) |
+| 8105 | Error | Store `'{Store}'` on bucket `'{Bucket}'` is not served by the configured endpoint or region with error code `'{ErrorCode}'` and request `'{RequestId}'`, so set the connection Region to the region of the bucket. (exception last) |
+
+8103 covers answers the caller caused (`storage.not_found`, `storage.already_exists`, `storage.precondition_failed`,
+`storage.invalid_range`, `storage.checksum_mismatch`) and is logged at Debug on purpose: a missing object is routine,
+not a warning.
 
 ### Telemetry
 
-`builder.WithStorageTelemetry()` (`SharedKernel.ServiceDefaults`) exports the `SharedKernel.Storage` source and meter:
+The activity source and the meter are both `SharedKernel.Storage` (`StorageTelemetryNames.SourceName` /
+`MeterName`); `AddServiceDefaults()` subscribes to `SharedKernel.*`, so nothing else is registered. The meter comes
+from the host's `IMeterFactory` (`AddS3` calls `AddMetrics()`, which is a no-op when the host already did).
 
-| Signal | Name | Tags |
-| --- | --- | --- |
-| Span | `storage {operation}` (client) | `storage.store`, `storage.operation`, `storage.provider`, `error.type` on failure |
-| Histogram | `storage.client.operation.duration` (s) | the same |
-| Counter | `storage.client.bytes` (By) | `storage.store`, `storage.provider`, `storage.direction` (`upload` / `download`) |
+| Signal | Name | Unit | Tags |
+| --- | --- | --- | --- |
+| Span | `storage {operation}` (client) | — | `storage.store`, `storage.operation`, `storage.provider`; on failure `error.code` (the `storage.*` code) and `error.type` (the `ErrorType` name, for example `NotFound`) |
+| Histogram | `sharedkernel.storage.operation.duration` | `s` | `storage.store`, `storage.operation`, `storage.provider`, `outcome`; on failure also `error.type` and `error.code` |
+| Counter | `sharedkernel.storage.bytes` | `By` | `storage.store`, `storage.provider`, `storage.direction` (`upload` / `download`) |
+
+`outcome` is `success`, `failure` (a `Result` failure), `exception` (an unexpected exception, recorded in full on
+the span and rethrown) or `canceled` (the caller's token; never an error status). `storage.provider` is the
+connection name (`S3`, `Obs`, or the name you gave `AddS3Compatible`). Requests refused before anything is sent
+(a feature the endpoint lacks, an invalid option) are recorded as failures too.
 
 ### Health
 

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Communication.Internal;
 using SharedKernel.Communication.Rest.Internal;
@@ -58,7 +59,7 @@ public static class RestCommunicationBuilderExtensions
         if (typeof(TClient).IsInterface || typeof(TClient).IsAbstract)
         {
             throw new ArgumentException(
-                $"{typeof(TClient).Name} cannot be created; register it with AddRestClient<{typeof(TClient).Name}, TImplementation>(\"{name}\").",
+                $"'{typeof(TClient).Name}' is an interface or abstract and cannot be created. Register it with AddRestClient<{typeof(TClient).Name}, TImplementation>(\"{name}\").",
                 nameof(TClient));
         }
 
@@ -85,7 +86,9 @@ public static class RestCommunicationBuilderExtensions
         ClientPipeline.UseConnectionHandler<RestClientOptions>(http, name);
 
         // Once per call, outside the retry loop, so every attempt carries the same values.
-        http.AddHttpMessageHandler(services => new RequestContextPropagationHandler(services.GetRequiredService<IRequestContextAccessor>()));
+        http.AddHttpMessageHandler(services => new RequestContextPropagationHandler(
+            services.GetRequiredService<IRequestContextAccessor>(),
+            services.GetRequiredService<ILogger<RequestContextPropagationHandler>>()));
         http.AddHttpMessageHandler(services => new IdempotencyKeyHandler(() => Options(services, name).PropagateIdempotencyKey));
 
         var client = new RestClientBuilder(name, http, builder.Services);

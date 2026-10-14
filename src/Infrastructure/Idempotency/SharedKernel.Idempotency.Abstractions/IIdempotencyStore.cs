@@ -41,8 +41,12 @@ namespace SharedKernel.Idempotency.Abstractions;
 /// reservation, so a failed attempt stays retryable and a finished one stays deduplicated.
 /// </para>
 /// <para>
-/// <b>Store outage.</b> An unreachable store throws (fail closed) unless the provider is configured to let the
-/// guarded work run anyway (each provider's single <c>AllowExecutionOnStoreUnavailable</c> flag).
+/// <b>Store outage.</b> An unreachable or unresponsive store makes every member throw
+/// <see cref="IdempotencyStoreUnavailableException"/> (fail closed; <c>Error.Unavailable</c> with
+/// <c>idempotency.store_unavailable</c>, the provider's own exception as <see cref="Exception.InnerException"/>) unless
+/// the provider is configured to let the guarded work run anyway (each provider's single
+/// <c>AllowExecutionOnStoreUnavailable</c> flag). A programming error such as an undefined purpose or a blank
+/// argument, a defect in the store and cancellation propagate unchanged and are never reported as an outage.
 /// </para>
 /// </remarks>
 public interface IIdempotencyStore

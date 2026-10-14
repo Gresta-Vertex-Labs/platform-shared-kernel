@@ -194,7 +194,7 @@ too. On `Result<T>`, `location` and `version` are functions of the value. MVC ac
 | Another `BadHttpRequestException` | Its status | `request.too_large` for 413, else `http.{status}` |
 | `TimeoutException`, or a cancellation the client did not cause | 504 | `timeout.default` |
 | Any exception after the client went away | 499, no body | — |
-| Any other exception | 500 | `unexpected.exception` |
+| Any other exception | 500 | `unexpected.default` |
 | Unmatched route, wrong method, unsupported media type | Its status | `http.404`, `http.405`, `http.415` |
 
 A gRPC call gets the status without a body. An `IExceptionHandler` the service registers runs first; a
@@ -238,12 +238,33 @@ A gRPC call gets the status without a body. An `IExceptionHandler` the service r
   sets neither `Cache-Control` nor `ETag`), and no `Server` header. A header an endpoint set itself is never overwritten.
 - CORS is deny by default; one policy applies to every endpoint, hubs included. Startup validation refuses
   `AllowCredentials` with no origin or `*`, the origin `null`, and (outside Development) credentials with an `http://`
-  origin (logged at Critical, 14004). WebSockets from a disallowed origin get 403 `forbidden.origin_not_allowed`.
+  origin (logged at Warning, 14004). WebSockets from a disallowed origin get 403 `forbidden.origin_not_allowed`.
 - `Limits:MaxRequestBodySize` is Kestrel's body limit (413 `request.too_large`); per endpoint
   `.WithRequestSizeLimit(bytes)` / `.DisableRequestSizeLimit()`. `Limits:MaxJsonDepth` limits requests and responses.
 - The package has no limiter: register ASP.NET Core's or `AddSharedKernelRateLimiting()`. `UseRateLimiter()` runs
   after authentication and before authorization; a rejection without `OnRejected` is 429 `rate_limit.exceeded` with
   `Retry-After` (14005).
+
+### Observability
+
+The exception handler and a returned error enrich the framework's server span (`HttpRequestIn`, the ambient
+`Activity.Current`); this package starts no span and owns no `ActivitySource`. What a handled failure leaves on it:
+
+| Failure | Server span |
+| --- | --- |
+| **Server category** (5xx): an unclassified exception, a `SharedKernelException` of `Unexpected`/`Unavailable`/`Timeout` | Status `Error` described by the exception's type name (never its message), `error.type`, `error.code`, one `exception` event |
+| A `TimeoutException` or a cancellation the client did not cause (504 `timeout.default`) | Status `Error` and the error's `error.type`/`error.code`, no exception event |
+| A returned server-category error (`ToErrorResult()`, `ToOk()` and the other typed results) | The same as a thrown one, without an event |
+| **Client category** (4xx): `ValidationException`, `NotFound`, `Conflict`, a `BadHttpRequestException` | Only the `error.code` tag; the status stays `Unset`, as OpenTelemetry's HTTP server convention has it |
+| A request the client abandoned (499) | Nothing |
+
+Each handled exception is recorded once. With the instrumentation at its defaults the handler's event is the only one,
+and a service that sets `RecordException = true` gets no second one for an exception the handler handled
+(`OpenTelemetry.Instrumentation.AspNetCore` 1.15.2 records only exceptions that leave the pipeline). The middleware's
+own log and diagnostic events are suppressed for what the handler handled, so it is logged once, by the handler; the
+`aspnetcore.diagnostics.exceptions` counter still counts it. An exception a service's own `IExceptionHandler` handles
+first is that service's to record. Every problem carries `traceId` (the current activity's W3C id, else the request
+identifier) and `correlationId`.
 
 ## Recipes
 
@@ -354,7 +375,7 @@ The correlation id and inbound baggage are configured on `AddSharedKernelRequest
 | `forbidden.insufficient_permission` / `forbidden.origin_not_allowed` | 403 | Missing permission or role / a WebSocket from a disallowed origin |
 | `rate_limit.exceeded` | 429 | Rate limiting refused the request |
 | `timeout.default` | 504 | A timeout, or a cancellation the client did not cause |
-| `unexpected.exception` | 500 | An exception that is not a `SharedKernelException` |
+| `unexpected.default` | 500 | An exception that is not a `SharedKernelException` |
 | `http.{status}` | Any | A framework response without an error |
 
 ### Logging
@@ -363,17 +384,19 @@ The correlation id and inbound baggage are configured on `AddSharedKernelRequest
 | --- | --- | --- |
 | 14001 | Error | A request failed with a server error (5xx) |
 | 14003 | Warning | A request was refused for its `Idempotency-Key` (never the key) |
-| 14004 | Critical | CORS settings failed startup validation |
+| 14004 | Warning | CORS settings failed startup validation (the host stops with the `OptionsValidationException` that names each setting) |
 | 14005 | Warning | Rate limiting rejected a request |
 | 14007 | Debug | An exception was answered with a client error (4xx) |
 | 14008 | Debug | The client closed the request before it completed (499) |
-| 14011 | Warning | `AddSharedKernelWebApi()` ran but `UseSharedKernelWebApi()` did not |
-| 14012 | Warning | Exception details are enabled outside Development |
+| 14011 | Warning | `AddSharedKernelWebApi()` ran but `UseSharedKernelWebApi()` did not: requests get no security headers, problem responses, CORS or required-header checks. Call `app.UseSharedKernelWebApi()` before mapping endpoints |
+| 14012 | Warning | Exception details are enabled outside Development: unhandled exceptions return their type, message and stack trace to every caller. Enable them only in Development |
 | 14013 | Warning | A WebSocket request from a disallowed origin was refused |
 
-14002, 14009 and 14010 (authorization) are emitted by `SharedKernel.Presentation.Core`.
+Authorization refusals are logged by `SharedKernel.Presentation.Core` (14500-14502). Retired ids 14000, 14002, 14006, 14009 and 14010 are never reused.
 
 ## Testing
+
+This package's own suite asserts the error a client sees for every `SharedKernelException` other packages of the kernel throw (execution, caching, messaging, storage, search, intelligence, communication, idempotency, persistence, workflows), thrown and returned, in Development and in production, so a rename of one of their error codes fails there.
 
 A typed result is unit-tested on the result itself:
 
@@ -400,7 +423,7 @@ parameters for a handler test. For the pipeline itself (problems, headers, autho
 | Forget `UseSharedKernelWebApi()` | Call it right after `UseSharedKernelRequestContext()` | Typed results still write problems, but exceptions, headers, CORS and header checks are missing (warning 14011) |
 | Forget `UseSharedKernelRequestContext()` | Add it first | Problems lose `correlationId`, and caller baggage is not refused |
 | Add middleware between the two calls | Use a hook (`AtStart`, `BeforeAuthentication`, `BeforeAuthorization`) | It would run outside the exception handler |
-| Register an authentication scheme without an `IUserContextMapper` | Register the scheme's mapper, test schemes included | Every signed-in caller gets 403 (14009, 14010) |
+| Register an authentication scheme without an `IUserContextMapper` | Register the scheme's mapper, test schemes included | Every signed-in caller gets 403 (14501, 14502) |
 | Read `Idempotency-Key` / `If-Match` raw | Declare the header (parameter, convention or attribute) | Undeclared, `GetIdempotencyKey()`/`GetIfMatch()` return `null` for invalid values too |
 | Assert 412 on `ErrorHttpResult.StatusCode` | Assert the error code, or test through the host | The 412 rule depends on the request; the result alone says 409 |
 | Test body limits with `TestServer` | Test them against Kestrel | `TestServer` enforces none |

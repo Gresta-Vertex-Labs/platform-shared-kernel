@@ -17,11 +17,14 @@
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
-None — every phase in this domain is complete. The first public release of the four packages ships with root P-577 (release train); root P-578 then retires the old package IDs (`SharedKernel.Application.Behaviors`, `.Behaviors.Caching`, `.Abstractions`) on the feed.
+None — every phase in this domain is complete.
 
 ## Blocked
 

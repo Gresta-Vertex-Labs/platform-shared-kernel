@@ -86,7 +86,7 @@ Cite the rule number from `src/Infrastructure/Search/CLAUDE.md` → `## Rules & 
 
 - **01.Core** — `TenantScope`/`TenantId` (Execution), `Result`/`Error`, `IReadinessProbe`, `AddValidatedOptions`.
 - **04.Contracts** — `ToPagedList()` → `PagedList<T>`, the only bridge; requires exact totals.
-- **13.ServiceDefaults** — `WithSearchTelemetry()` names the source/meter by string; must stay byte-identical to `SearchWellKnown.ActivitySourceName`/`MeterName`; `AddSharedKernelReadiness()` maps the probes.
+- **13.ServiceDefaults** — the `SharedKernel.*` wildcard of `AddServiceDefaults()` subscribes `SearchWellKnown.ActivitySourceName`/`MeterName` (a name outside that prefix is not exported); `AddSharedKernelReadiness()` maps the probes.
 - **16.Testing** — owns the double rules and `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` in `SharedKernel.Testing.Internal`.
 - **00.Governance** — `SearchTopologyRules`, SK0013/SK0022/SK0024/SK0025; a missing guard (raw-client accessor use) is a note.
 - **10.Intelligence** — shares the `TenantScope` convention and probe naming shape; no reference either way.

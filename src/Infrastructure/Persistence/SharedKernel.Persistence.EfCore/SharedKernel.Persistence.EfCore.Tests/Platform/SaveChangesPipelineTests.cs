@@ -198,7 +198,7 @@ public sealed class SaveChangesPipelineTests : IDisposable
         var act = () => context.SaveChangesAsync();
 
         var thrown = await act.Should().ThrowAsync<ConflictException>();
-        thrown.Which.Error.Code.Should().Be(ConcurrencyVersion.ConflictErrorCode);
+        thrown.Which.Error.Code.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict);
         ConcurrencyVersion.TryGetCurrentVersion(thrown.Which, out _).Should().BeFalse("the row no longer exists");
     }
 

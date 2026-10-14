@@ -3,20 +3,22 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Diagnostics;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Testing.Telemetry;
 using Xunit;
 using ZiggyCreatures.Caching.Fusion;
 
 namespace SharedKernel.Caching.FusionCache.Tests.Telemetry;
 
 /// <summary>
-/// <c>cache.hits</c> carries the layer that answered (<c>l1</c> or <c>l2</c>), and <c>cache.misses</c>
+/// <c>sharedkernel.caching.hits</c> carries the layer that answered (<c>l1</c> or <c>l2</c>), and <c>sharedkernel.caching.misses</c>
 /// counts only reads no layer could answer: a <c>TryGet</c>/<c>TryGetMany</c> miss or a factory run.
 /// </summary>
 /// <remarks>
 /// The distributed layer is an in-memory <see cref="MemoryDistributedCache"/> shared by two independent
 /// providers ("nodes"), each with its own memory cache, so a value written by one node is a distributed
-/// hit on the other. Every test uses a fresh entity name, so its <c>cache.key_prefix</c> series is its own.
+/// hit on the other. Every test uses a fresh entity name, so its <c>caching.key_prefix</c> series is its own.
 /// </remarks>
 public sealed class CacheLevelMetricsTests
 {
@@ -39,16 +41,16 @@ public sealed class CacheLevelMetricsTests
         await nodeA.GetRequiredService<ICacheService>().SetAsync(key, "from-a", CachePolicy.Default);
         var cacheB = nodeB.GetRequiredService<ICacheService>();
 
-        using var metrics = new MetricRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
 
         var lookup = await cacheB.TryGetAsync<string>(key);
 
         Assert.Equal("from-a", lookup.Value);
-        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", Prefix, "l2") == 1),
+        Assert.True(await Eventually.HoldsAsync(() => Sum(metrics, CachingTelemetry.HitsInstrument, Prefix, CachingTagValues.LevelDistributed) == 1),
             $"Expected one l2 hit; saw {Describe(metrics)}");
         await Task.Delay(100); // let any stray background event land before asserting absence
-        Assert.Equal(0, metrics.Sum("cache.hits", Prefix, "l1"));
-        Assert.Equal(0, metrics.Sum("cache.misses", Prefix));
+        Assert.Equal(0, Sum(metrics, CachingTelemetry.HitsInstrument, Prefix, CachingTagValues.LevelMemory));
+        Assert.Equal(0, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
     }
 
     [Fact]
@@ -61,7 +63,7 @@ public sealed class CacheLevelMetricsTests
         await nodeA.GetRequiredService<ICacheService>().SetAsync(key, "from-a", CachePolicy.Default);
         var cacheB = nodeB.GetRequiredService<ICacheService>();
 
-        using var metrics = new MetricRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
 
         var value = await cacheB.GetOrSetAsync<string>(
             key,
@@ -69,9 +71,9 @@ public sealed class CacheLevelMetricsTests
             CachePolicy.Default);
 
         Assert.Equal("from-a", value);
-        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", Prefix, "l2") == 1),
+        Assert.True(await Eventually.HoldsAsync(() => Sum(metrics, CachingTelemetry.HitsInstrument, Prefix, CachingTagValues.LevelDistributed) == 1),
             $"Expected one l2 hit; saw {Describe(metrics)}");
-        Assert.Equal(0, metrics.Sum("cache.misses", Prefix));
+        Assert.Equal(0, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
     }
 
     [Fact]
@@ -84,16 +86,17 @@ public sealed class CacheLevelMetricsTests
         await nodeA.GetRequiredService<ICacheService>().SetAsync(key, "from-a", CachePolicy.Default);
         var cacheB = nodeB.GetRequiredService<ICacheService>();
         await cacheB.TryGetAsync<string>(key); // copies the entry into B's memory cache
+        await Task.Delay(200); // let the warm-up read's background hit event land before recording starts
 
-        using var metrics = new MetricRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
 
         await cacheB.TryGetAsync<string>(key);
 
-        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", Prefix, "l1") == 1),
+        Assert.True(await Eventually.HoldsAsync(() => Sum(metrics, CachingTelemetry.HitsInstrument, Prefix, CachingTagValues.LevelMemory) == 1),
             $"Expected one l1 hit; saw {Describe(metrics)}");
         await Task.Delay(100);
-        Assert.Equal(0, metrics.Sum("cache.hits", Prefix, "l2"));
-        Assert.Equal(0, metrics.Sum("cache.misses", Prefix));
+        Assert.Equal(0, Sum(metrics, CachingTelemetry.HitsInstrument, Prefix, CachingTagValues.LevelDistributed));
+        Assert.Equal(0, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
     }
 
     [Fact]
@@ -101,14 +104,14 @@ public sealed class CacheLevelMetricsTests
     {
         await using var node = BuildNode(_sharedDistributedCache);
 
-        using var metrics = new MetricRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
 
         var lookup = await node.GetRequiredService<ICacheService>().TryGetAsync<string>(Key("absent"));
 
         Assert.False(lookup.IsHit);
-        Assert.Equal(1, metrics.Sum("cache.misses", Prefix));
+        Assert.Equal(1, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
         await Task.Delay(100);
-        Assert.Equal(0, metrics.Sum("cache.hits", Prefix));
+        Assert.Equal(0, Sum(metrics, CachingTelemetry.HitsInstrument, Prefix));
     }
 
     [Fact]
@@ -118,16 +121,16 @@ public sealed class CacheLevelMetricsTests
         var cache = node.GetRequiredService<ICacheService>();
         var key = Key("factory");
 
-        using var metrics = new MetricRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
 
         Assert.Equal("f", await cache.GetOrSetAsync(key, _ => ValueTask.FromResult("f"), CachePolicy.Default));
-        Assert.Equal(1, metrics.Sum("cache.misses", Prefix));
+        Assert.Equal(1, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
 
         Assert.Equal("f", await cache.GetOrSetAsync(key, _ => ValueTask.FromResult("other"), CachePolicy.Default));
 
-        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", Prefix, "l1") == 1),
+        Assert.True(await Eventually.HoldsAsync(() => Sum(metrics, CachingTelemetry.HitsInstrument, Prefix, CachingTagValues.LevelMemory) == 1),
             $"Expected one l1 hit; saw {Describe(metrics)}");
-        Assert.Equal(1, metrics.Sum("cache.misses", Prefix));
+        Assert.Equal(1, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
     }
 
     [Fact]
@@ -137,13 +140,13 @@ public sealed class CacheLevelMetricsTests
         var cache = node.GetRequiredService<ICacheService>();
         await cache.SetAsync(Key("present"), "p", CachePolicy.Default);
 
-        using var metrics = new MetricRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
 
         var results = await cache.TryGetManyAsync<string>([Key("present"), Key("absent-1"), Key("absent-2")]);
 
         Assert.True(results[Key("present")].IsHit);
-        Assert.Equal(2, metrics.Sum("cache.misses", Prefix));
-        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", Prefix, "l1") == 1),
+        Assert.Equal(2, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
+        Assert.True(await Eventually.HoldsAsync(() => Sum(metrics, CachingTelemetry.HitsInstrument, Prefix, CachingTagValues.LevelMemory) == 1),
             $"Expected one l1 hit; saw {Describe(metrics)}");
     }
 
@@ -157,13 +160,13 @@ public sealed class CacheLevelMetricsTests
         await using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<ICacheService>();
 
-        using var metrics = new MetricRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
 
         await cache.GetOrSetAsync(Key("memory-only"), _ => ValueTask.FromResult(1), CachePolicy.Default);
         await Task.Delay(100);
 
-        Assert.Equal(1, metrics.Sum("cache.misses", Prefix));
-        Assert.Equal(0, metrics.Sum("cache.hits", Prefix));
+        Assert.Equal(1, Sum(metrics, CachingTelemetry.MissesInstrument, Prefix));
+        Assert.Equal(0, Sum(metrics, CachingTelemetry.HitsInstrument, Prefix));
     }
 
     private static ServiceProvider BuildNode(IDistributedCache distributedCache)
@@ -175,8 +178,17 @@ public sealed class CacheLevelMetricsTests
         return services.BuildServiceProvider();
     }
 
+    private static double Sum(MetricRecorder metrics, string instrument, string prefix, string? level = null)
+    {
+        var tags = new List<KeyValuePair<string, object?>> { new(CachingTagKeys.KeyPrefix, prefix) };
+        if (level is not null)
+            tags.Add(new(CachingTagKeys.Level, level));
+
+        return metrics.Sum(instrument, [.. tags]);
+    }
+
     private string Describe(MetricRecorder metrics) =>
         string.Join(", ", metrics.Measurements
-            .Where(m => m.Tag("cache.key_prefix") == Prefix)
-            .Select(m => $"{m.Instrument}[{m.Tag("cache.level")}]={m.Value}"));
+            .Where(m => m.TryGetTag(CachingTagKeys.KeyPrefix, out var prefix) && (string?)prefix == Prefix)
+            .Select(m => $"{m.InstrumentName}[{(m.TryGetTag(CachingTagKeys.Level, out var level) ? level : "-")}]={m.Value}"));
 }

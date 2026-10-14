@@ -11,7 +11,7 @@ namespace SharedKernel.Presentation.SignalR;
 /// A refused invocation never reaches the hub method. It fails with the error <c>rate_limit.exceeded: Too many
 /// requests.</c>, which a client receives behind SignalR's own sentence —
 /// <c>An unexpected error occurred invoking '{method}' on the server. HubException: rate_limit.exceeded: Too many
-/// requests.</c> — and reads with <see cref="HubErrorMessage.TryParse"/>; the refusal is logged at Warning. All buckets
+/// requests.</c> — and reads with <see cref="HubErrorMessage.TryParse(string?, out string?, out string?)"/>; the refusal is logged at Warning. All buckets
 /// live in one partitioned limiter keyed by connection id, with one replenishment timer for the whole server; the
 /// bucket of a closed connection is dropped once it has refilled and stayed idle.
 /// </para>

@@ -1,4 +1,6 @@
+using System.Diagnostics.Metrics;
 using Microsoft.EntityFrameworkCore;
+using SharedKernel.Idempotency.EfCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Execution.Context;
@@ -48,6 +50,52 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
 
         Assert.True(services.HasIdempotencyStore(IdempotencyPurpose.Request));
         Assert.False(services.HasIdempotencyStore(IdempotencyPurpose.Message));
+    }
+
+    [Fact]
+    public void AddEfCoreIdempotency_TwiceForTheSamePurpose_ThrowsTheExactSentence()
+    {
+        var services = new ServiceCollection();
+        services.AddClock();
+        services.AddEfCoreIdempotency(options => options.UseNpgsql(ConnectionString), p => p.ForRequests());
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => services.AddEfCoreIdempotency(options => options.UseNpgsql(ConnectionString), p => p.ForRequests()));
+
+        Assert.Equal(
+            "An IIdempotencyStore is already registered for IdempotencyPurpose 'Request'. Register one store per purpose.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void AddEfCoreIdempotency_RegistersTheMetricsAsASingleton_AndAMeterFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddClock();
+        services.AddEfCoreIdempotency(options => options.UseNpgsql(ConnectionString), p => p.ForRequests().ForMessages());
+
+        Assert.Equal(
+            ServiceLifetime.Singleton,
+            Assert.Single(services, d => d.ServiceType == typeof(EfCoreIdempotencyMetrics)).Lifetime);
+        Assert.Contains(services, d => d.ServiceType == typeof(IMeterFactory));
+    }
+
+    [Fact]
+    public void Host_ThatNeverCalledAddMetrics_StillResolvesTheStoreAndItsMeterFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddClock();
+        services.AddEfCoreIdempotency(options => options.UseNpgsql(ConnectionString), p => p.ForRequests().ForMessages());
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(provider.GetRequiredService<IMeterFactory>());
+        // The singleton metrics never capture the scoped context: resolving it from the root provider must work.
+        Assert.Same(provider.GetRequiredService<EfCoreIdempotencyMetrics>(), provider.GetRequiredService<EfCoreIdempotencyMetrics>());
+        Assert.IsType<EfCoreIdempotencyStore>(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Request));
+        Assert.IsType<EfCoreIdempotencyStore>(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Message));
     }
 
     [Fact]

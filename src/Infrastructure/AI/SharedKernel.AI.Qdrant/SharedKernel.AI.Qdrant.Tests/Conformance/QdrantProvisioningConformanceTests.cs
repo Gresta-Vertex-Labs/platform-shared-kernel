@@ -4,6 +4,7 @@ using Qdrant.Client;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Provisioning;
+using SharedKernel.AI.Qdrant.Tests.Support;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
@@ -37,7 +38,7 @@ public sealed class QdrantProvisioningConformanceTests : IAsyncLifetime
     {
         var grpcUri = new Uri(_fixture.GrpcEndpoint);
         _client = new QdrantClient(grpcUri.Host, grpcUri.Port);
-        _provisioner = new QdrantCollectionProvisioner(_client, NullLogger<QdrantCollectionProvisioner>.Instance);
+        _provisioner = new QdrantCollectionProvisioner(_client, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         return Task.CompletedTask;
     }
 
@@ -121,7 +122,7 @@ public sealed class QdrantProvisioningConformanceTests : IAsyncLifetime
         (await _provisioner.EnsureCollectionAsync(definition)).IsSuccess.Should().BeTrue();
 
         var collection = new QdrantVectorCollection<TestVectorRecord>(
-            _client, definition, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
+            _client, definition, new FakeClock(), TestMeterFactory.NewTelemetry(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
         var record = new TestVectorRecord { Id = "1", Vector = new float[] { 1, 0, 0 }, ModelId = ModelId };
         (await collection.UpsertAsync(record, TenantScope.Global)).IsSuccess.Should().BeTrue();
 
@@ -147,7 +148,7 @@ public sealed class QdrantProvisioningConformanceTests : IAsyncLifetime
         // A client pointed at a plainly unreachable address — distinguishes "cluster down" from the
         // "reachable but this collection is missing/mis-scoped" case exercised above.
         using var unreachableClient = new QdrantClient("127.0.0.1", 1, grpcTimeout: TimeSpan.FromSeconds(3));
-        var unreachableProvisioner = new QdrantCollectionProvisioner(unreachableClient, NullLogger<QdrantCollectionProvisioner>.Instance);
+        var unreachableProvisioner = new QdrantCollectionProvisioner(unreachableClient, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         var probe = await unreachableProvisioner.ProbeAsync("anything", cts.Token);

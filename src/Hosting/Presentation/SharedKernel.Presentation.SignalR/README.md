@@ -13,7 +13,7 @@
 | You get | So that |
 | --- | --- |
 | `builder.AddSharedKernelSignalR()` | One call sets up SignalR with the platform's hub filters and authorization |
-| Coded hub errors (`{code}: {message}`) + `HubErrorMessage.TryParse` | Clients branch on `order.not_found` exactly as over HTTP, with server errors redacted outside Development |
+| Coded hub errors (`{code}: {message} [traceId=…; correlationId=…]`) + `HubErrorMessage.TryParse` | Clients branch on `order.not_found` exactly as over HTTP, with server errors redacted outside Development, and quote the trace id and correlation id when they report a failure |
 | Hub methods returning `Result` / `Result<T>` | A hub method is one line over `ISender`, like an endpoint |
 | The connection's `IRequestContext` reopened around every invocation | Handlers, repositories, outbound calls and logs see the caller, tenant and correlation id |
 | `Context.GetTenantId()`, `HubGroupNaming.TenantGroup(tenantId)` | Tenant broadcasts use one group-name format and never mix tenants |
@@ -91,8 +91,9 @@ public sealed class OrdersHub(ISender sender) : Hub
   error mapping, then the invocation rate limit. It binds and validates `SharedKernel:Presentation:SignalR`, is
   idempotent, and returns SignalR's `ISignalRServerBuilder` (for protocols or a backplane). Filters wrap hub method
   invocations; the request-context filter also wraps `OnConnectedAsync`/`OnDisconnectedAsync`.
-- **Errors.** Every failed invocation becomes a `HubException` with message `{code}: {message}`, presented by the same
-  rules as an HTTP problem:
+- **Errors.** Every failed invocation becomes a `HubException` with message
+  `{code}: {message} [traceId={traceId}; correlationId={correlationId}]`, presented by the same rules as an HTTP
+  problem (the bracketed trailer is explained below):
 
   | The hub method… | Error text |
   | --- | --- |
@@ -100,13 +101,27 @@ public sealed class OrdersHub(ISender sender) : Hub
   | Throws a `ValidationException` | One error: its code and message; several: `validation.failed: {n} validation errors occurred.` |
   | Throws a `TimeoutException`, or is cancelled while the connection is open | `timeout.default: The operation did not complete in time.` |
   | Is refused by the invocation rate limit | `rate_limit.exceeded: Too many requests.` |
-  | Throws anything else | `unexpected.exception: An unexpected error occurred.` (the exception's message in Development) |
+  | Throws anything else | `unexpected.default: An unexpected error occurred.` (the exception's message in Development) |
   | Throws a `HubException` itself | Unchanged |
   | Is cancelled because the connection closed | Rethrown, logged at Debug |
 
   SignalR prefixes its own sentence (`An unexpected error occurred invoking '{method}' on the server. HubException: …`),
   so read the text with `HubErrorMessage.TryParse`. A stream that fails after it started, and a hub method refused by
   authorization, reach the client without a code.
+- **Trace id and correlation id.** An HTTP problem carries `traceId` and `correlationId`; a `HubException` delivers one
+  string, so every error this package builds ends with the trailer ` [traceId=…; correlationId=…]`. The trace id is the
+  invocation's (the W3C id of its activity, else the identifier of the request that opened the connection); the
+  correlation id is the connection's. Neither contains white space, `;` or `]`; the trailer is the last bracketed
+  group, so a message that imitates one cannot supply the ids, it is left out when no trace id is known, and its
+  correlation part when no correlation id is. `TryParse(text, out code, out message)` returns the message **without**
+  the trailer; the overload with `out traceId, out correlationId` returns the ids (`null` when absent). A
+  `HubException` a hub throws itself passes unchanged and has none.
+
+  | The client receives… | Code | Ids |
+  | --- | --- | --- |
+  | A failed `Result`, a thrown `SharedKernelException`, `ValidationException`, timeout, an unexpected exception, the invocation rate limit refusal, a stream that fails before it returns | `{code}: {message}` | trailer |
+  | A `HubException` the hub threw | only if its text has the shape | none |
+  | A stream that fails after it started, SignalR's authorization refusal, an unknown method | none | none |
 - **Request context.** A hub invocation does not run in the flow of the request that opened the connection. The
   outermost filter captures that request's `IRequestContext` when the connection opens and reopens it around connect,
   every hub method and disconnect. Like `Context.User`, it is never refreshed while the connection stays open.
@@ -129,18 +144,19 @@ try
 {
     await connection.InvokeAsync("PlaceOrder", order);
 }
-catch (HubException exception) when (HubErrorMessage.TryParse(exception.Message, out var code, out var message))
+catch (HubException exception) when (
+    HubErrorMessage.TryParse(exception.Message, out var code, out var message, out var traceId, out var correlationId))
 {
-    // code: "order.not_found", message: "Order 42 was not found."
+    // code: "order.not_found", message: "Order 42 was not found.", traceId and correlationId: the ids to quote in a report
 }
 ```
 
 A browser uses the same pattern:
 
 ```js
-const coded = /(?:^| HubException: )(?<code>[^\s:]+): (?<message>[\s\S]*)$/;
+const coded = /(?:^| HubException: )(?<code>[^\s:]+): (?<message>[\s\S]*?)(?: \[traceId=(?<traceId>[^\s;\]]+)(?:; correlationId=(?<correlationId>[^\s;\]]+))?\])?(?![\s\S])/;
 try { await connection.invoke("PlaceOrder", order); }
-catch (error) { const match = coded.exec(error.message); /* match?.groups.code */ }
+catch (error) { const match = coded.exec(error.message); /* match?.groups.code, .message, .traceId, .correlationId */ }
 ```
 
 ### 2. Broadcast to one tenant
@@ -171,7 +187,7 @@ public IAsyncEnumerable<OrderResponse> Orders(Guid customerId) =>
     streams.Stream(customerId).GetValueOrThrow();   // Stream returns Result<IAsyncEnumerable<OrderResponse>>
 ```
 
-A method returning `Result<IAsyncEnumerable<T>>` cannot stream: its success is refused as `unexpected.exception`
+A method returning `Result<IAsyncEnumerable<T>>` cannot stream: its success is refused as `unexpected.default`
 (EventId 14107).
 
 ### 4. Scale out
@@ -197,7 +213,8 @@ SignalR's own settings (message size, keep-alive, timeouts) stay on `HubOptions`
 | Member | Purpose |
 | --- | --- |
 | `IHostApplicationBuilder.AddSharedKernelSignalR(Action<SharedKernelSignalROptions>?)` | SignalR + filters + authorization; returns `ISignalRServerBuilder` |
-| `HubErrorMessage.TryParse(string?, out string? code, out string? message)` | Reads a coded error, bare or with SignalR's prefix |
+| `HubErrorMessage.TryParse(string?, out string? code, out string? message)` | Reads a coded error, bare or with SignalR's prefix; the message excludes the trailer |
+| `HubErrorMessage.TryParse(string?, out string? code, out string? message, out string? traceId, out string? correlationId)` | The same, and the ids of the trailer (`null` when absent) |
 | `HubCallerContext.GetTenantId()` → `TenantId?` | The connection's tenant |
 | `HubCallerContext.GetCorrelationId()` → `string?` | The correlation id of the request that opened the connection |
 | `HubGroupNaming.TenantGroup(TenantId or Guid)` | The tenant group name |
@@ -207,14 +224,18 @@ SignalR's own settings (message size, keep-alive, timeouts) stay on `HubOptions`
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 14100 | Error | An exception that is not a `SharedKernelException` or a timeout |
 | 14101 | Warning | The invocation rate limit refused an invocation |
-| 14103 | Error | A hub method failed with a server error |
+| 14103 | Error | A hub method failed with a server error, an unclassified exception included (code `unexpected.default`) |
 | 14104 | Debug | A hub method was rejected with a client error |
 | 14106 | Debug | The connection closed before the hub method completed |
-| 14107 | Error | A hub method returned a stream inside a `Result` |
+| 14107 | Error | A hub method returned a stream inside a `Result`. Declare it to return `IAsyncEnumerable<T>` or `ChannelReader<T>` and throw the failure before returning the stream |
+| 14108 | Warning | A hub method returned a server-category failure as a `Result` |
+
+Retired ids 14100, 14102 and 14105 are never reused.
 
 ## Testing
+
+This package's own suite asserts the error a client sees for every `SharedKernelException` other packages of the kernel throw (execution, caching, messaging, storage, search, intelligence, communication, idempotency, persistence, workflows), thrown and returned, in Development and in production, so a rename of one of their error codes fails there.
 
 Run the hub in a `WebApplicationFactory<Program>` host and connect with `HubConnectionBuilder` over the test server's
 handler (`WithUrl(url, o => o.HttpMessageHandlerFactory = _ => server.CreateHandler())`); assert coded failures with

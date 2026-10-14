@@ -11,9 +11,9 @@ using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Exceptions;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Search.Meilisearch.Diagnostics;
 using SharedKernel.Search.Meilisearch.Errors;
-using SharedKernel.Search.Meilisearch.Logging;
 using SharedKernel.Search.Meilisearch.Options;
 using SharedKernel.Search.Meilisearch.Querying;
 
@@ -32,17 +32,6 @@ namespace SharedKernel.Search.Meilisearch.Index;
 internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     where TDocument : class, ISearchDocument
 {
-    private const string OperationIndex = "index";
-    private const string OperationIndexMany = "index_many";
-    private const string OperationDelete = "delete";
-    private const string OperationDeleteMany = "delete_many";
-    private const string OperationDeleteByFilter = "delete_by_filter";
-    private const string OperationClear = "clear";
-    private const string OperationWaitUntilSearchable = "wait_until_searchable";
-    private const string OperationSearch = "search";
-    private const string OperationGet = "get";
-    private const string OperationCount = "count";
-    private const string OperationEnumerate = "enumerate";
 
     private static readonly JsonSerializerOptions DocumentSerializerOptions = new()
     {
@@ -54,6 +43,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     private readonly MeilisearchOptions _options;
     private readonly IClock _clock;
     private readonly ILogger<MeilisearchIndex<TDocument>> _logger;
+    private readonly SearchTelemetry _telemetry;
 
     /// <summary>Initializes a new <see cref="MeilisearchIndex{TDocument}"/>.</summary>
     public MeilisearchIndex(
@@ -61,13 +51,15 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         SearchIndexDefinition definition,
         MeilisearchOptions options,
         IClock clock,
-        ILogger<MeilisearchIndex<TDocument>> logger)
+        ILogger<MeilisearchIndex<TDocument>> logger,
+        SearchTelemetry telemetry)
     {
         _client = client;
         _definition = definition;
         _options = options;
         _clock = clock;
         _logger = logger;
+        _telemetry = telemetry;
     }
 
     /// <inheritdoc />
@@ -79,17 +71,16 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     {
         if (!IsValidDocumentId(document.DocumentId))
         {
-            return Task.FromResult(
-                Result<SearchWriteReceipt>.Failure(SearchErrors.InvalidDocumentId(document.DocumentId)));
+            return Reject<SearchWriteReceipt>(SearchOperations.Index, SearchErrors.InvalidDocumentId(document.DocumentId));
         }
 
-        return ExecuteAsync(OperationIndex, async ct =>
+        return ExecuteAsync(SearchOperations.Index, async ct =>
         {
             var task = await _client.Index(_definition.Name)
                 .AddDocumentsAsync([document], _definition.PrimaryKeyField, ct)
                 .ConfigureAwait(false);
-            _logger.MeilisearchDocumentsEnqueued(_definition.Name, 1, task.TaskUid.ToString(CultureInfo.InvariantCulture));
-            SearchDiagnostics.RecordDocuments(OperationIndex, _definition.Name, 1);
+            MeilisearchLog.DocumentsEnqueued(_logger, _definition.Name, 1, task.TaskUid.ToString(CultureInfo.InvariantCulture));
+            _telemetry.RecordDocuments(SearchOperations.Index, _definition.Name, 1);
             return await BuildReceiptAsync(task, affectedCount: 1, consistency, ct).ConfigureAwait(false);
         },
         cancellationToken);
@@ -122,8 +113,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         {
             if (!IsValidDocumentId(document.DocumentId))
             {
-                return Task.FromResult(
-                    Result<SearchBulkReceipt>.Failure(SearchErrors.InvalidDocumentId(document.DocumentId)));
+                return Reject<SearchBulkReceipt>(SearchOperations.IndexMany, SearchErrors.InvalidDocumentId(document.DocumentId));
             }
         }
 
@@ -132,7 +122,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             return Task.FromResult(Result<SearchBulkReceipt>.Success(EmptyBulkReceipt(consistency)));
         }
 
-        return ExecuteAsync(OperationIndexMany, async ct =>
+        return ExecuteAsync(SearchOperations.IndexMany, async ct =>
         {
             var documentList = documents.ToList();
             var meilisearchIndex = _client.Index(_definition.Name);
@@ -144,7 +134,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
                 if (!isFirstBatch && bulkOptions.MaxBatchesPerSecond is { } maxBatchesPerSecond)
                 {
                     var delay = TimeSpan.FromSeconds(1.0 / maxBatchesPerSecond);
-                    _logger.MeilisearchBulkThrottled(_definition.Name, delay.TotalMilliseconds);
+                    MeilisearchLog.BulkThrottled(_logger, _definition.Name, delay.TotalMilliseconds);
                     await Task.Delay(delay, ct).ConfigureAwait(false);
                 }
 
@@ -159,8 +149,8 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             }
 
             var lastTaskUid = tasks.Count > 0 ? tasks[^1].TaskUid.ToString(CultureInfo.InvariantCulture) : string.Empty;
-            _logger.MeilisearchDocumentsEnqueued(_definition.Name, documents.Count, lastTaskUid);
-            SearchDiagnostics.RecordDocuments(OperationIndexMany, _definition.Name, documents.Count);
+            MeilisearchLog.DocumentsEnqueued(_logger, _definition.Name, documents.Count, lastTaskUid);
+            _telemetry.RecordDocuments(SearchOperations.IndexMany, _definition.Name, documents.Count);
 
             var failures = new List<SearchItemFailure>();
             var succeededCount = documents.Count;
@@ -197,7 +187,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
 
                 if (failures.Count > 0)
                 {
-                    _logger.MeilisearchBulkPartialFailure(_definition.Name, failures.Count, documents.Count);
+                    MeilisearchLog.BulkPartialFailure(_logger, _definition.Name, failures.Count, documents.Count);
                 }
             }
 
@@ -224,15 +214,15 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     {
         if (!IsValidDocumentId(documentId))
         {
-            return Task.FromResult(Result<SearchWriteReceipt>.Failure(SearchErrors.InvalidDocumentId(documentId)));
+            return Reject<SearchWriteReceipt>(SearchOperations.Delete, SearchErrors.InvalidDocumentId(documentId));
         }
 
-        return ExecuteAsync(OperationDelete, async ct =>
+        return ExecuteAsync(SearchOperations.Delete, async ct =>
         {
             var task = await _client.Index(_definition.Name).DeleteOneDocumentAsync(documentId, ct)
                 .ConfigureAwait(false);
-            _logger.MeilisearchDocumentsDeleted(_definition.Name, 1, task.TaskUid.ToString(CultureInfo.InvariantCulture));
-            SearchDiagnostics.RecordDocuments(OperationDelete, _definition.Name, 1);
+            MeilisearchLog.DocumentsDeleted(_logger, _definition.Name, 1, task.TaskUid.ToString(CultureInfo.InvariantCulture));
+            _telemetry.RecordDocuments(SearchOperations.Delete, _definition.Name, 1);
             return await BuildReceiptAsync(task, affectedCount: 1, consistency, ct).ConfigureAwait(false);
         },
         cancellationToken);
@@ -266,7 +256,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         {
             if (!IsValidDocumentId(documentId))
             {
-                return Task.FromResult(Result<SearchBulkReceipt>.Failure(SearchErrors.InvalidDocumentId(documentId)));
+                return Reject<SearchBulkReceipt>(SearchOperations.DeleteMany, SearchErrors.InvalidDocumentId(documentId));
             }
         }
 
@@ -275,13 +265,14 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             return Task.FromResult(Result<SearchBulkReceipt>.Success(EmptyBulkReceipt(consistency)));
         }
 
-        return ExecuteAsync(OperationDeleteMany, async ct =>
+        return ExecuteAsync(SearchOperations.DeleteMany, async ct =>
         {
             var task = await _client.Index(_definition.Name).DeleteDocumentsAsync(documentIds, ct)
                 .ConfigureAwait(false);
-            _logger.MeilisearchDocumentsDeleted(
+            MeilisearchLog.DocumentsDeleted(
+                _logger,
                 _definition.Name, documentIds.Count, task.TaskUid.ToString(CultureInfo.InvariantCulture));
-            SearchDiagnostics.RecordDocuments(OperationDeleteMany, _definition.Name, documentIds.Count);
+            _telemetry.RecordDocuments(SearchOperations.DeleteMany, _definition.Name, documentIds.Count);
 
             var failures = new List<SearchItemFailure>();
             var succeededCount = documentIds.Count;
@@ -299,7 +290,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
                     }
 
                     succeededCount = 0;
-                    _logger.MeilisearchBulkPartialFailure(_definition.Name, failures.Count, documentIds.Count);
+                    MeilisearchLog.BulkPartialFailure(_logger, _definition.Name, failures.Count, documentIds.Count);
                 }
             }
 
@@ -330,18 +321,18 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         var filterResult = MeilisearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
         if (filterResult.IsFailure)
         {
-            _logger.MeilisearchTenantScopeMissing(_definition.Name);
-            return Task.FromResult(Result<SearchWriteReceipt>.Failure(filterResult.Error));
+            MeilisearchLog.TenantScopeMissing(_logger, _definition.Name);
+            return Reject<SearchWriteReceipt>(SearchOperations.DeleteByFilter, filterResult.Error);
         }
 
-        return ExecuteAsync(OperationDeleteByFilter, async ct =>
+        return ExecuteAsync(SearchOperations.DeleteByFilter, async ct =>
         {
             var task = await _client.Index(_definition.Name)
                 .DeleteDocumentsAsync(
                     new global::Meilisearch.QueryParameters.DeleteDocumentsQuery { Filter = filterResult.Value },
                     ct)
                 .ConfigureAwait(false);
-            _logger.MeilisearchDocumentsDeleted(_definition.Name, 0, task.TaskUid.ToString(CultureInfo.InvariantCulture));
+            MeilisearchLog.DocumentsDeleted(_logger, _definition.Name, 0, task.TaskUid.ToString(CultureInfo.InvariantCulture));
 
             // The number of documents matched by the filter is not known without an extra round trip;
             // AffectedCount is reported as 0 for a filter-based delete.
@@ -354,7 +345,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     public async Task<Result> ClearAsync(
         SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
     {
-        var receiptResult = await ExecuteAsync(OperationClear, async ct =>
+        var receiptResult = await ExecuteAsync(SearchOperations.Clear, async ct =>
         {
             var task = await _client.Index(_definition.Name).DeleteAllDocumentsAsync(ct).ConfigureAwait(false);
             return await BuildReceiptAsync(task, affectedCount: 0, consistency, ct).ConfigureAwait(false);
@@ -372,12 +363,12 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         {
             return Result.Failure(SearchErrors.EngineFault(
                 SearchWellKnown.MeilisearchProviderName,
-                OperationWaitUntilSearchable,
+                SearchOperations.WaitUntilSearchable,
                 $"ProviderToken '{receipt.ProviderToken}' is not a valid Meilisearch task uid."));
         }
 
         var result = await ExecuteAsync(
-                OperationWaitUntilSearchable,
+                SearchOperations.WaitUntilSearchable,
                 async ct =>
                 {
                     var waitResult = await WaitForTaskAsync(taskUid, timeout, ct).ConfigureAwait(false);
@@ -398,18 +389,18 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         var validation = MeilisearchRequestValidator.Validate(_definition, request);
         if (validation.IsFailure)
         {
-            _logger.MeilisearchRequestRejected(_definition.Name, validation.Error.Message);
-            return Task.FromResult(Result<SearchResults<TDocument>>.Failure(validation.Error));
+            MeilisearchLog.RequestRejected(_logger, _definition.Name, validation.Error.Type.ToString(), validation.Error.Code);
+            return Reject<SearchResults<TDocument>>(SearchOperations.Search, validation.Error);
         }
 
         var filterResult = MeilisearchFilterCompiler.CompileWithTenantScope(_definition, request.Filter, tenantScope);
         if (filterResult.IsFailure)
         {
-            _logger.MeilisearchTenantScopeMissing(_definition.Name);
-            return Task.FromResult(Result<SearchResults<TDocument>>.Failure(filterResult.Error));
+            MeilisearchLog.TenantScopeMissing(_logger, _definition.Name);
+            return Reject<SearchResults<TDocument>>(SearchOperations.Search, filterResult.Error);
         }
 
-        return ExecuteAsync(OperationSearch, async ct =>
+        return ExecuteAsync(SearchOperations.Search, async ct =>
         {
             var (query, attributes) = MeilisearchRequestTranslator.Translate(request, filterResult.Value);
             var searchable = await _client.Index(_definition.Name)
@@ -425,7 +416,8 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
 
             if (mapped.IsSuccess)
             {
-                _logger.MeilisearchSearchExecuted(
+                MeilisearchLog.SearchExecuted(
+                    _logger,
                     _definition.Name,
                     mapped.Value.Hits.Count,
                     mapped.Value.TotalHits,
@@ -434,7 +426,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             }
             else
             {
-                _logger.MeilisearchEngineFault(OperationSearch, _definition.Name);
+                MeilisearchLog.EngineFault(_logger, SearchOperations.Search, _definition.Name, exception: null);
             }
 
             return mapped;
@@ -448,11 +440,11 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     {
         if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
-            _logger.MeilisearchTenantScopeMissing(_definition.Name);
-            return Task.FromResult(Result<TDocument>.Failure(SearchErrors.TenantScopeMissing(_definition.Name)));
+            MeilisearchLog.TenantScopeMissing(_logger, _definition.Name);
+            return Reject<TDocument>(SearchOperations.Get, SearchErrors.TenantScopeMissing(_definition.Name));
         }
 
-        return ExecuteAsync(OperationGet, async ct =>
+        return ExecuteAsync(SearchOperations.Get, async ct =>
         {
             JsonElement raw;
             try
@@ -497,9 +489,8 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             var document = raw.Deserialize<TDocument>(DocumentSerializerOptions);
             if (document is null)
             {
-                _logger.MeilisearchEngineFault(OperationGet, _definition.Name);
-                return Result<TDocument>.Failure(SearchErrors.EngineFault(
-                    SearchWellKnown.MeilisearchProviderName, OperationGet, "Meilisearch returned a null document."));
+                MeilisearchLog.EngineFault(_logger, SearchOperations.Get, _definition.Name, exception: null);
+                return Result<TDocument>.Failure(SearchErrors.EngineFault(SearchWellKnown.MeilisearchProviderName, SearchOperations.Get));
             }
 
             return Result<TDocument>.Success(document);
@@ -525,11 +516,11 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         var filterResult = MeilisearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
         if (filterResult.IsFailure)
         {
-            _logger.MeilisearchTenantScopeMissing(_definition.Name);
-            return Task.FromResult(Result<SearchCount>.Failure(filterResult.Error));
+            MeilisearchLog.TenantScopeMissing(_logger, _definition.Name);
+            return Reject<SearchCount>(SearchOperations.Count, filterResult.Error);
         }
 
-        return ExecuteAsync(OperationCount, async ct =>
+        return ExecuteAsync(SearchOperations.Count, async ct =>
         {
             var query = new global::Meilisearch.SearchQuery { Page = 1, HitsPerPage = 1 };
             if (!string.IsNullOrEmpty(filterResult.Value))
@@ -545,13 +536,12 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             {
                 return Result<SearchCount>.Failure(SearchErrors.EngineFault(
                     SearchWellKnown.MeilisearchProviderName,
-                    OperationCount,
-                    $"Expected a paginated response but received '{searchable.GetType().Name}'."));
+                    SearchOperations.Count));
             }
 
             if (paginated.TotalHits >= _definition.MaxTotalHits)
             {
-                _logger.MeilisearchCountReachedCeiling(_definition.Name, _definition.MaxTotalHits);
+                MeilisearchLog.CountReachedCeiling(_logger, _definition.Name, _definition.MaxTotalHits);
                 return Result<SearchCount>.Success(SearchCount.AtLeast(paginated.TotalHits));
             }
 
@@ -567,19 +557,21 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         int batchSize,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        using var operation = _telemetry.Start(SearchOperations.Enumerate, _definition.Name);
+
         var filterResult = MeilisearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
         if (filterResult.IsFailure)
         {
+            operation.Failed(filterResult.Error);
             throw new SearchStreamException(filterResult.Error);
         }
 
-        _logger.MeilisearchDocumentWalkStarted(_definition.Name, batchSize);
+        MeilisearchLog.DocumentWalkStarted(_logger, _definition.Name, batchSize);
 
-        var startTimestamp = Stopwatch.GetTimestamp();
-        using var activity = SearchDiagnostics.StartActivity(OperationEnumerate, _definition.Name);
         var offset = 0;
         var index = _client.Index(_definition.Name);
-        string? errorCode = null;
+        SharedKernel.Primitives.Errors.Error? failure = null;
+        Exception? faulted = null;
 
         try
         {
@@ -603,15 +595,21 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
                 // OperationCanceledException — so an unguarded rethrow let an engine timeout escape this
                 // walk as a raw TaskCanceledException instead of the SearchStreamException the contract
                 // promises. Only cancellation the caller actually asked for propagates untouched.
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
+                    faulted = ex;
                     throw;
+                }
+                catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, _definition.Name, SearchOperations.Enumerate, cancellationToken, out var error))
+                {
+                    failure = error;
+                    MeilisearchLog.OperationFaulted(_logger, SearchOperations.Enumerate, _definition.Name, error.Code, ex);
+                    throw new SearchStreamException(error, ex);
                 }
                 catch (Exception ex)
                 {
-                    var error = MeilisearchFaultMapper.Map(ex, _definition.Name, OperationEnumerate, _options.Url);
-                    errorCode = error.Code;
-                    throw new SearchStreamException(error, ex);
+                    faulted = ex;
+                    throw;
                 }
 
                 var items = page.Results.ToList();
@@ -635,7 +633,22 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         }
         finally
         {
-            SearchDiagnostics.Complete(activity, OperationEnumerate, _definition.Name, startTimestamp, errorCode);
+            if (faulted is not null)
+            {
+                operation.Faulted(faulted);
+            }
+            else if (failure is not null)
+            {
+                operation.Failed(failure);
+            }
+            else if (cancellationToken.IsCancellationRequested)
+            {
+                operation.Canceled();
+            }
+            else
+            {
+                operation.Succeeded();
+            }
         }
     }
 
@@ -675,28 +688,52 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         Func<CancellationToken, Task<Result<T>>> action,
         CancellationToken cancellationToken)
     {
-        var startTimestamp = Stopwatch.GetTimestamp();
-        using var activity = SearchDiagnostics.StartActivity(operation, _definition.Name);
+        using var scope = _telemetry.Start(operation, _definition.Name);
 
         Result<T> result;
         try
         {
             result = await action(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
+            scope.Faulted(ex);
             throw;
+        }
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, _definition.Name, operation, cancellationToken, out var error))
+        {
+            MeilisearchLog.OperationFaulted(_logger, operation, _definition.Name, error.Code, ex);
+            result = Result<T>.Failure(error);
         }
         catch (Exception ex)
         {
-            var error = MeilisearchFaultMapper.Map(ex, _definition.Name, operation, _options.Url);
-            _logger.MeilisearchOperationFaulted(operation, _definition.Name, error.Code);
-            result = Result<T>.Failure(error);
+            // An unrecognised exception is a defect (for example a SwitchExpressionException from a translation
+            // switch), never a soft engine fault: finish the span and the histogram, then rethrow.
+            scope.Faulted(ex);
+            throw;
         }
 
-        SearchDiagnostics.Complete(
-            activity, operation, _definition.Name, startTimestamp, result.IsFailure ? result.Error.Code : null);
+        if (result.IsFailure)
+        {
+            scope.Failed(result.Error);
+        }
+        else
+        {
+            scope.Succeeded();
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// Answers a request refused before any I/O. The refusal is still an operation outcome, so it gets its own span
+    /// and duration like every other failure.
+    /// </summary>
+    private Task<Result<T>> Reject<T>(string operation, SharedKernel.Primitives.Errors.Error error)
+    {
+        using var scope = _telemetry.Start(operation, _definition.Name);
+        scope.Failed(error);
+        return Task.FromResult(Result<T>.Failure(error));
     }
 
     private SearchBulkReceipt EmptyBulkReceipt(SearchWriteConsistency consistency) => new()
@@ -752,20 +789,21 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         catch (global::Meilisearch.MeilisearchTimeoutError)
         {
             var elapsed = _clock.UtcNow - startedAt;
-            _logger.MeilisearchTaskWaitTimedOut(
+            MeilisearchLog.TaskWaitTimedOut(
+                _logger,
                 taskUid.ToString(CultureInfo.InvariantCulture), _definition.Name, (long)elapsed.TotalMilliseconds);
             return Result.Failure(SearchErrors.WriteTimeout(_definition.Name, elapsed));
         }
 
         var elapsedMs = (long)(_clock.UtcNow - startedAt).TotalMilliseconds;
-        _logger.MeilisearchTaskCompleted(taskUid.ToString(CultureInfo.InvariantCulture), resource.Status.ToString(), elapsedMs);
+        MeilisearchLog.TaskCompleted(_logger, taskUid.ToString(CultureInfo.InvariantCulture), resource.Status.ToString(), elapsedMs);
 
         if (resource.Status == global::Meilisearch.TaskInfoStatus.Failed)
         {
-            var errorCode = resource.Error is { } error && error.TryGetValue("code", out var code)
-                ? code?.ToString() ?? "unknown"
-                : "unknown";
-            _logger.MeilisearchTaskFailed(taskUid.ToString(CultureInfo.InvariantCulture), _definition.Name, errorCode);
+            var errorCode = MeilisearchFaultMapper.BoundedEngineCode(
+                resource.Error is { } error && error.TryGetValue("code", out var code) ? code?.ToString() : null)
+                ?? "unknown";
+            MeilisearchLog.TaskFailed(_logger, taskUid.ToString(CultureInfo.InvariantCulture), _definition.Name, errorCode);
             return Result.Failure(MeilisearchErrors.IndexingTaskFailed(taskUid.ToString(CultureInfo.InvariantCulture), errorCode));
         }
 

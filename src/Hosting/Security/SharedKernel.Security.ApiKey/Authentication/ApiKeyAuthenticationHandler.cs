@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using SharedKernel.Security.Abstractions;
-using SharedKernel.Security.ApiKey.Logging;
+using SharedKernel.Security.ApiKey.Diagnostics;
 using SharedKernel.Security.ApiKey.Options;
 using SharedKernel.Security.ApiKey.Validation;
 
@@ -40,7 +40,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         ApiKeyValidationResult result = await validator.ValidateAsync(key, Context.RequestAborted).ConfigureAwait(false);
         if (!result.IsValid)
         {
-            ApiKeyLog.KeyRejected(Logger, result.FailureReason ?? "Rejected", result.KeyId);
+            ApiKeyLog.KeyRejected(Logger, RejectionReasonText.Bound(result.FailureReason), result.KeyId);
             return AuthenticateResult.Fail("Invalid API key.");
         }
 

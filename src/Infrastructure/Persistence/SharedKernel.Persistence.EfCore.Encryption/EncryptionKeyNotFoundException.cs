@@ -1,5 +1,4 @@
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Encryption;
 
@@ -15,15 +14,10 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// </remarks>
 public sealed class EncryptionKeyNotFoundException : SharedKernelException
 {
-    /// <summary>The error code carried by this exception.</summary>
-    public const string ErrorCode = "Persistence.Encryption.KeyNotFound";
-
     /// <summary>Initialises a new <see cref="EncryptionKeyNotFoundException"/>.</summary>
     /// <param name="keyId">The key id that could not be resolved.</param>
     public EncryptionKeyNotFoundException(string keyId)
-        : base(
-            $"Encryption key '{keyId}' is not available from the configured key source.",
-            Error.Unexpected(ErrorCode, $"Encryption key '{keyId}' is not available from the configured key source."))
+        : base(EncryptionErrors.KeyNotFound(keyId))
     {
         KeyId = keyId;
     }

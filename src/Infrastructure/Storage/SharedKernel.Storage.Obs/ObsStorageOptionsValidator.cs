@@ -19,7 +19,7 @@ internal sealed class ObsStorageOptionsValidator : IValidateOptions<ObsStorageOp
         else if (ResolveRegion(options) is null)
         {
             failures.Add(
-                $"{nameof(ObsStorageOptions.Region)} is required: it cannot be read from endpoint '{endpoint.Host}', which is not obs.{{region}}.myhuaweicloud.com.");
+                $"{nameof(ObsStorageOptions.Region)} is required when {nameof(ObsStorageOptions.Endpoint)} does not have the form obs.{{region}}.myhuaweicloud.com.");
         }
 
         if (string.IsNullOrWhiteSpace(options.AccessKeyId) || string.IsNullOrWhiteSpace(options.SecretAccessKey))

@@ -182,7 +182,7 @@ Exactly the store settings of `SharedKernel.Storage.S3` — `Bucket`, `KeyPrefix
 | `ObsStorageBuilderExtensions.ObsConnectionName` | `"Obs"` — the connection name and the `storage.provider` tag on spans and metrics |
 | `ObsStorageOptions` | The connection settings above |
 
-Registered services, error mapping, log events (8100–8105), telemetry and the `storage-{store}` readiness probe are
+Registered services, error mapping, log events (8100–8105, the S3 package's sub-block; OBS declares none), telemetry (`SharedKernel.Storage`, `sharedkernel.storage.*`) and the `storage-{store}` readiness probe are
 those of [`SharedKernel.Storage.S3`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md#reference).
 `AddObs` throws `InvalidOperationException` when called twice (the `Obs` connection is already registered).
 

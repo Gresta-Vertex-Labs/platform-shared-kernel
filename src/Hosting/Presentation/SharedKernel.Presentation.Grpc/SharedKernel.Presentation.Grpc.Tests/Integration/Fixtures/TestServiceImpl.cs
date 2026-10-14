@@ -5,6 +5,7 @@ using Grpc.Core;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Core.Extensions;
+using SharedKernel.Presentation.EdgeCases;
 using SharedKernel.Localization;
 using SharedKernel.Execution.Context;
 using SharedKernel.Presentation.Authorization;
@@ -34,6 +35,22 @@ internal sealed class TestServiceImpl(CallProbe probe) : TestService.TestService
     {
         await responseStream.WriteAsync(new EchoReply { Value = "first" });
         await Failures.RaiseAsync(request.Value);
+    }
+
+    public override async Task<EchoReply> ClientStreamFail(IAsyncStreamReader<EchoRequest> requestStream, ServerCallContext context)
+    {
+        await requestStream.MoveNext(context.CancellationToken);
+        await Failures.RaiseAsync(requestStream.Current.Value);
+        return new EchoReply();
+    }
+
+    public override async Task DuplexFail(
+        IAsyncStreamReader<EchoRequest> requestStream,
+        IServerStreamWriter<EchoReply> responseStream,
+        ServerCallContext context)
+    {
+        await requestStream.MoveNext(context.CancellationToken);
+        await Failures.RaiseAsync(requestStream.Current.Value);
     }
 
     public override async Task<EchoReply> WaitForCancellation(EchoRequest request, ServerCallContext context)
@@ -145,7 +162,7 @@ internal static class AfterCancellation
         Io => new IOException("The request stream was aborted."),
         InvalidOperation => new InvalidOperationException("Can't write the message because the request is complete."),
         Rpc => new RpcException(new Status(StatusCode.Cancelled, "Call canceled by the client.")),
-        ServerError => new DomainException(Error.Unavailable("search.unreachable", "Search cluster http://10.0.0.5:9200 is unreachable.")),
+        ServerError => new DomainException(Error.Unavailable("search.unavailable", "Search cluster http://10.0.0.5:9200 is unreachable.")),
         _ => new ArgumentOutOfRangeException(nameof(failure), failure, "Unknown failure."),
     };
 }
@@ -183,9 +200,21 @@ internal static class Failures
 
     public const string Unknown = "unknown";
 
+    /// <summary>A plain exception: the negative control of the edge-mapper matrix.</summary>
+    public const string DefectPlain = "defect-plain";
+
+    /// <summary>An exception that exposes an <c>Error</c> without deriving <c>SharedKernelException</c>: the second negative control.</summary>
+    public const string DefectErrorBearing = "defect-error-bearing";
+
     public const string UnknownWithStackText = "unknown-with-stack-text";
 
     public const string Rpc = "rpc";
+
+    /// <summary>A foreign <see cref="RpcException"/> of a server category other than Internal.</summary>
+    public const string UnavailableRpc = "unavailable-rpc";
+
+    /// <summary>A foreign <see cref="RpcException"/> of a client category the exception interceptor maps to NotFound.</summary>
+    public const string NotFoundRpc = "not-found-rpc";
 
     public const string InternalRpcWithTrailers = "internal-rpc-with-trailers";
 
@@ -208,6 +237,12 @@ internal static class Failures
 
     public const string InternalTrailerValue = "db-7.internal";
 
+    /// <summary>Prefix of an edge-mapper case, such as <c>edge:lock-unavailable</c>, thrown as the owner's exception.</summary>
+    public const string EdgeCase = "edge:";
+
+    /// <summary>Prefix of an edge-mapper case, such as <c>edge-result:lock-unavailable</c>, returned as a failed result and ended with <c>ThrowIfFailure()</c>.</summary>
+    public const string EdgeResult = "edge-result:";
+
     /// <summary>Prefix of a thrown <see cref="Core.Exceptions.ValidationException"/> with the given number of field errors, such as <c>many-violations:400</c>.</summary>
     public const string ManyViolations = "many-violations:";
 
@@ -226,6 +261,17 @@ internal static class Failures
 
     public static Task RaiseAsync(string failure)
     {
+        if (failure.StartsWith(EdgeCase, StringComparison.Ordinal))
+        {
+            throw EdgeMapperCatalogue.Find(failure[EdgeCase.Length..]).CreateException();
+        }
+
+        if (failure.StartsWith(EdgeResult, StringComparison.Ordinal))
+        {
+            var error = EdgeMapperCatalogue.Find(failure[EdgeResult.Length..]).CreateError();
+            return Throw(() => Result.Failure(error).ThrowIfFailure());
+        }
+
         if (failure.StartsWith(ManyViolations, StringComparison.Ordinal))
         {
             throw new ValidationException(ItemErrors(Count(failure, ManyViolations)));
@@ -244,16 +290,20 @@ internal static class Failures
             SingleValidationException => throw new ValidationException(NameRequired),
             ValidationResult => Throw(() => Result<string>.Failure(Error.Validation([NameRequired, EmailInvalid, LinesEmpty])).GetValueOrThrow()),
             SingleValidationResult => Throw(() => Result<string>.Failure(NameRequired).GetValueOrThrow()),
-            UnavailableException => throw new DomainException(Error.Unavailable("search.unreachable", UnavailableDetail)),
+            UnavailableException => throw new DomainException(Error.Unavailable("search.unavailable", UnavailableDetail)),
             TimeoutResult => Throw(() => Result.Failure(Error.Timeout("search.timeout", TimeoutDetail)).ThrowIfFailure()),
             TimeoutException => throw new TimeoutException(TimeoutDetail),
             InternalTimeout => WaitForAnInternalTimeoutAsync(),
-            UnavailableTaskResult => Task.FromResult(Result<string>.Failure(Error.Unavailable("search.unreachable", UnavailableDetail))).GetValueOrThrow(),
+            UnavailableTaskResult => Task.FromResult(Result<string>.Failure(Error.Unavailable("search.unavailable", UnavailableDetail))).GetValueOrThrow(),
             ConflictTaskResult => Task.FromResult(Result.Failure(Error.Conflict("order.version_conflict", "The order was changed by someone else."))).ThrowIfFailure(),
             LocalizedResult => Throw(() => Result<string>.Failure(OrderNotFound.ToError(ErrorType.NotFound, 42)).GetValueOrThrow()),
+            DefectPlain => throw new InvalidOperationException(UnknownDetail),
+            DefectErrorBearing => throw new ErrorBearingException(),
             Unknown => throw new InvalidOperationException(UnknownDetail),
             UnknownWithStackText => throw new InvalidOperationException(StackTextDetail),
             Rpc => throw new RpcException(new Status(StatusCode.ResourceExhausted, RpcDetail)),
+            UnavailableRpc => throw new RpcException(new Status(StatusCode.Unavailable, InternalRpcDetail)),
+            NotFoundRpc => throw new RpcException(new Status(StatusCode.NotFound, RpcDetail)),
             InternalRpcWithTrailers => throw new RpcException(
                 new Status(StatusCode.Internal, InternalRpcDetail),
                 new Metadata { { InternalTrailerKey, InternalTrailerValue } }),

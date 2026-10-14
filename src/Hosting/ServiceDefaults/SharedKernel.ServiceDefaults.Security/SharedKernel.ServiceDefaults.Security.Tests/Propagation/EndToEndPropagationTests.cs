@@ -1,7 +1,18 @@
 using System.Diagnostics;
+using System.Net;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Communication;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Presentation.WebApi;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.Testing.Security;
 
 namespace SharedKernel.ServiceDefaults.Security.Tests.Propagation;
 
@@ -96,6 +107,52 @@ public sealed class EndToEndPropagationTests
         call.AmbientCorrelationId.Should().Be("e2e-http-bus-1");
         call.TenantHeader.Should().Be(Tenant.ToString(), "a consumer's outbound call carries the publisher's tenant (defect 3)");
         call.ActorIdHeader.Should().Be(FrontService.UserId, "the consumer's work stays attributed to the original caller");
+    }
+
+    /// <summary>
+    /// HTTP → a raw typed REST client whose token provider fails: the client throws
+    /// <c>AccessTokenUnavailableException</c> (a <c>SharedKernelException</c> with <c>Error.Unavailable</c>), the
+    /// platform's exception handler answers 503, and the correlation id is still echoed because the request-context
+    /// middleware wraps the handler.
+    /// </summary>
+    [Fact]
+    public async Task HttpToRest_WhenTheTokenProviderFails_AnswersServiceUnavailable_AndStillEchoesTheCorrelationId()
+    {
+        await using var downstream = await DownstreamService.StartAsync();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Configuration["SharedKernel:Communication:Clients:downstream:Retry:MaxRetryAttempts"] = "0";
+        builder.Services.AddScoped<IUserContext>(_ => new FakeUserContext { SubjectId = FrontService.UserId, TenantId = Tenant });
+        builder.Services.AddSharedKernelRequestContext();
+        builder.AddSharedKernelWebApi();
+        builder.Services.AddKeyedSingleton<IAccessTokenProvider>("downstream", new FailingTokenProvider());
+        builder.Services.AddSharedKernelCommunication(builder.Configuration).AddRestClient<DownstreamRestClient>(
+            "downstream",
+            client => client
+                .Configure(o => o.BaseAddress = new Uri("http://downstream"))
+                .UseAccessTokenProvider<FailingTokenProvider>()
+                .HttpClientBuilder.ConfigurePrimaryHttpMessageHandler(downstream.CreateHandler));
+
+        await using var app = builder.Build();
+        app.UseSharedKernelRequestContext();
+        app.UseSharedKernelWebApi();
+        app.MapGet("/rest", async (DownstreamRestClient client) =>
+        {
+            await client.RecordAsync("token-failure");
+            return Results.Ok();
+        });
+        await app.StartAsync();
+
+        using var response = await app.GetTestClient().SendAsync(Get("/rest", "e2e-token-failure-1"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
+        response.Headers.GetValues(WellKnownHeaders.CorrelationId).Should().Equal("e2e-token-failure-1");
+    }
+
+    private sealed class FailingTokenProvider : IAccessTokenProvider
+    {
+        public ValueTask<Result<AccessToken>> GetAccessTokenAsync(AccessTokenContext context, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(Result<AccessToken>.Failure(Error.Unexpected("identity.down", "down")));
     }
 
     [Fact]

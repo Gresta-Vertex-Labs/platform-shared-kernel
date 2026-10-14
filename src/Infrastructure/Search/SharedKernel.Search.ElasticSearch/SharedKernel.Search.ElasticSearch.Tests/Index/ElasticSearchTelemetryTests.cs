@@ -1,137 +1,270 @@
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
+using System.Reflection;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Execution.Tenancy;
-using SharedKernel.Search.Abstractions.Abstractions;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 using SharedKernel.Search.Abstractions.Constants;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
-using SharedKernel.Search.ElasticSearch.Index;
-using SharedKernel.Search.ElasticSearch.Options;
-using SharedKernel.Testing.Clocks;
+using SharedKernel.Search.Abstractions.Telemetry;
+using SharedKernel.Search.ElasticSearch.Cursors;
+using SharedKernel.Search.ElasticSearch.Diagnostics;
+using SharedKernel.Search.ElasticSearch.Tests.Support;
+using SharedKernel.Testing.Telemetry;
 using SearchRequest = SharedKernel.Search.Abstractions.Models.SearchRequest;
 
 namespace SharedKernel.Search.ElasticSearch.Tests.Index;
 
 /// <summary>
-/// Tests that this provider emits OpenTelemetry spans and measurements under the same
-/// <c>SharedKernel.Search</c> source and meter names the Meilisearch sibling uses.
+/// Spans and instruments of the ElasticSearch provider, asserted through the shared recorders against stubs beneath the
+/// real HTTP invoker (no container): the span name and kind, the three <c>search.*</c> tags and nothing else, the failure,
+/// exception and cancellation shapes, the instrument names, units and tag sets, the outcome vocabulary, and that no query
+/// text, filter value, document id or cursor token ever becomes a tag.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Before the pre-publish pass both provider packages declared an <see cref="ActivitySource"/> and a
-/// <see cref="Meter"/> and never called either — zero spans, zero instruments, domain-wide — while
-/// <c>13.ServiceDefaults</c> shipped a <c>WithSearchTelemetry()</c> that wired both by name. That
-/// cross-domain contract was documented, wired, and completely inert.
-/// </para>
-/// <para>
-/// Byte-identical naming across the two providers is the whole reason one <c>WithSearchTelemetry()</c>
-/// call can cover both with no <c>ProjectReference</c> to <c>09.Search</c>, so it is asserted here as
-/// well as in the Meilisearch suite — a rename in one package alone would silently halve the telemetry
-/// a service receives after a provider swap.
-/// </para>
-/// </remarks>
 public sealed class ElasticSearchTelemetryTests
 {
-    /// <summary>
-    /// A dedicated index name used only by this class. ActivitySource and Meter are process-global, so a
-    /// listener started here also observes every other test class running in parallel — asserting on an
-    /// unfiltered collection would make these tests flaky for reasons that have nothing to do with the
-    /// instrumentation being tested.
-    /// </summary>
-    // One index name PER TEST, not per class: ActivitySource and Meter are process-global, and the
-    // assertions below filter on the index tag to ignore other classes running in parallel. Two methods
-    // sharing a name would defeat that filter against each other and make these tests flaky for reasons
-    // unrelated to the instrumentation they cover.
-    private const string TelemetryIndexName = "products-telemetry-elasticsearch";
+    private const string Duration = SearchInstrumentNames.OperationDuration;
+    private const string Documents = SearchInstrumentNames.Documents;
+    private const string PitOpened = "{\"id\":\"pit-1\",\"succeeded\":true,\"num_freed\":1}";
 
-    private sealed class TestDocument : ISearchDocument
+    private static readonly string[] SpanTags = [SearchTagKeys.Index, SearchTagKeys.Operation, SearchTagKeys.Provider];
+
+    private static int _indexSequence;
+
+    private static string NewIndexName() => "telemetry-" + Interlocked.Increment(ref _indexSequence);
+
+    private static string? Tag(RecordedMeasurement measurement, string key) =>
+        measurement.TryGetTag(key, out object? value) ? value as string : null;
+
+    private static IEnumerable<RecordedMeasurement> DurationsOf(MetricRecorder metrics, string index, string operation) =>
+        metrics.MeasurementsOf(Duration).Where(m => Tag(m, SearchTagKeys.Index) == index && Tag(m, SearchTagKeys.Operation) == operation);
+
+    private static List<Activity> SpansOf(ActivityRecorder spans, string index, string operation) =>
+        [.. spans.RecordedActivities.Where(a => (string?)a.GetTagItem(SearchTagKeys.Index) == index && a.OperationName == "search " + operation)];
+
+    private static EsFaultHarness HarnessFor(string index, CannedReply reply, bool pageRead) =>
+        new(new ScriptedRequestInvoker(request =>
+            pageRead && request.RequestUri!.PathAndQuery.Contains("_pit", StringComparison.Ordinal) ? CannedReply.Ok(PitOpened) : reply), index);
+
+    public static TheoryData<string, string> Families => new()
     {
-        public required string DocumentId { get; init; }
+        { "index", SearchOperations.Index },
+        { "index_many", SearchOperations.IndexMany },
+        { "delete", SearchOperations.Delete },
+        { "delete_many", SearchOperations.DeleteMany },
+        { "delete_by_filter", SearchOperations.DeleteByFilter },
+        { "clear", SearchOperations.Clear },
+        { "search", SearchOperations.Search },
+        { "get", SearchOperations.Get },
+        { "count", SearchOperations.Count },
+        { "enumerate_open", SearchOperations.Enumerate },
+        { "enumerate_read", SearchOperations.Enumerate },
+        { "aggregate", SearchOperations.Aggregate },
+        { "suggest", SearchOperations.Suggest },
+        { "open_cursor", SearchOperations.OpenCursor },
+        { "read_cursor", SearchOperations.ReadCursor },
+        { "close_cursor", SearchOperations.CloseCursor },
+        { "stream_open", SearchOperations.Stream },
+        { "stream_read", SearchOperations.Stream },
+        { "ensure_index", SearchOperations.EnsureIndex },
+        { "index_exists", SearchOperations.IndexExists },
+        { "delete_index", SearchOperations.DeleteIndex },
+        { "cutover", SearchOperations.Cutover },
+    };
+
+    [Theory]
+    [MemberData(nameof(Families))]
+    public async Task AnOutage_IsARecordedFailure_OnEveryOperationFamily(string family, string operation)
+    {
+        string index = NewIndexName();
+        var (run, pageRead) = EsOperations.All[family];
+        var harness = HarnessFor(index, CannedReply.TransportFailure(new HttpRequestException("refused")), pageRead);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+        using var metrics = MetricRecorder.StartRecording(SearchWellKnown.MeterName);
+
+        Error? error = await run(harness, CancellationToken.None);
+
+        error.Should().NotBeNull();
+        error!.Code.Should().Be(SearchErrorCodes.Unavailable);
+        List<Activity> recorded = SpansOf(spans, index, operation);
+        recorded.Should().NotBeEmpty($"'{operation}' starts a span");
+        Activity span = recorded[0];
+        span.ShouldBeRecordedFailure(error)
+            .ShouldHaveKind(ActivityKind.Client)
+            .ShouldHaveSource(SearchWellKnown.ActivitySourceName)
+            .ShouldHaveTag(SearchTagKeys.Provider, SearchWellKnown.ElasticSearchProviderName)
+            .ShouldHaveTag(WellKnownTagKeys.ErrorType, "Unavailable")
+            .ShouldHaveTag(WellKnownTagKeys.ErrorCode, SearchErrorCodes.Unavailable);
+        span.OperationName.Should().Be("search " + operation).And.Be(span.OperationName.ToLowerInvariant());
+        span.TagObjects.Select(t => t.Key).Should().BeEquivalentTo(
+            [.. SpanTags, WellKnownTagKeys.ErrorCode, WellKnownTagKeys.ErrorType], $"'{operation}' tags only the shared keys");
+
+        RecordedMeasurement duration = DurationsOf(metrics, index, operation).First();
+        Tag(duration, WellKnownTagKeys.Outcome).Should().Be(WellKnownOutcomes.Failure);
+        Tag(duration, WellKnownTagKeys.ErrorType).Should().Be("Unavailable");
+        Tag(duration, SearchTagKeys.Provider).Should().Be(SearchWellKnown.ElasticSearchProviderName);
+        duration.Tags.Select(t => t.Key).Should().BeEquivalentTo(
+            [.. SpanTags, WellKnownTagKeys.Outcome, WellKnownTagKeys.ErrorType]);
+        spans.StartedActivities.Where(a => (string?)a.GetTagItem(SearchTagKeys.Index) == index).Should().OnlyContain(a => a.IsStopped, "every span is ended");
     }
 
-    private static ElasticSearchIndex<TestDocument> CreateIndexWithNoIoCapableClient(string indexName) =>
-        new(
-            client: null!,
-            new SearchIndexDefinitionBuilder(indexName)
-                .Field("name", SearchFieldKind.Text, searchable: true)
-                .Build()
-                .Value,
-            writeAlias: indexName,
-            new ElasticSearchOptions { Nodes = ["http://127.0.0.1:1/"] },
-            new FakeClock(),
-            NullLogger<ElasticSearchIndex<TestDocument>>.Instance);
-
     [Fact]
-    public async Task SearchAsync_EmitsAClientSpanTaggedWithIndexOperationAndProvider()
+    public async Task ASuccessfulWrite_RecordsAnUnsetSpan_ADuration_AndTheDocumentCount()
     {
-        const string indexName = TelemetryIndexName + "-span";
-        var activities = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == SearchWellKnown.ActivitySourceName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            // Both sampling callbacks are set, and the ambient Activity is cleared below. A listener that
-            // implements only Sample records nothing when the activity being created has a hierarchical
-            // parent id, and Activity.Current can be non-null here because the ElasticSearch client's own
-            // transport instrumentation runs in other test classes executing in parallel. Without both,
-            // this test passes alone and fails in a full run.
-            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activities.Enqueue,
-        };
-        ActivitySource.AddActivityListener(listener);
-        Activity.Current = null;
+        string index = NewIndexName();
+        var harness = new EsFaultHarness(new ScriptedRequestInvoker(CannedReply.Ok(
+            "{\"_index\":\"x\",\"_id\":\"doc-1\",\"_version\":1,\"result\":\"created\",\"_shards\":{\"total\":1,\"successful\":1,\"failed\":0}}")), index);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+        using var metrics = MetricRecorder.StartRecording(SearchWellKnown.MeterName);
 
-        var index = CreateIndexWithNoIoCapableClient(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
+        var result = await harness.Index.IndexAsync(EsFaultHarness.Doc(), SearchWriteConsistency.Accepted);
 
-        var activity = activities
-            .Where(a => (string?)a.GetTagItem(SearchWellKnown.IndexTagName) == indexName)
-            .Should().ContainSingle().Subject;
-        activity.OperationName.Should().Be("search search");
-        activity.Kind.Should().Be(ActivityKind.Client);
-        activity.GetTagItem(SearchWellKnown.IndexTagName).Should().Be(indexName);
-        activity.GetTagItem(SearchWellKnown.OperationTagName).Should().Be("search");
-        activity.GetTagItem(SearchWellKnown.ProviderTagName).Should().Be(SearchWellKnown.ElasticSearchProviderName);
-        activity.Status.Should().Be(ActivityStatusCode.Error, "this index has no usable client");
+        result.IsSuccess.Should().BeTrue();
+        SpansOf(spans, index, SearchOperations.Index).Should().ContainSingle().Which
+            .ShouldBeRecordedSuccess()
+            .ShouldHaveKind(ActivityKind.Client)
+            .ShouldHaveTagKeys(SpanTags);
+        RecordedMeasurement duration = DurationsOf(metrics, index, SearchOperations.Index).Should().ContainSingle().Subject;
+        Tag(duration, WellKnownTagKeys.Outcome).Should().Be(WellKnownOutcomes.Success);
+        duration.Value.Should().BeGreaterThan(0);
+        duration.Tags.Select(t => t.Key).Should().BeEquivalentTo([.. SpanTags, WellKnownTagKeys.Outcome]);
+
+        RecordedMeasurement documents = metrics.MeasurementsOf(Documents)
+            .Where(m => Tag(m, SearchTagKeys.Index) == index).Should().ContainSingle().Subject;
+        documents.Value.Should().Be(1);
+        documents.Tags.Select(t => t.Key).Should().BeEquivalentTo(SpanTags);
+        metrics.Instruments.Where(i => i.Name == Duration).Should().NotBeEmpty().And.OnlyContain(i => i.Unit == "s" && i.Kind == InstrumentKind.Histogram);
+        metrics.Instruments.Where(i => i.Name == Documents).Should().NotBeEmpty().And.OnlyContain(i => i.Unit == "{document}" && i.Kind == InstrumentKind.Counter);
+        metrics.Instruments.Select(i => i.MeterName).Distinct().Should().Equal(SearchWellKnown.MeterName);
+        metrics.ShouldUseOutcomeVocabulary(Duration);
     }
 
     [Fact]
-    public async Task SearchAsync_RecordsTheOperationDurationHistogramUnderTheSharedMeterName()
+    public void TheSourceVersion_IsTheAssemblyInformationalVersion()
     {
-        const string indexName = TelemetryIndexName + "-histogram";
-        var values = new List<double>();
-        using var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, l) =>
-            {
-                if (instrument.Meter.Name == SearchWellKnown.MeterName
-                    && instrument.Name == SearchWellKnown.OperationDurationMetricName)
-                {
-                    l.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-        listener.SetMeasurementEventCallback<double>((_, value, tags, _) =>
-        {
-            // Copied out of the ref-struct span before anything else touches it: a ReadOnlySpan<T>
-            // parameter cannot be captured by a local function or lambda.
-            foreach (var tag in tags)
-            {
-                if (tag.Key == SearchWellKnown.IndexTagName && (string?)tag.Value == indexName)
-                {
-                    values.Add(value);
-                    return;
-                }
-            }
-        });
-        Activity.Current = null;
+        SearchTelemetry.Source.Version.Should().Be(TelemetryVersion.Of(typeof(SearchTelemetry).Assembly));
+        SearchTelemetry.Source.Name.Should().Be(SearchWellKnown.ActivitySourceName);
+    }
 
-        listener.Start();
+    [Fact]
+    public async Task AnUnclassifiedException_RecordsTheExceptionEvent_AndTheFullTypeNameAsErrorType()
+    {
+        string index = NewIndexName();
+        var original = new InvalidOperationException("never a tag");
+        var harness = new EsFaultHarness(new ScriptedRequestInvoker(CannedReply.TransportFailure(original)), index);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+        using var metrics = MetricRecorder.StartRecording(SearchWellKnown.MeterName);
 
-        var index = CreateIndexWithNoIoCapableClient(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
+        var act = () => harness.Index.CountAsync(null, EsOperations.Tenant);
+        var thrown = (await act.Should().ThrowAsync<Exception>()).Which;
 
-        values.Should().ContainSingle().Which.Should().BeGreaterThan(0, "the histogram records elapsed seconds");
+        SpansOf(spans, index, SearchOperations.Count).Should().ContainSingle().Which
+            .ShouldBeRecordedException(thrown.GetType());
+        RecordedMeasurement duration = DurationsOf(metrics, index, SearchOperations.Count).Should().ContainSingle().Subject;
+        Tag(duration, WellKnownTagKeys.Outcome).Should().Be(WellKnownOutcomes.Exception);
+        Tag(duration, WellKnownTagKeys.ErrorType).Should().Be(thrown.GetType().FullName);
+    }
+
+    [Theory]
+    [MemberData(nameof(Families))]
+    public async Task CancellingTheCallersToken_IsNeverAnError_AndStillRecordsTheDuration(string family, string operation)
+    {
+        string index = NewIndexName();
+        var (run, pageRead) = EsOperations.All[family];
+        var invoker = new ScriptedRequestInvoker(request =>
+            !pageRead || !request.RequestUri!.PathAndQuery.Contains("_pit", StringComparison.Ordinal)
+                ? CannedReply.Hang()
+                : CannedReply.Ok(PitOpened));
+        var harness = new EsFaultHarness(invoker, index);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+        using var metrics = MetricRecorder.StartRecording(SearchWellKnown.MeterName);
+        using var cts = new CancellationTokenSource();
+
+        var pending = run(harness, cts.Token);
+        await invoker.RequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await cts.CancelAsync();
+        var act = () => pending;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        List<Activity> recorded = SpansOf(spans, index, operation);
+        recorded.Should().NotBeEmpty();
+        recorded[0].ShouldBeRecordedCancellation();
+        RecordedMeasurement duration = DurationsOf(metrics, index, operation).First();
+        Tag(duration, WellKnownTagKeys.Outcome).Should().Be(WellKnownOutcomes.Canceled);
+        duration.Tags.Select(t => t.Key).Should().NotContain(WellKnownTagKeys.ErrorType);
+    }
+
+    [Fact]
+    public async Task ARequestRefusedBeforeAnyIo_IsStillARecordedFailure()
+    {
+        string index = NewIndexName();
+        var invoker = new ScriptedRequestInvoker(CannedReply.Ok());
+        var harness = new EsFaultHarness(invoker, index);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+        using var metrics = MetricRecorder.StartRecording(SearchWellKnown.MeterName);
+
+        var result = await harness.Index.SearchAsync(SearchRequest.Default, TenantScope.Global);
+
+        result.Error.Code.Should().Be(SearchErrorCodes.TenantScopeMissing);
+        invoker.Requests.Should().BeEmpty();
+        SpansOf(spans, index, SearchOperations.Search).Should().ContainSingle().Which.ShouldBeRecordedFailure(result.Error);
+        Tag(DurationsOf(metrics, index, SearchOperations.Search).Single(), WellKnownTagKeys.ErrorType).Should().Be("Unauthorized");
+    }
+
+    [Fact]
+    public async Task NoQueryText_FilterValue_DocumentId_CursorToken_OrTenant_BecomesATag()
+    {
+        const string sentinel = "SENTINEL-9b1d";
+        string index = NewIndexName();
+        var harness = new EsFaultHarness(new ScriptedRequestInvoker(CannedReply.TransportFailure(new HttpRequestException("refused"))), index);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+        using var metrics = MetricRecorder.StartRecording(SearchWellKnown.MeterName);
+        var request = SearchRequest.Default with { FreeText = sentinel, Filter = SearchFilter.Eq("status", sentinel) };
+
+        await harness.Index.SearchAsync(request, EsOperations.Tenant);
+        await harness.Index.GetAsync("doc-" + sentinel, EsOperations.Tenant);
+        await harness.Index.DeleteAsync("doc-" + sentinel, SearchWriteConsistency.Accepted);
+        await harness.Cursor.ReadCursorAsync(new SearchCursor(sentinel, DateTimeOffset.UnixEpoch));
+        await harness.Suggest.SuggestAsync(EsFaultHarness.SuggestField, sentinel, EsOperations.Tenant);
+
+        spans.RecordedActivities.Should().NotBeEmpty();
+        spans.RecordedActivities.ShouldNotLeak(sentinel, TestTenants.TenantA.ToString(), EsFaultHarness.HostSentinel);
+        metrics.ShouldNotLeak(sentinel, TestTenants.TenantA.ToString(), EsFaultHarness.HostSentinel);
+    }
+
+    [Fact]
+    public async Task VerifyingTheRegisteredIndexes_IsAClientSpan_NamedAfterTheOperation()
+    {
+        string index = NewIndexName();
+        var harness = new EsFaultHarness(new ScriptedRequestInvoker(CannedReply.TransportFailure(new HttpRequestException("refused"))), index);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+
+        var result = await harness.Provisioner.VerifyRegisteredIndexesAsync();
+
+        result.IsFailure.Should().BeTrue();
+        SpansOf(spans, index, SearchOperations.VerifyIndexes).Should().ContainSingle().Which
+            .ShouldHaveKind(ActivityKind.Client)
+            .ShouldBeRecordedFailure(result.Error);
+    }
+
+    [Fact]
+    public async Task TheReadinessProbe_StartsNoSpan()
+    {
+        string index = NewIndexName();
+        var harness = new EsFaultHarness(new ScriptedRequestInvoker(CannedReply.Ok()), index);
+        using var spans = ActivityRecorder.StartRecording(SearchWellKnown.ActivitySourceName);
+
+        await harness.Provisioner.ProbeAsync(index);
+
+        spans.StartedActivities.Where(a => (string?)a.GetTagItem(SearchTagKeys.Index) == index).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TheSourceAndMeterName_AreAPublicConstOfThisAssembly_EqualToTheSharedName()
+    {
+        typeof(SearchTelemetry).GetField(nameof(SearchTelemetry.Name), BindingFlags.Public | BindingFlags.Static)!
+            .GetRawConstantValue().Should().Be(SearchWellKnown.ActivitySourceName).And.Be(SearchWellKnown.MeterName);
     }
 }

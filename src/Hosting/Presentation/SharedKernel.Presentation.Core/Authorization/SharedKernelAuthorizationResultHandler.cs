@@ -5,10 +5,9 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
 using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.Diagnostics;
 
 namespace SharedKernel.Presentation.Authorization;
 
@@ -36,14 +35,8 @@ namespace SharedKernel.Presentation.Authorization;
 /// never with principal data.
 /// </para>
 /// </remarks>
-internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
+internal sealed class SharedKernelAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
-    /// <summary>
-    /// <c>unauthorized.step_up_required</c>: the code of a step-up refusal. <c>SharedKernel.Presentation.WebApi</c>'s public
-    /// <c>PresentationErrorCodes.StepUpRequired</c> is this value.
-    /// </summary>
-    internal const string StepUpRequiredCode = "unauthorized.step_up_required";
-
     private const string BearerScheme = "Bearer";
 
     private const string DPoPScheme = "DPoP";
@@ -65,12 +58,12 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
 
     public SharedKernelAuthorizationResultHandler(
         IAuthorizationMiddlewareResultHandler inner,
-        ILogger<SharedKernelAuthorizationResultHandler>? logger = null)
+        ILogger<SharedKernelAuthorizationResultHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(inner);
 
         _inner = inner;
-        _logger = logger ?? NullLogger<SharedKernelAuthorizationResultHandler>.Instance;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -154,12 +147,12 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.Headers.Append(HeaderNames.WWWAuthenticate, challenge);
 
-        return RefuseAsync(context, StatusCodes.Status401Unauthorized, StepUpRequiredCode, StepUpMessage, writeBody);
+        return RefuseAsync(context, StatusCodes.Status401Unauthorized, PresentationCoreErrorCodes.StepUpRequired, StepUpMessage, writeBody);
     }
 
     private Task RefuseAsync(HttpContext context, int statusCode, string code, string message, bool writeBody)
     {
-        Log.AuthorizationRejected(_logger, RequestFacts.GetEndpointDisplayName(context), code);
+        PresentationCoreLog.AuthorizationRefused(_logger, RequestFacts.GetEndpointDisplayName(context), code);
 
         // gRPC: the status and headers are the whole answer. Otherwise the scheme may have answered differently (a
         // cookie scheme redirects to its sign-in page) or written the response itself; only a plain 401 or 403 gets
@@ -235,14 +228,5 @@ internal sealed partial class SharedKernelAuthorizationResultHandler : IAuthoriz
             && (authorization.Length == DPoPScheme.Length || authorization[DPoPScheme.Length] is ' ' or '\t')
                 ? DPoPScheme
                 : BearerScheme;
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 2,
-            Level = LogLevel.Warning,
-            Message = "Authorization refused the request to {EndpointDisplayName} with {ErrorCode}.")]
-        public static partial void AuthorizationRejected(ILogger logger, string endpointDisplayName, string errorCode);
     }
 }

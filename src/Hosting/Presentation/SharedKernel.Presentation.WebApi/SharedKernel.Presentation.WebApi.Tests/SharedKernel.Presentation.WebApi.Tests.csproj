@@ -19,6 +19,11 @@
     <ProjectReference Include="..\..\..\Security\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
     <!-- EntityVersion, the version type of the If-Match and ETag tests. -->
     <ProjectReference Include="..\..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\..\Infrastructure\Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+    <!-- The edge-mapper conformance catalogue every protocol suite of this domain asserts (P-612). -->
+    <ProjectReference Include="..\..\SharedKernel.Presentation.EdgeCases\SharedKernel.Presentation.EdgeCases.csproj" />
+    <!-- The negative-control defect, compiled here (see the EdgeCases project). -->
+    <Compile Include="../../SharedKernel.Presentation.EdgeCases/Controls/ErrorBearingException.cs" Link="TestSupport/ErrorBearingException.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -38,5 +43,10 @@
       13.ServiceDefaults' BaggageLogRecordProcessor contract, without a ProjectReference to SharedKernel.ServiceDefaults.
     -->
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <!--
+      Test-only: pins what the ASP.NET Core instrumentation does with RecordException = true on an exception the
+      platform's handler already recorded (SK.14.EdgeErrorContext D-02b). The kernel never turns it on.
+    -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
   </ItemGroup>
 </Project>

@@ -29,7 +29,7 @@ public sealed class UserContext : IUserContext
             throw new ArgumentOutOfRangeException(
                 nameof(actorKind),
                 actorKind,
-                "Only User and Service contexts carry a subject; use AnonymousUserContext or SystemUserContext.");
+                "Only the actor kinds 'User' and 'Service' carry a subject. Use AnonymousUserContext or SystemUserContext for the other kinds.");
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(subjectId);

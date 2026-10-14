@@ -90,7 +90,7 @@ internal sealed class RepositoryContextMap
             {
                 throw new InvalidOperationException(
                     $"Aggregate '{aggregateType.Name}' is mapped by both '{match.GetType().Name}' and "
-                    + $"'{contextType.Name}', so its repository cannot choose a context. Register a closed "
+                    + $"'{contextType.Name}', so its repository has no single context to use. Register a closed "
                     + $"IRepository<{aggregateType.Name}, …>/IReadRepository<{aggregateType.Name}, …> for the context "
                     + "that owns it.");
             }

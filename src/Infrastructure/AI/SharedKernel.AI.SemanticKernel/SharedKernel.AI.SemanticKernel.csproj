@@ -52,6 +52,8 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Http" />
+    <!-- IMeterFactory registration (services.AddMetrics()) for the sharedkernel.ai.* instruments; the central version Application.Pipeline already uses. -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
   </ItemGroup>
   <ItemGroup>
     <!-- White-box unit testing of internal types (adapters, error mapper, tool mapper) — no public surface growth. -->

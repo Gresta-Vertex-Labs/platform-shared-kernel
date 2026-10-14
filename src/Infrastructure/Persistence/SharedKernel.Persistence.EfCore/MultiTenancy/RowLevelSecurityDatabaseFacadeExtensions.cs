@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.Npgsql.Connections;
 
@@ -53,13 +54,13 @@ public static class RowLevelSecurityDatabaseFacadeExtensions
         if (coreOptions?.MaxPoolSize is not null)
         {
             throw new InvalidOperationException(
-                "A pooled context cannot switch to the cross-tenant connection: the switch would outlive this "
+                "A pooled context must not switch to the cross-tenant connection, because the switch would outlive this "
                     + "lease. Create a non-pooled context (IDbContextFactory) for cross-tenant work.");
         }
 
         var services = coreOptions?.ApplicationServiceProvider
             ?? throw new InvalidOperationException(
-                "The context has no application service provider, so the cross-tenant data source cannot be resolved.");
+                "The context has no application service provider, so the cross-tenant data source is not resolved.");
 
         if ((context as SharedKernelDbContext)?.CrossTenantScope.IsActive != true)
             throw new InvalidOperationException("UseCrossTenantConnection requires an active cross-tenant scope.");
@@ -78,8 +79,8 @@ public static class RowLevelSecurityDatabaseFacadeExtensions
         RowLevelSecurityConnections.MarkCrossTenant(connection);
         database.SetDbConnection(connection, contextOwnsConnection: true);
 
-        services.GetService<ILoggerFactory>()?.CreateLogger(typeof(RowLevelSecurityDatabaseFacadeExtensions))
-            .CrossTenantConnectionUsed(context.GetType().Name);
+        if (services.GetService<ILoggerFactory>() is { } loggerFactory)
+            EfCoreLog.CrossTenantConnectionUsed(loggerFactory.CreateLogger<SharedKernelDbContext>(), context.GetType().Name);
     }
 }
 

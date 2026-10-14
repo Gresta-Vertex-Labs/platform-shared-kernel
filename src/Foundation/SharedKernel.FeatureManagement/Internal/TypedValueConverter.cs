@@ -15,7 +15,7 @@ internal static class TypedValueConverter
 {
     private const int MaxDepth = 64;
 
-    public static bool TryConvert<T>(Value value, JsonTypeInfo<T> typeInfo, out T? result, out string? error)
+    public static bool TryConvert<T>(Value value, JsonTypeInfo<T> typeInfo, out T? result, out ConversionFailure failure)
     {
         try
         {
@@ -26,13 +26,20 @@ internal static class TypedValueConverter
             }
 
             result = JsonSerializer.Deserialize(buffer.WrittenSpan, typeInfo);
-            error = null;
+            failure = default;
             return true;
         }
+        catch (ConversionException ex)
+        {
+            result = default;
+            failure = ex.Failure;
+            return false;
+        }
+        // Library exceptions carry the offending text, so only their kind survives: never ex.Message.
         catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or NotSupportedException or ArgumentException)
         {
             result = default;
-            error = ex.Message;
+            failure = ConversionFailure.DoesNotFit;
             return false;
         }
     }
@@ -41,7 +48,7 @@ internal static class TypedValueConverter
     {
         if (depth > MaxDepth)
         {
-            throw new JsonException("The value is nested too deeply.");
+            throw new ConversionException(ConversionFailure.NestedTooDeeply);
         }
 
         if (value is null || value.IsNull)
@@ -57,7 +64,7 @@ internal static class TypedValueConverter
                 return;
 
             case JsonTypeInfoKind.Object:
-                throw new JsonException($"Expected an object for {typeInfo.Type.Name}.");
+                throw new ConversionException(ConversionFailure.ExpectedObject);
 
             case JsonTypeInfoKind.Enumerable:
                 writer.WriteStartArray();
@@ -83,7 +90,7 @@ internal static class TypedValueConverter
                 return;
 
             case JsonTypeInfoKind.Dictionary:
-                throw new JsonException($"Expected an object for {typeInfo.Type.Name}.");
+                throw new ConversionException(ConversionFailure.ExpectedObject);
 
             default:
                 WriteScalar(writer, value, typeInfo.Type, depth);
@@ -134,7 +141,7 @@ internal static class TypedValueConverter
             return value.AsList!;
         }
 
-        throw new JsonException($"Expected a list for {typeInfo.Type.Name}.");
+        throw new ConversionException(ConversionFailure.ExpectedList);
     }
 
     private static void WriteScalar(Utf8JsonWriter writer, Value value, Type type, int depth)
@@ -147,7 +154,7 @@ internal static class TypedValueConverter
             {
                 { IsBoolean: true } => value.AsBoolean!.Value,
                 { IsString: true } when bool.TryParse(value.AsString, out bool parsed) => parsed,
-                _ => throw new JsonException($"'{Describe(value)}' is not true or false."),
+                _ => throw new ConversionException(ConversionFailure.NotBoolean),
             });
             return;
         }
@@ -189,7 +196,7 @@ internal static class TypedValueConverter
             return;
         }
 
-        string text = value.AsString ?? throw new JsonException($"'{Describe(value)}' is not a number.");
+        string text = value.AsString ?? throw new ConversionException(ConversionFailure.NotNumber);
         if (decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal exact))
         {
             writer.WriteNumberValue(exact);
@@ -200,7 +207,7 @@ internal static class TypedValueConverter
         }
         else
         {
-            throw new JsonException($"'{text}' is not a number.");
+            throw new ConversionException(ConversionFailure.NotNumber);
         }
     }
 
@@ -209,7 +216,7 @@ internal static class TypedValueConverter
     {
         if (depth > MaxDepth)
         {
-            throw new JsonException("The value is nested too deeply.");
+            throw new ConversionException(ConversionFailure.NestedTooDeeply);
         }
 
         switch (value)
@@ -254,7 +261,7 @@ internal static class TypedValueConverter
         { IsBoolean: true } => value.AsBoolean!.Value ? "true" : "false",
         { IsNumber: true } => value.AsDouble!.Value.ToString("R", CultureInfo.InvariantCulture),
         { IsDateTime: true } => value.AsDateTime!.Value.ToString("O", CultureInfo.InvariantCulture),
-        _ => throw new JsonException("Expected a single value, not an object or a list."),
+        _ => throw new ConversionException(ConversionFailure.NotSingleValue),
     };
 
     private static bool IsNumber(Type type) =>

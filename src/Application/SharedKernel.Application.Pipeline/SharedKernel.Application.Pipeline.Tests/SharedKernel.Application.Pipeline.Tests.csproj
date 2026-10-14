@@ -7,6 +7,8 @@
     <!-- Tests dispatch through the real kernel ISender; FluentValidation reaches ValidationBehavior through its bridge. -->
     <ProjectReference Include="..\..\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Validation.FluentValidation\SharedKernel.Validation.FluentValidation.csproj" />
+    <!-- ActivityRecorder, MetricRecorder and LoggerAssertions: the telemetry assertions go through these. -->
+    <ProjectReference Include="..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

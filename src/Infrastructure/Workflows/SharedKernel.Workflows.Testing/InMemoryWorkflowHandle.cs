@@ -61,12 +61,12 @@ public sealed class InMemoryWorkflowHandle : IWorkflowHandle
 
         if (SimulateFailure)
         {
-            return Task.FromResult(Result.Failure(WorkflowErrors.ServiceUnavailable("SimulateFailure is enabled.")));
+            return Task.FromResult(Result.Failure(WorkflowErrors.ServiceUnavailable()));
         }
 
         if (!TryGetExecution(out var execution))
         {
-            return Task.FromResult(Result.Failure(WorkflowErrors.NotFound(WorkflowId)));
+            return Task.FromResult(Result.Failure(WorkflowErrors.NotFound()));
         }
 
         execution!.SignalHistory.Enqueue((signalName, args));
@@ -81,7 +81,7 @@ public sealed class InMemoryWorkflowHandle : IWorkflowHandle
 
         if (!TryGetExecution(out var execution))
         {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<TQueryResult>.Failure(WorkflowErrors.NotFound(WorkflowId)));
+            return Task.FromResult(SharedKernel.Primitives.Results.Result<TQueryResult>.Failure(WorkflowErrors.NotFound()));
         }
 
         execution!.QueriesReceived.Enqueue(queryName);
@@ -103,12 +103,12 @@ public sealed class InMemoryWorkflowHandle : IWorkflowHandle
     {
         if (SimulateFailure)
         {
-            return Task.FromResult(Result.Failure(WorkflowErrors.ServiceUnavailable("SimulateFailure is enabled.")));
+            return Task.FromResult(Result.Failure(WorkflowErrors.ServiceUnavailable()));
         }
 
         if (!TryGetExecution(out var execution))
         {
-            return Task.FromResult(Result.Failure(WorkflowErrors.NotFound(WorkflowId)));
+            return Task.FromResult(Result.Failure(WorkflowErrors.NotFound()));
         }
 
         // Idempotent -- re-cancelling an already-terminal execution still succeeds without changing
@@ -133,12 +133,12 @@ public sealed class InMemoryWorkflowHandle : IWorkflowHandle
 
         if (SimulateFailure)
         {
-            return Task.FromResult(Result.Failure(WorkflowErrors.ServiceUnavailable("SimulateFailure is enabled.")));
+            return Task.FromResult(Result.Failure(WorkflowErrors.ServiceUnavailable()));
         }
 
         if (!TryGetExecution(out var execution))
         {
-            return Task.FromResult(Result.Failure(WorkflowErrors.NotFound(WorkflowId)));
+            return Task.FromResult(Result.Failure(WorkflowErrors.NotFound()));
         }
 
         // Idempotent, same rationale as CancelAsync above.

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Xml.Linq;
@@ -26,13 +27,16 @@ using SharedKernel.Cryptography.Totp;
 using SharedKernel.DataPrivacy.Classification;
 using SharedKernel.DataPrivacy.DataSubjectRequests;
 using SharedKernel.DataPrivacy.Masking;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.FeatureManagement;
 using SharedKernel.Guards;
 using SharedKernel.Localization;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Enums;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
 using SharedKernel.Validation;
 using SharedKernel.Validation.FluentValidation;
 using OpenFeature;
@@ -506,6 +510,82 @@ public sealed class ConsumerDependencyGraphTests
         Assert.Contains("SharedKernel.Primitives", dependencyIds);
     }
 
+    [Fact]
+    public void Telemetry_TelemetryVersionAndActivityRecorder_ResolvedFromPackedPrimitivesAndCore()
+    {
+        // SK.01.ObservabilityHelpers: a consumer builds an ActivitySource versioned by TelemetryVersion and
+        // records a Result on a span, against the packed Primitives (and Core for the exception base).
+        string version = TelemetryVersion.Of(typeof(ConsumerDependencyGraphTests).Assembly);
+        using var source = new ActivitySource("consumer.telemetry", TelemetryVersion.Of(typeof(Result).Assembly));
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => ReferenceEquals(s, source),
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using Activity activity = source.StartActivity("op")!;
+        string outcome = activity.RecordResult(Result.Failure(Error.NotFound("consumer.not_found", "Missing.")));
+        string exceptionOutcome = activity.RecordException(new NotFoundException(Error.NotFound("consumer.gone", "Gone.")));
+
+        Assert.False(string.IsNullOrEmpty(version));
+        Assert.NotEqual(TelemetryVersion.Unknown, source.Version);
+        Assert.Equal(WellKnownOutcomes.Failure, outcome);
+        Assert.Equal(WellKnownOutcomes.Exception, exceptionOutcome);
+        Assert.Equal("consumer.gone", activity.GetTagItem(WellKnownTagKeys.ErrorCode));
+        Assert.Equal("outcome", WellKnownTagKeys.Outcome);
+    }
+
+    [Fact]
+    public void Execution_NuspecListsOnlyPrimitivesAndCore_AndItsExceptionsAreClassified_ResolvedFromPackage()
+    {
+        // SK.01.CoreObservabilityFixes: Execution gained a reference to Core for SharedKernelException. The packed
+        // .nuspec must list exactly Primitives and Core, and a consumer must be able to catch the base type.
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string executionNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Execution.*.nupkg", IsExactExecutionPackage);
+
+        XDocument nuspec = XDocument.Parse(executionNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+
+        Assert.Equal(["SharedKernel.Core", "SharedKernel.Primitives"], dependencyIds);
+
+        string? caught = null;
+        try
+        {
+            throw new CommitOutcomeUnknownException(new TimeoutException());
+        }
+        catch (SharedKernelException e) when (e is CommitOutcomeUnknownException)
+        {
+            caught = e.Error.Code;
+        }
+
+        Assert.Equal("execution.commit_outcome_unknown", caught);
+        Assert.Equal(ErrorType.Unexpected, new TransactionRolledBackException().Error.Type);
+    }
+
+    [Fact]
+    public void Primitives_NuspecStillListsOnlyDependencyInjectionAbstractions_ResolvedFromPackage()
+    {
+        // SK.01.ObservabilityHelpers: the recorder is BCL System.Diagnostics only; no NuGet dependency appears.
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string primitivesNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Primitives.*.nupkg", IsExactPrimitivesPackage);
+
+        XDocument nuspec = XDocument.Parse(primitivesNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)
+            .Distinct()];
+
+        Assert.Equal(["Microsoft.Extensions.DependencyInjection.Abstractions"], dependencyIds);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // SharedKernel.Cryptography — verifies the package resolves from the local
     // feed and that its transitive dependencies (Primitives + Configuration)
@@ -881,6 +961,27 @@ public sealed class ConsumerDependencyGraphTests
         // standalone SharedKernel.Validation validator produces for the same input.
         var standalone = Iban.Create("not-an-iban");
         Assert.Equal(standalone.Error.Code, failure.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ValidationFluentValidation_RequestValidator_MapsBuiltInNamesToKernelCodes_ResolvedFromPackage()
+    {
+        var validator = new FluentValidationRequestValidator<ConsumerPaymentCommand>([new ConsumerRequiredIbanValidator()]);
+
+        IReadOnlyList<Error> errors = await validator.ValidateAsync(new ConsumerPaymentCommand(string.Empty, "USD"), CancellationToken.None);
+
+        Error error = Assert.Single(errors);
+        Assert.Equal("validation.required", error.Code);
+        Assert.Equal(ErrorCodes.Validation.Required, error.Code);
+        Assert.Equal(ErrorType.Validation, error.Type);
+    }
+
+    [Fact]
+    public void Primitives_ErrorCodes_RenamedWireValues_ResolvedFromPackage()
+    {
+        Assert.Equal("unexpected.default", ErrorCodes.Unexpected.Default);
+        Assert.Equal("domain.rule_violated", ErrorCodes.Domain.RuleViolated);
+        Assert.Equal("data_privacy.unavailable", DataPrivacyErrorCodes.Unavailable);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1324,6 +1425,26 @@ public sealed class ConsumerDependencyGraphTests
     /// someday share the <c>SharedKernel.Core.</c> filename prefix — the same positive shape check
     /// as <see cref="IsExactCryptographyPackage"/>, for the same reason.
     /// </summary>
+    private static bool IsExactPrimitivesPackage(string candidatePath)
+    {
+        const string Prefix = "SharedKernel.Primitives.";
+        string fileName = Path.GetFileName(candidatePath);
+
+        return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            && fileName.Length > Prefix.Length
+            && char.IsAsciiDigit(fileName[Prefix.Length]);
+    }
+
+    private static bool IsExactExecutionPackage(string candidatePath)
+    {
+        const string Prefix = "SharedKernel.Execution.";
+        string fileName = Path.GetFileName(candidatePath);
+
+        return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            && fileName.Length > Prefix.Length
+            && char.IsAsciiDigit(fileName[Prefix.Length]);
+    }
+
     private static bool IsExactCorePackage(string candidatePath)
     {
         const string Prefix = "SharedKernel.Core.";
@@ -1383,6 +1504,11 @@ internal sealed class ConsumerPaymentValidator : FluentValidationLib.AbstractVal
         RuleFor(x => x.Iban).MustBeValidIban();
         RuleFor(x => x.CurrencyCode).MustBeValidCurrencyCode();
     }
+}
+
+internal sealed class ConsumerRequiredIbanValidator : FluentValidationLib.AbstractValidator<ConsumerPaymentCommand>
+{
+    public ConsumerRequiredIbanValidator() => FluentValidationLib.DefaultValidatorExtensions.NotEmpty(RuleFor(x => x.Iban));
 }
 
 /// <summary>

@@ -287,7 +287,13 @@ public sealed class RedisTlsConfigurationTests
 
         var eventId = new EventId(LoggingEventIdRanges.Caching + 102);
         logger.Records.ShouldHaveLoggedCount(eventId, 1);
-        logger.Records.ShouldHaveLogged(eventId, LogLevel.Warning);
+        var record = logger.Records.ShouldHaveLogged(eventId, LogLevel.Warning);
+
+        // The text says an endpoint is configured without TLS; it never names the endpoint (L5).
+        Assert.StartsWith("A non-loopback Redis endpoint is configured without TLS", record.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("redis.example.com", record.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("6379", record.Message, StringComparison.Ordinal);
+        logger.Records.ShouldNotLeak("redis.example.com").ShouldFollowLogConvention();
     }
 
     [Fact]

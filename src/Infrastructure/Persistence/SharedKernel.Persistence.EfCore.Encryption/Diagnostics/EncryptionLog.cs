@@ -1,45 +1,44 @@
 using Microsoft.Extensions.Logging;
-using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Diagnostics;
 
-/// <summary>Source-generated log statements of <c>SharedKernel.Persistence.EfCore.Encryption</c>.</summary>
+/// <summary>Log statements of <c>SharedKernel.Persistence.EfCore.Encryption</c>.</summary>
 /// <remarks>
-/// EventIds 6500-6699 of the <see cref="LoggingEventIdRanges.Persistence"/> block. No statement ever logs key
-/// material, a stored or decrypted value, a primary key or a tenant id.
+/// No statement ever logs key material, a stored or decrypted value, a primary key or a tenant id; a cause is a closed set,
+/// never composed text.
 /// </remarks>
 internal static partial class EncryptionLog
 {
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 500, Level = LogLevel.Warning,
-        Message = "Refreshing encryption keys from the key provider failed; the keys loaded earlier stay in use.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.KeyRefreshFailed, Level = LogLevel.Warning,
+        Message = "Refreshing encryption keys from the key provider failed, so the keys loaded earlier stay in use.")]
     internal static partial void KeyRefreshFailed(ILogger logger, Exception exception);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 501, Level = LogLevel.Error,
-        Message = "Encryption keys have not been refreshed for {StaleFor}; a key made current since then cannot be decrypted by this process.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.KeysStale, Level = LogLevel.Error,
+        Message = "Encryption keys have not been refreshed for {StaleFor}, so a key made current since then is not decryptable by this process.")]
     internal static partial void KeysStale(ILogger logger, TimeSpan staleFor);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 502, Level = LogLevel.Information,
-        Message = "Encryption key {KeyId} was not loaded; fetched it from the key provider after a value needed it.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.KeyFetchedOnMiss, Level = LogLevel.Information,
+        Message = "Encryption key '{KeyId}' was not loaded, so it was fetched from the key provider after a value needed it.")]
     internal static partial void KeyFetchedOnMiss(ILogger logger, string keyId);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 503, Level = LogLevel.Warning,
-        Message = "Fetching encryption key {KeyId} after a value needed it failed, or the key provider does not know it.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.KeyFetchOnMissFailed, Level = LogLevel.Warning,
+        Message = "Fetching encryption key '{KeyId}' after a value needed it failed, or the key provider does not know it.")]
     internal static partial void KeyFetchOnMissFailed(ILogger logger, string keyId, Exception? exception);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 504, Level = LogLevel.Warning,
-        Message = "A previous save on {ContextType} stopped between encryption and restore; restored the tracked plaintext before saving again.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.StalePendingRestored, Level = LogLevel.Warning,
+        Message = "A previous save on context '{ContextType}' stopped between encryption and restore, so the tracked plaintext was restored before saving again.")]
     internal static partial void StalePendingRestored(ILogger logger, string contextType);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 510, Level = LogLevel.Information,
-        Message = "Encryption maintenance ({Mode}) started on {Target}: about {EstimatedRows} row(s).")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.MaintenanceTargetStarted, Level = LogLevel.Information,
+        Message = "Encryption maintenance in mode {Mode} started on target '{Target}' with about {EstimatedRows} rows.")]
     internal static partial void MaintenanceTargetStarted(ILogger logger, string mode, string target, long estimatedRows);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 511, Level = LogLevel.Debug,
-        Message = "Encryption maintenance processed {RowsInBatch} row(s) of {Target}.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.MaintenanceBatchProcessed, Level = LogLevel.Debug,
+        Message = "Encryption maintenance processed {RowsInBatch} rows of target '{Target}'.")]
     internal static partial void MaintenanceBatchProcessed(ILogger logger, string target, int rowsInBatch);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 512, Level = LogLevel.Information,
-        Message = "Encryption maintenance ({Mode}) finished: {RowsScanned} scanned, {RowsWritten} written, {RowsConcurrentlyModified} changed concurrently, {RowsPlaintext} plaintext, {RowsUndecryptable} undecryptable, {RowsShredded} shredded.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.MaintenanceCompleted, Level = LogLevel.Information,
+        Message = "Encryption maintenance in mode {Mode} finished with {RowsScanned} scanned, {RowsWritten} written, {RowsConcurrentlyModified} changed concurrently, {RowsPlaintext} plaintext, {RowsUndecryptable} undecryptable and {RowsShredded} shredded.")]
     internal static partial void MaintenanceCompleted(
         ILogger logger,
         string mode,
@@ -50,19 +49,32 @@ internal static partial class EncryptionLog
         long rowsUndecryptable,
         long rowsShredded);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 513, Level = LogLevel.Warning,
-        Message = "Encryption maintenance found {Count} value(s) in {Target} that it could not process ({Reason}).")]
-    internal static partial void MaintenanceValuesSkipped(ILogger logger, string target, long count, string reason);
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.MaintenanceValuesSkipped, Level = LogLevel.Warning,
+        Message = "Encryption maintenance skipped {Count} values of target '{Target}' with cause {Cause}.")]
+    internal static partial void MaintenanceValuesSkipped(ILogger logger, string target, long count, EncryptionMaintenanceSkip cause);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 520, Level = LogLevel.Information,
-        Message = "Created a tenant data key wrapped by master key {MasterKeyId}.")]
-    internal static partial void TenantKeyCreated(ILogger logger, string masterKeyId);
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.TenantKeyCreated, Level = LogLevel.Information,
+        Message = "A tenant data key was created.")]
+    internal static partial void TenantKeyCreated(ILogger logger);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 521, Level = LogLevel.Warning,
-        Message = "Shredded a tenant data key and cleared {BlindIndexValuesCleared} blind-index value(s); the tenant's encrypted values can no longer be decrypted.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.TenantKeyShredded, Level = LogLevel.Warning,
+        Message = "A tenant data key was shredded and {BlindIndexValuesCleared} blind-index values were cleared, so the encrypted values of the tenant are no longer decryptable.")]
     internal static partial void TenantKeyShredded(ILogger logger, long blindIndexValuesCleared);
 
-    [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 522, Level = LogLevel.Warning,
-        Message = "The shredded tenant still has {RootKeyValues} value(s) under a root key and {PlaintextValues} plaintext value(s) in encrypted columns; they are not erased until their rows are deleted.")]
+    [LoggerMessage(EventId = EncryptionLoggingEventIds.TenantShredIncomplete, Level = LogLevel.Warning,
+        Message = "The shredded tenant still has {RootKeyValues} values under a root key and {PlaintextValues} plaintext values in encrypted columns, and they are not erased until their rows are deleted.")]
     internal static partial void TenantShredIncomplete(ILogger logger, long rootKeyValues, long plaintextValues);
+}
+
+/// <summary>Why the maintenance job skipped values: a closed set, so a log carries no composed text.</summary>
+internal enum EncryptionMaintenanceSkip
+{
+    /// <summary>The values are stored as plaintext and the run was not asked to encrypt them.</summary>
+    Plaintext,
+
+    /// <summary>The values could not be decrypted.</summary>
+    Undecryptable,
+
+    /// <summary>The values belong to a shredded tenant whose rows are not deleted yet.</summary>
+    ShreddedTenantNotErased,
 }

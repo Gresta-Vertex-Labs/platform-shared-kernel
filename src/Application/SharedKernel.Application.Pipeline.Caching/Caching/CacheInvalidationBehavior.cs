@@ -3,11 +3,14 @@ using SharedKernel.Application.Commands;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Application.Pipeline.Caching;
+using System.Diagnostics;
+using SharedKernel.Application.Pipeline.Caching.Diagnostics;
 using SharedKernel.Application.Pipeline.Caching.Shared;
 
 using SharedKernel.Execution.Context;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Application.Pipeline.Caching;
 
@@ -49,7 +52,7 @@ namespace SharedKernel.Application.Pipeline.Caching;
 /// wider-scoped key it never wrote.
 /// </para>
 /// </remarks>
-internal sealed partial class CacheInvalidationBehavior<TRequest, TResponse>(
+internal sealed class CacheInvalidationBehavior<TRequest, TResponse>(
     ICacheService cacheService,
     ITenantCacheKeyProvider cacheKeys,
     ICommandScope commandScope,
@@ -81,7 +84,7 @@ internal sealed partial class CacheInvalidationBehavior<TRequest, TResponse>(
             if (entry.QueryType is null)
             {
                 throw new InvalidOperationException(
-                    $"{CommandTypeName} declared a default(CacheKeyRef). Build every entry with CacheKeyRef.For<TQuery>(key).");
+                    $"The command '{CommandTypeName}' declared a default CacheKeyRef. Build every entry with CacheKeyRef.For<TQuery>(key).");
             }
 
             if (CacheKeyBuilder.TryBuild(
@@ -105,7 +108,7 @@ internal sealed partial class CacheInvalidationBehavior<TRequest, TResponse>(
         }
 
         if (scopeUnavailable)
-            LogScopeUnavailable(logger, CommandTypeName, scope);
+            PipelineCachingLog.InvalidationScopeUnavailable(logger, CommandTypeName, CacheTelemetryNames.Of(scope));
 
         var response = await next().ConfigureAwait(false);
 
@@ -123,7 +126,7 @@ internal sealed partial class CacheInvalidationBehavior<TRequest, TResponse>(
             foreach (var tag in tags)
                 await EvictAsync(tag, isTag: true).ConfigureAwait(false);
 
-            LogInvalidationCompleted(logger, CommandTypeName, keys.Count, tags.Count);
+            PipelineCachingLog.InvalidationCompleted(logger, CommandTypeName, keys.Count, tags.Count);
         });
 
         return response;
@@ -139,30 +142,13 @@ internal sealed partial class CacheInvalidationBehavior<TRequest, TResponse>(
             else
                 await cacheService.RemoveAsync(target, CancellationToken.None).ConfigureAwait(false);
 
-            metrics.RecordInvalidation(CommandTypeName, isTag ? "tag" : "key", succeeded: true);
+            metrics.RecordEviction(CommandTypeName, CacheTelemetryNames.Target(isTag), succeeded: true);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            metrics.RecordInvalidation(CommandTypeName, isTag ? "tag" : "key", succeeded: false);
-            LogEntryFailed(logger, CommandTypeName, isTag ? "tag" : "key", ex);
+            metrics.RecordEviction(CommandTypeName, CacheTelemetryNames.Target(isTag), succeeded: false);
+            PipelineCachingLog.InvalidationEntryFailed(logger, CommandTypeName, CacheTelemetryNames.Target(isTag), ex);
+            Activity.Current.AddExceptionEvents(ex);
         }
     }
-
-    [LoggerMessage(
-        EventId = CachingBehaviorsLoggingEventIds.LogInvalidationCompleted,
-        Level = LogLevel.Debug,
-        Message = "Command {CommandType} evicted {KeyCount} cache key(s) and {TagCount} tag(s) after commit")]
-    private static partial void LogInvalidationCompleted(ILogger logger, string commandType, int keyCount, int tagCount);
-
-    [LoggerMessage(
-        EventId = CachingBehaviorsLoggingEventIds.LogInvalidationEntryFailed,
-        Level = LogLevel.Error,
-        Message = "Command {CommandType} could not evict a cache {CacheTarget} after its write had already committed; the cache will serve a superseded value until that entry expires")]
-    private static partial void LogEntryFailed(ILogger logger, string commandType, string cacheTarget, Exception exception);
-
-    [LoggerMessage(
-        EventId = CachingBehaviorsLoggingEventIds.LogInvalidationScopeUnavailable,
-        Level = LogLevel.Warning,
-        Message = "Command {CommandType} declares {CacheScope} cache scope but that identity is unavailable on this request; the affected entries were not evicted")]
-    private static partial void LogScopeUnavailable(ILogger logger, string commandType, CacheScope cacheScope);
 }

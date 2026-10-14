@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.OpenApi.Routing;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.OpenApi.Diagnostics;
 
 namespace SharedKernel.Presentation.OpenApi.Startup;
 
@@ -15,7 +15,7 @@ namespace SharedKernel.Presentation.OpenApi.Startup;
 /// <c>AllowAnonymous()</c> records that decision and silences the warning. Only conventions applied to that builder
 /// are seen — not those of a route group the documents are mapped in.
 /// </remarks>
-internal sealed partial class OpenApiStartupDiagnostics : IHostedLifecycleService
+internal sealed class OpenApiStartupDiagnostics : IHostedLifecycleService
 {
     private readonly OpenApiSetupState _state;
     private readonly IServiceProvider _services;
@@ -49,7 +49,7 @@ internal sealed partial class OpenApiStartupDiagnostics : IHostedLifecycleServic
     {
         if (_state.ExposedDocuments.Any(IsOpenToEveryoneByOversight))
         {
-            Log.DocumentsServedWithoutAuthorization(_logger, _environment.EnvironmentName);
+            OpenApiLog.DocumentsServedWithoutAuthorization(_logger, _environment.EnvironmentName);
         }
 
         return Task.CompletedTask;
@@ -68,17 +68,4 @@ internal sealed partial class OpenApiStartupDiagnostics : IHostedLifecycleServic
     private bool IsOpenToEveryoneByOversight(CompositeEndpointConventionBuilder documents) =>
         EndpointAuthorization.GetAccess(documents.GetConventionMetadata(_services)) == EndpointAccess.Unspecified
         && !EndpointAuthorization.HasFallbackPolicy(_services);
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 301,
-            Level = LogLevel.Warning,
-            Message = "The OpenAPI documents and API reference are served in the {EnvironmentName} environment to anyone "
-                + "who can reach the service: no authorization convention was applied to MapSharedKernelOpenApi() and no "
-                + "fallback authorization policy is set. Protect them, as in "
-                + "app.MapSharedKernelOpenApi().RequireEndpointPermission(\"docs.read\"), or call AllowAnonymous() on it if they "
-                + "are meant to be public.")]
-        public static partial void DocumentsServedWithoutAuthorization(ILogger logger, string environmentName);
-    }
 }

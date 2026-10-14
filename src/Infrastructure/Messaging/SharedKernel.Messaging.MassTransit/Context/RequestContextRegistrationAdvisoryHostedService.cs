@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
+using SharedKernel.Messaging.MassTransit.Diagnostics;
 
 namespace SharedKernel.Messaging.MassTransit.Context;
 
@@ -26,7 +27,7 @@ namespace SharedKernel.Messaging.MassTransit.Context;
 /// registration a service might have made deliberately.
 /// </para>
 /// </remarks>
-internal sealed partial class RequestContextRegistrationAdvisoryHostedService : IHostedService
+internal sealed class RequestContextRegistrationAdvisoryHostedService : IHostedService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RequestContextRegistrationAdvisoryHostedService> _logger;
@@ -60,34 +61,16 @@ internal sealed partial class RequestContextRegistrationAdvisoryHostedService : 
             // A service's own IRequestContext may legitimately refuse to materialise outside a real
             // request. That is not the misconfiguration being looked for, so it is recorded and
             // ignored rather than escalated.
-            LogRequestContextNotResolvable(ex);
+            MessagingLog.RequestContextNotResolvable(_logger, ex);
             return Task.CompletedTask;
         }
 
         if (resolved is not MessageAwareRequestContext)
-            LogRequestContextOverridden(resolved?.GetType().Name ?? "none");
+            MessagingLog.RequestContextOverridden(_logger, resolved?.GetType().Name ?? "none");
 
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    [LoggerMessage(
-        EventId = 7011,
-        Level = LogLevel.Warning,
-        Message = "WithInboundRequestContext() was called, but IRequestContext resolves to " +
-            "{ResolvedType} instead of the message-aware context. Something registered " +
-            "IRequestContext after the messaging bus was built, and the last registration wins, so " +
-            "a consumer will see no tenant and no actor however the message was published. Move " +
-            "the other registration (typically AddSharedKernelRequestContext()) before " +
-            "AddSharedKernelMessaging(...).Build().")]
-    private partial void LogRequestContextOverridden(string resolvedType);
-
-    [LoggerMessage(
-        EventId = 7012,
-        Level = LogLevel.Debug,
-        Message = "IRequestContext could not be resolved while checking the inbound message-context " +
-            "registration. The check was skipped; inbound context itself is unaffected.")]
-    private partial void LogRequestContextNotResolvable(Exception exception);
 }

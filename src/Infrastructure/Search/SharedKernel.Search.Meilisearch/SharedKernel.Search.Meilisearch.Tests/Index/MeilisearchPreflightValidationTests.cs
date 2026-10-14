@@ -5,6 +5,7 @@ using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Options;
+using SharedKernel.Search.Meilisearch.Tests.Support;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Search.Meilisearch.Tests.Index;
@@ -39,7 +40,8 @@ public sealed class MeilisearchPreflightValidationTests
             definition,
             new MeilisearchOptions(),
             new FakeClock(),
-            NullLogger<MeilisearchIndex<TestDocument>>.Instance);
+            NullLogger<MeilisearchIndex<TestDocument>>.Instance,
+            MeiliTelemetry.Create());
 
     private static SearchIndexDefinition Definition() => new SearchIndexDefinitionBuilder("products")
         .Field("name", SearchFieldKind.Text, searchable: true)
@@ -142,7 +144,7 @@ public sealed class MeilisearchPreflightValidationTests
     }
 
     [Fact]
-    public async Task TenantedIndex_WithTenantScopeSupplied_PassesTheTenantGuard_AndAnyFaultStaysAResult()
+    public async Task TenantedIndex_WithTenantScopeSupplied_PassesTheTenantGuard_AndAnUnclassifiedFaultRethrows()
     {
         // Two assertions in one, and the second is the point of the pre-publish Result-discipline fix.
         //
@@ -151,7 +153,7 @@ public sealed class MeilisearchPreflightValidationTests
         //     "the guard stopped I/O" from "something unrelated short-circuited" in the prior test. The
         //     distinguishing evidence is the error CODE — engine_fault, not tenant_scope_missing.
         //
-        // (2) That fault comes back as a failed Result rather than escaping as an exception. Until the
+        // (2) That fault is NOT a recognised engine fault, so it rethrows rather than becoming a Result. Until the
         //     pre-publish pass this test asserted ThrowAsync<NullReferenceException>, which documented
         //     the exact defect the pass fixed: an exception escaping a Task<Result<T>>-returning member.
         //     Every unexpected fault on this path — an unreachable Meilisearch included — is now
@@ -161,13 +163,11 @@ public sealed class MeilisearchPreflightValidationTests
 
         var act = async () => await index.SearchAsync(request, TenantScope.For(TestTenants.TenantA));
 
-        var result = await act.Should().NotThrowAsync(
-            "every fault on a Result-returning member is classified and returned, never thrown");
-        result.Subject.IsFailure.Should().BeTrue();
-        result.Subject.Error.Code.Should().Be(
-            "search.engine_fault",
-            "the tenant guard passed and the executor reached the client — a tenant_scope_missing here " +
-            "would mean the guard fired when it should not have");
+        // The guard passed and the executor reached the unusable client; the resulting NullReferenceException is
+        // an unclassified fault (a defect, not an engine reply), so it rethrows instead of becoming a soft
+        // search.engine_fault. Had the guard fired, the call would return tenant_scope_missing and not throw.
+        await act.Should().ThrowAsync<NullReferenceException>(
+            "an unrecognised exception is a defect and rethrows; only a recognised engine fault becomes a Result");
     }
 
     [Fact]

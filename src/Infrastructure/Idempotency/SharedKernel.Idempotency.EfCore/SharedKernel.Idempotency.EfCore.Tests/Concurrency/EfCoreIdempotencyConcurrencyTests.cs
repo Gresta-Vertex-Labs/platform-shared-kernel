@@ -65,7 +65,8 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
             new FixedTenantAccessor(tenantId),
             clock,
             MsOptions.Create(new EfCoreIdempotencyOptions()),
-            new InMemoryLogger<EfCoreIdempotencyStore>());
+            new InMemoryLogger<EfCoreIdempotencyStore>(),
+            TestMeterFactory.NewMetrics());
 
     private RequestView CreateStore(Guid? tenantId, FakeClock clock, TimeSpan? ttl = null) =>
         new(CreateRawStore(tenantId, clock), ttl ?? DefaultTtl);

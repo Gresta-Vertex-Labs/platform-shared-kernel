@@ -13,8 +13,8 @@ namespace SharedKernel.Scheduling.Policies;
 /// duplicate reconciliation runs happen.
 /// </para>
 /// <para>
-/// <b>Detection is in-process only, never against a persistent job store</b> (Domain Invariant 2 —
-/// this package never adopts Quartz's <c>JobStore</c>). The hosted loop compares
+/// <b>Detection is in-process only, never against a persistent job store</b> (this package never adopts a job store:
+/// Quartz's <c>JobStore</c> is not used). The hosted loop compares
 /// <c>IClock.UtcNow</c> against its own in-memory record of a job's next-fire time at each tick; a
 /// gap larger than the configured tick interval is treated as a misfire. A process restart therefore
 /// re-anchors every job's schedule from "now" and cannot detect occurrences missed before the restart

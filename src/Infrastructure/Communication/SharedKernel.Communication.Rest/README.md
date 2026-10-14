@@ -123,7 +123,7 @@ flowchart LR
   | A platform ProblemDetails | The service's `Error`: `errorCode` → `Code`, `detail` → `Message`, the status → `ErrorType` |
   | 400 or 422 with `errors` | `Error.Validation` of the field errors (the `errorCodes` map gives each its code) |
   | A body without a code (a gateway's HTML 503) | `http.{status}` with the status's `ErrorType` |
-  | No response | `communication.unreachable`, `.timeout`, `.circuit_open`, `.access_token_unavailable` |
+  | No response | `communication.unavailable`, `.timeout`, `.circuit_open`, `.access_token_unavailable` (also thrown as `AccessTokenUnavailableException`, a `SharedKernelException`, by the raw `HttpClient`; retried, counted by the breaker and hedged like an unreachable service) |
   | The caller's own cancellation | Thrown (`OperationCanceledException`) |
 
   Status → `ErrorType` is the reverse of the map `SharedKernel.Presentation.Core` applies on the server: 400 Validation, 401 Unauthorized, 403 Forbidden, 404
@@ -206,8 +206,16 @@ an uncoded failure is `http.{status}` (`http.503`).
 
 ### Logging
 
-EventIds 11200–11299 are reserved for this package; it logs nothing of its own (credential events, 11000–11004, come
-from `SharedKernel.Communication`). Outbound HTTP spans and resilience metrics come from `WithCommunicationTelemetry()`
+| Event id | Level | Event |
+| --- | --- | --- |
+| 11200 | Error | The caller could not be written onto the request, so it goes out without the caller's headers (the exception is logged) |
+| 11201 | Warning | The problem details body of the response with status `{StatusCode}` could not be read, so its status decides the error (the exception is logged) |
+| 11202 | Warning | The body of the success response could not be read as `'{ResponseType}'` (the exception is logged) |
+
+An HTML or empty body from a gateway is expected and is not logged: its status decides the error. Only your own
+cancellation is thrown while a body is read. The logger is the one of the client the response came through; a response
+that did not come through a client registered with `AddRestClient` logs nothing. Credential events (11000–11004) come
+from `SharedKernel.Communication`. Outbound HTTP spans and resilience metrics come from `WithCommunicationTelemetry()`
 in [`SharedKernel.ServiceDefaults`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md).
 
 ## Testing

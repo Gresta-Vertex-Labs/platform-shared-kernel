@@ -46,7 +46,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Abstractions — reference it from your **Application** project |
-| Depends on | `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Storage.Abstractions` |
 | Namespaces | `SharedKernel.Reporting` |
 | Providers | [Csv](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Csv/README.md) · [Spreadsheet](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Spreadsheet/README.md) · [Pdf](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Pdf/README.md) · [Gotenberg](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Gotenberg/README.md) (HTML → PDF) |
 
@@ -56,7 +56,6 @@ Register storage, then the formats you use (each provider package adds its `Add�
 
 ```csharp
 using SharedKernel.Reporting;
-using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("reports");
@@ -66,7 +65,7 @@ builder.Services.AddSharedKernelReporting()
     .AddSpreadsheet(builder.Configuration)    // SharedKernel.Reporting.Spreadsheet
     .AddPdf(builder.Configuration);           // SharedKernel.Reporting.Pdf
 
-builder.WithReportingTelemetry();             // SharedKernel.ServiceDefaults
+// Spans and instruments are subscribed by the SharedKernel.* wildcard of AddServiceDefaults.
 ```
 
 Define the report once and export it in whatever format the user asked for:
@@ -92,7 +91,7 @@ public sealed class ExportOrdersHandler(IReportExporterFactory exporters, IOrder
     {
         Result<ReportFormat> format = exporters.ParseFormat(command.Format);   // "xlsx", ".csv", "application/pdf"
         if (format.IsFailure)
-            return format.Error;                                               // reporting.unsupported_format
+            return format.Error;                                               // reporting.format_not_supported
 
         return await exporters.GetExporter<Order>(format.Value).ExportAsync(
             orders.StreamAsync(command.Month, ct),                             // IAsyncEnumerable<Order>
@@ -141,6 +140,8 @@ flowchart LR
   the query that produces the rows.
 - **Expected failures are `Result`s**; an exception from the row source, a value function or a formatter propagates.
   A missing storage registration or an unknown store throws `InvalidOperationException` (a configuration error).
+  `ReportDefinitionBuilder.Build()` throws `InvalidReportDefinitionException` (a classified `reporting.invalid_definition`
+  `Validation` failure, so an edge answers 400) when the definition has no columns or an invalid column.
 
 ## Recipes
 
@@ -243,6 +244,8 @@ builder.Services.AddSharedKernelReporting()
 | `ReportDestination` | `Store`, `Key` (required), `TenantId`, `DownloadFileName`, `Condition`, `Metadata`, `PresignedDownloadUrlExpiry` |
 | `IHtmlToPdfConverter` | `ConvertAsync` → `PdfDocumentOutcome`; `ConvertToStreamAsync` |
 | `ReportValueFormatting` | The formatting rules the built-in formats use, for custom exporters |
+| `InvalidReportDefinitionException` | Thrown by `Build()`; carries the `reporting.invalid_definition` `Error` |
+| `ReportingDiagnostics` | `ActivitySourceName` and `MeterName` (`SharedKernel.Reporting`), for subscribing and asserting |
 
 ### Errors
 
@@ -252,33 +255,48 @@ builder.Services.AddSharedKernelReporting()
 | --- | --- | --- |
 | `reporting.invalid_definition` | Validation | No columns, a column without header or value, or a bad width |
 | `reporting.invalid_destination` | Validation | Missing store or key, `default(TenantId)`, bad file name or expiry |
-| `reporting.unsupported_format` | Validation | `ParseFormat` matched no registered format |
+| `reporting.format_not_supported` | Validation | `ParseFormat` matched no registered format |
 | `reporting.row_limit_exceeded` | Validation | More rows than the format's `MaxRows`; nothing is stored |
 | `reporting.invalid_request` | Validation | Empty HTML or invalid conversion options |
-| `reporting.conversion_failed` | Validation | The converter refused the document |
-| `reporting.converter_unavailable` | Unavailable | The converter could not be reached or failed |
+| `reporting.conversion_failed` | Validation | The converter refused the document ("The document could not be converted.") |
+| `reporting.converter_unavailable` | Unavailable | The converter could not be reached or failed ("The document converter is unavailable.") |
 | `reporting.conversion_timeout` | Timeout | The conversion took too long |
 
 ### Logging
 
-Category `SharedKernel.Reporting`.
+Category `SharedKernel.Reporting.ReportingDependencies` (`ILogger<ReportingDependencies>`). Every template is one
+sentence; per-operation success is Debug.
 
-| Event id | Level | Event |
+| Event id | Level | Template |
 | --- | --- | --- |
-| 20000 | Debug | Report `{Operation}` started |
-| 20001 | Information | Report completed: rows, bytes, duration |
-| 20002 | Warning | Report failed with `{ErrorCode}` |
-| 20003 | Error | Report threw |
-| 20004 | Debug | Report cancelled |
-| 20005 | Warning | Stored, but the download link could not be created |
-| 20006 | Information | PDF conversion completed |
+| 20000 | Debug | `Report {Operation} for format '{Format}' started.` |
+| 20001 | Debug | `Report {Operation} for format '{Format}' produced {RowCount} rows and {SizeBytes} bytes in {ElapsedMilliseconds} ms.` |
+| 20002 | Warning | `Report {Operation} for format '{Format}' failed with error code '{ErrorCode}' of type '{ErrorType}'.` |
+| 20003 | Error | `Report {Operation} for format '{Format}' threw an exception.` (exception attached) |
+| 20004 | Debug | `Report {Operation} for format '{Format}' was cancelled.` |
+| 20005 | Warning | `The report was stored in store '{Store}' but its download link could not be created, error code '{ErrorCode}'.` |
+| 20006 | Debug | `PDF conversion produced {SizeBytes} bytes in {ElapsedMilliseconds} ms.` |
+
+Block 20000-20099 belongs to this package; `.Csv` (20100), `.Spreadsheet` (20200) and `.Pdf` (20300) log nothing and
+stay reserved, `.Gotenberg` owns 20400-20499. Nothing logged carries row values, object keys or file names.
 
 ### Telemetry
 
-`ActivitySource` and `Meter` named `SharedKernel.Reporting`; subscribe with ServiceDefaults'
-`WithReportingTelemetry()`. Spans `reporting export` and `reporting convert` (tags `reporting.format`,
-`reporting.operation`, `reporting.store`, `reporting.row_count`, `reporting.size_bytes`, and `error.type` on failure);
-instruments `reporting.operation.duration` (s), `reporting.rows`, `reporting.bytes`.
+`ReportingDiagnostics.ActivitySourceName` and `ReportingDiagnostics.MeterName` are both `SharedKernel.Reporting`; the
+`SharedKernel.*` wildcard of `AddServiceDefaults` subscribes to them (there is no `WithReportingTelemetry()`). Spans
+`reporting export` and `reporting convert` (kind Internal; tags `reporting.format`, `reporting.operation`,
+`reporting.store`, `reporting.row_count`, `reporting.size_bytes`). A returned failure sets status Error with the error
+code as description, `error.code` and `error.type` (the `ErrorType`, for example `Validation`); an exception adds the
+full exception event and `error.type` is its type name; cancellation is never an error.
+
+| Instrument | Unit | Tags | When |
+| --- | --- | --- | --- |
+| `sharedkernel.reporting.operation.duration` (histogram) | `s` | `reporting.format`, `reporting.operation`, `outcome` (`success`, `failure`, `exception`, `canceled`), plus `error.type` on `failure` and `exception` | every call |
+| `sharedkernel.reporting.rows` (counter) | `{row}` | `reporting.format` | successful exports |
+| `sharedkernel.reporting.bytes` (counter) | `By` | `reporting.format`, `reporting.operation` | successful exports and conversions |
+
+The meter comes from `IMeterFactory` when the host registers one (`AddMetrics()`, part of the Host builders) and is
+created directly otherwise.
 
 ## Testing
 

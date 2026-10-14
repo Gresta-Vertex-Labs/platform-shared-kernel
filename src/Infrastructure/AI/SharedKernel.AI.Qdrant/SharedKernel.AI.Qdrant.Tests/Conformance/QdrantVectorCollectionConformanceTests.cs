@@ -5,6 +5,7 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Provisioning;
+using SharedKernel.AI.Qdrant.Tests.Support;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
@@ -72,7 +73,7 @@ public sealed class QdrantVectorCollectionConformanceTests : IAsyncLifetime
 
         var definition = definitionResult.Value;
 
-        _provisioner = new QdrantCollectionProvisioner(_client, NullLogger<QdrantCollectionProvisioner>.Instance);
+        _provisioner = new QdrantCollectionProvisioner(_client, TestMeterFactory.NewTelemetry(), NullLogger<QdrantCollectionProvisioner>.Instance);
         var ensureResult = await _provisioner.EnsureCollectionAsync(definition);
         if (ensureResult.IsFailure)
         {
@@ -80,7 +81,7 @@ public sealed class QdrantVectorCollectionConformanceTests : IAsyncLifetime
         }
 
         _collection = new QdrantVectorCollection<TestVectorRecord>(
-            _client, definition, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
+            _client, definition, new FakeClock(), TestMeterFactory.NewTelemetry(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
 
         foreach (var (record, tenant) in Corpus())
         {

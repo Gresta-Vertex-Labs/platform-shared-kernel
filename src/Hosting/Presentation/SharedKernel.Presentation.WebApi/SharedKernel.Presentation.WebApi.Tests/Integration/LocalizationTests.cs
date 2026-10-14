@@ -40,6 +40,7 @@ public sealed class LocalizationTests
         problem.Detail().Should().Be("42 numaralı sipariş bulunamadı.");
     }
 
+[Fact]    public async Task UnexpectedDefault_GenericMessage_IsTranslatedIntoTheRequestCulture()    {        await using var app = await StartAsync();        using var request = new HttpRequestMessage(HttpMethod.Get, "/boom");        request.Headers.Add(HeaderNames.AcceptLanguage, "tr-TR");        using var response = await app.GetTestClient().SendAsync(request);        var problem = await response.ShouldBeProblemAsync(StatusCodes.Status500InternalServerError, ErrorCodes.Unexpected.Default);        problem.Detail().Should().Be("Beklenmeyen bir hata oluştu.");    }
     [Fact]
     public async Task ResultFailure_WithoutATranslation_KeepsItsOwnMessage()
     {
@@ -154,6 +155,7 @@ public sealed class LocalizationTests
             {
                 app.UseRequestLocalization();
                 app.MapGet("/order", () => Result<string>.Failure(OrderNotFound.ToError(ErrorType.NotFound, 42)).ToOk());
+                app.MapGet("/boom", IResult () => throw new InvalidOperationException("Password=hunter2"));
                 app.MapGet("/validation", () => Result.Failure(Error.Validation(
                 [
                     Error.Validation("field.required", "Field is required."),
@@ -176,5 +178,6 @@ public sealed class LocalizationTests
         new LocalizationCatalogBuilder()
             .Add("order.not_found", new CultureInfo("tr-TR"), "{orderId} numaralı sipariş bulunamadı.")
             .Add("field.required", new CultureInfo("tr-TR"), "Alan zorunludur.")
+            .Add(ErrorCodes.Unexpected.Default, new CultureInfo("tr-TR"), "Beklenmeyen bir hata oluştu.")
             .Build();
 }

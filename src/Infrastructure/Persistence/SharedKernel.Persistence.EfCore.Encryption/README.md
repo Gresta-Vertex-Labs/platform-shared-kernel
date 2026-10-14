@@ -260,9 +260,23 @@ Keep key material in a secret store (Key Vault configuration, a mounted secret),
 
 ### Errors
 
-`TenantKeyShreddedException` — code `Persistence.Encryption.TenantKeyShredded` (NotFound);
-`TenantShredIncompleteException` — `Persistence.Encryption.TenantShredIncomplete` (Conflict);
-`EncryptionKeyNotFoundException` for a key id not yet loaded.
+The codes are declared once in `PersistenceErrorCodes.Encryption` (`SharedKernel.Persistence.Abstractions`); the exceptions keep no code constants.
+
+`TenantKeyShreddedException` — code `persistence.encryption.tenant_key_shredded` (NotFound);
+`TenantShredIncompleteException` — `persistence.encryption.tenant_shred_incomplete` (Conflict);
+`EncryptionKeyNotFoundException` — `persistence.encryption.key_not_found` (Unexpected) for a key id not yet loaded.
+
+`FieldEncryptionException` for a stored value or tenant data key that cannot be used; the `Error.Message` is fixed and
+client-safe, and neither message holds a stored value, the provider's text or a master key id:
+
+| Code | `ErrorType` | Meaning |
+| --- | --- | --- |
+| `persistence.encryption.malformed_payload` | Unexpected | The stored value is not an encrypted payload (written unencrypted, truncated or altered) |
+| `persistence.encryption.decryption_failed` | Unexpected | The payload does not authenticate (altered, or copied from another row, column or tenant) |
+| `persistence.encryption.data_key_invalid` | Unexpected | The envelope provider generated a data key that is too short |
+| `persistence.encryption.data_key_unwrap_failed` | Unavailable, Timeout or Unexpected | The provider could not unwrap the stored data key; the provider's own `ErrorType` is kept when it is `Unavailable` or `Timeout` |
+
+A decrypt failure never surfaces as `CryptographicException`.
 
 ### Health
 
@@ -270,6 +284,9 @@ Keep key material in a secret store (Key Vault configuration, a mounted secret),
 `Unhealthy` until the keys are loaded and when they were not refreshed within `MaxKeyStaleness`.
 
 ### Logging
+
+Sub-block 6500-6599 (`EncryptionLoggingEventIds`, `EncryptionLog`, internal). No log carries key material, a value, a primary key or a
+tenant id; a skipped-value cause is a closed set (plaintext, undecryptable, shredded tenant not erased).
 
 | Event id | Level | Event |
 | --- | --- | --- |
@@ -283,8 +300,18 @@ Keep key material in a secret store (Key Vault configuration, a mounted secret),
 | 6521 | Warning | Tenant data key shredded |
 | 6522 | Warning | A shredded tenant still has root-key or plaintext values |
 
-Meter `SharedKernel.Persistence.EfCore.Encryption`: encrypt/decrypt failures by reason, maintenance values written and
-skipped, tenant keys shredded. No metric or log carries key material, a value, a primary key or a tenant id.
+### Telemetry
+
+The instruments use the one persistence meter, `SharedKernel.Persistence` (`PersistenceTelemetry.Name`); there is no encryption-specific
+name to subscribe to. No tag carries key material, a value, a primary key or a tenant id.
+
+| Instrument | Unit | Tags |
+| --- | --- | --- |
+| `sharedkernel.persistence.encryption.encrypt_failures` | `{failure}` | `persistence.encryption.reason` (`encrypt_failed`) |
+| `sharedkernel.persistence.encryption.decrypt_failures` | `{failure}` | `persistence.encryption.reason` (`malformed_payload`, `unknown_key`, `decryption_failed`, `tenant_key_shredded`) |
+| `sharedkernel.persistence.encryption.maintenance_rows_written` | `{row}` | `persistence.encryption.maintenance_operation` (`re_encrypt`, `encrypt_plaintext`, `recompute_blind_index`) |
+| `sharedkernel.persistence.encryption.maintenance_rows_skipped` | `{row}` | `persistence.encryption.reason` (`concurrent_write`, `plaintext`, `undecryptable`, `shredded`, `shredded_tenant_not_erased`) |
+| `sharedkernel.persistence.encryption.tenant_keys_shredded` | `{key}` | |
 
 ## Testing
 

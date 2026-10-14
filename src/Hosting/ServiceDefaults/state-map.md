@@ -10,7 +10,7 @@
 
 | Package | Tier | Status | Notes |
 | --- | --- | :---: | --- |
-| `SharedKernel.ServiceDefaults` | Host | ● | Composition base, references Foundation-tier packages only (`CompositionBaseIsolationTests`): `AddServiceDefaults`, the `WithXTelemetry` family (Application, Caching, Communication, Integration, Intelligence, Messaging, Persistence, Reporting, Scheduling, Search, Storage, Workflow), `StartupGate`, `/health/live` + `/health/ready`, `AddSharedKernelReadiness()` (every `IReadinessProbe` → a `ready` check), `AddSharedKernelRateLimiting`. |
+| `SharedKernel.ServiceDefaults` | Host | ● | Composition base, references Foundation-tier packages only (`CompositionBaseIsolationTests`): `AddServiceDefaults` (exports every `SharedKernel.*` source and meter, HttpClient metrics, one resource with the informational `service.version`), the third-party `With{X}Telemetry()` (Communication, Messaging, Persistence, Workflow), `StartupGate`, `/health/live` + `/health/ready`, `AddSharedKernelReadiness()` (every `IReadinessProbe` → a `ready` check), `AddSharedKernelRateLimiting`. |
 | `SharedKernel.ServiceDefaults.Security` | Host | ● | `AddSharedKernelRequestContext()` (`IRequestContext` over `IUserContext`) and `app.UseSharedKernelRequestContext()` — correlation id, the request's `RequestContextScope`, inbound-baggage refusal (`TrustInboundBaggage`); registered first. |
 | `SharedKernel.ServiceDefaults.Persistence` | Host | ● | `AddDatabaseReadinessCheck<T>`, `AddPersistenceStartupReadinessCheck` — the only per-dependency readiness registrations left. |
 | `SharedKernel.ServiceDefaults.Security.Mtls` | Host | ● | Kestrel and trusted forwarded-header client certificates (`AddMtlsClientCertificate`), acceptance delegated to `Security.Mtls`'s `IMtlsCertificateValidator`. |
@@ -23,7 +23,10 @@ Test doubles: `FakeTenantResolutionStrategy`, `InMemoryTenantCatalog` in `src/Ho
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -35,4 +38,5 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. Every inbound telemetry and readiness dependency (02, 06, 07, 15, 17, 19, 20) has shipped; the old 13→17/13→19 layering grants are replaced by the tier check.
+- **Third-party names stay byte-identical (owners):** `MassTransit` (07), `Npgsql` (06), `Polly` and gRPC client instrumentation (11), the Temporal tracing sources (17, owner of the tracing interceptor). The four `With{X}Telemetry()` extensions subscribe them by name.
+- **00.Governance:** the telemetry-name test is the guard that makes the `SharedKernel.*` wildcard safe: every kernel source and meter name must match `^SharedKernel\.[A-Z]\w+$`.

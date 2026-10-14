@@ -94,7 +94,7 @@ internal sealed class ScheduledJobRegistry : ISchedulingBuilder
     {
         if (!_jobNames.Add(jobName))
         {
-            throw new ArgumentException($"A job named '{jobName}' is already registered.", nameof(jobName));
+            throw new ArgumentException($"A job named '{jobName}' is already registered; give each job a unique name.", nameof(jobName));
         }
     }
 
@@ -109,7 +109,7 @@ internal sealed class ScheduledJobRegistry : ISchedulingBuilder
         }
         catch (FormatException ex)
         {
-            throw new ArgumentException($"'{cronExpression}' is not a valid cron expression.", nameof(cronExpression), ex);
+            throw new ArgumentException($"'{cronExpression}' is not a valid cron expression; pass a Quartz cron expression.", nameof(cronExpression), ex);
         }
     }
 
@@ -121,16 +121,14 @@ internal sealed class ScheduledJobRegistry : ISchedulingBuilder
         if (options.MisfirePolicy is null)
         {
             throw new ArgumentException(
-                "ScheduledJobOptions.MisfirePolicy must be explicitly set by the configure delegate — "
-                    + "it is never defaulted (19.Scheduling Domain Invariant 4).",
+                "ScheduledJobOptions.MisfirePolicy is not set; set it in the configure delegate, because it has no default.",
                 nameof(configure));
         }
 
         if (options.OverlapPolicy is null)
         {
             throw new ArgumentException(
-                "ScheduledJobOptions.OverlapPolicy must be explicitly set by the configure delegate — "
-                    + "it is never defaulted (19.Scheduling Domain Invariant 4).",
+                "ScheduledJobOptions.OverlapPolicy is not set; set it in the configure delegate, because it has no default.",
                 nameof(configure));
         }
 

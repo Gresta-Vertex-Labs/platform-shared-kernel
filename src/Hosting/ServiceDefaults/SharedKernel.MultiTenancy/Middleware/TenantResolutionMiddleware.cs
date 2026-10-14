@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
-using SharedKernel.MultiTenancy.Logging;
+using SharedKernel.MultiTenancy.Diagnostics;
 using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Primitives.Propagation;
 
@@ -108,21 +108,12 @@ public sealed class TenantResolutionMiddleware(
                     .IsActiveAsync(candidate, context.RequestAborted)
                     .ConfigureAwait(false);
 
-            if (isActive)
-            {
-                MultiTenancyLog.TenantResolved(logger, candidate, resolvedStrategyName);
-            }
-            else
+            if (!isActive)
             {
                 // Fail-closed: an inactive/suspended tenant is treated identically to "no tenant
                 // resolved" — same null tenant, same log call site, no distinct signal.
                 resolvedTenantId = null;
-                MultiTenancyLog.TenantNotResolved(logger);
             }
-        }
-        else
-        {
-            MultiTenancyLog.TenantNotResolved(logger);
         }
 
         // Ambient enrichment: make TenantId available to every log record produced for the
@@ -136,7 +127,26 @@ public sealed class TenantResolutionMiddleware(
                 activity.SetBaggage(WellKnownBaggageKeys.TenantId, null);
 
             if (resolvedTenantId is { } tenant)
+            {
                 activity.SetBaggage(WellKnownBaggageKeys.TenantId, tenant.ToString());
+
+                // The ambient server span, so a trace backend can search by tenant. Only the platform's own resolved
+                // value is tagged, never an inbound header. Nothing resolved: leave any earlier value (the
+                // credential-asserted tenant the request-context middleware fills in).
+                if (activity.IsAllDataRequested)
+                    activity.SetTag(WellKnownTagKeys.TenantId, tenant.ToString());
+            }
+        }
+
+        // Logged after the baggage is written, so the record itself carries the ambient TenantId attribute while its
+        // message and placeholders carry no tenant.
+        if (resolvedTenantId is not null && resolvedStrategyName is not null)
+        {
+            MultiTenancyLog.TenantResolved(logger, resolvedStrategyName);
+        }
+        else
+        {
+            MultiTenancyLog.TenantNotResolved(logger);
         }
 
         var inner = RequestContextScope.Current

@@ -20,15 +20,10 @@ using Shop.Catalog.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 13.ServiceDefaults: OpenTelemetry, health endpoints and the startup gate, plus the capability sources this
-// service emits, so the Aspire dashboard shows search, cache, storage, AI and persistence spans.
+// 13.ServiceDefaults: OpenTelemetry, health endpoints and the startup gate. Every SharedKernel.* source and meter
+// (search, cache, storage, AI, pipeline) is exported by AddServiceDefaults; Npgsql is the one third-party addition.
 builder.AddServiceDefaults();
-builder.WithApplicationTelemetry();
 builder.WithPersistenceTelemetry();
-builder.WithCachingTelemetry();
-builder.WithSearchTelemetry();
-builder.WithIntelligenceTelemetry();
-builder.WithStorageTelemetry();
 
 // Who is calling: a Keycloak access token (12.Security.Oidc) becomes IUserContext, and the request context turns it
 // into the one IRequestContext the pipeline, the tenant filters and row-level security read.

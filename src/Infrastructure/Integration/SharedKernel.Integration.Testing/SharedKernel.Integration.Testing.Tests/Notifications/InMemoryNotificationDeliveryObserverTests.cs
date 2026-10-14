@@ -63,7 +63,7 @@ public sealed class InMemoryNotificationDeliveryObserverTests
     {
         var observer = new InMemoryNotificationDeliveryObserver();
         var context = CreateContext();
-        var result = new NotificationDeliveryResult(context.NotificationDeliveryId, false, null, "boom");
+        var result = NotificationDeliveryResult.Failed(context.NotificationDeliveryId, NotificationErrors.ProviderRejected(400));
         await observer.OnCompletedAsync(context, result, CancellationToken.None);
 
         Assert.Throws<InvalidOperationException>(() => observer.ShouldHaveSucceeded(context.NotificationDeliveryId));
@@ -74,7 +74,7 @@ public sealed class InMemoryNotificationDeliveryObserverTests
     {
         var observer = new InMemoryNotificationDeliveryObserver();
         var context = CreateContext();
-        var result = new NotificationDeliveryResult(context.NotificationDeliveryId, false, null, "boom");
+        var result = NotificationDeliveryResult.Failed(context.NotificationDeliveryId, NotificationErrors.ProviderRejected(400));
         await observer.OnCompletedAsync(context, result, CancellationToken.None);
 
         var found = observer.ShouldHaveFailed(context.NotificationDeliveryId);
@@ -101,4 +101,20 @@ public sealed class InMemoryNotificationDeliveryObserverTests
     public async Task OnAttemptAsync_NullContext_Throws() =>
         await Assert.ThrowsAsync<ArgumentNullException>(
             async () => await new InMemoryNotificationDeliveryObserver().OnAttemptAsync(null!, 1, CancellationToken.None));
+}
+
+public sealed class InMemoryNotificationDeliveryObserverErrorTests
+{
+    [Fact]
+    public async Task A_failed_completion_keeps_its_error_and_the_success_assertion_names_the_code()
+    {
+        var observer = new InMemoryNotificationDeliveryObserver();
+        var context = new NotificationDeliveryContext(Guid.NewGuid(), NotificationChannel.Email, "recipient@example.test", "template");
+        var error = NotificationErrors.ProviderTimeout();
+        await observer.OnCompletedAsync(context, NotificationDeliveryResult.Failed(context.NotificationDeliveryId, error), CancellationToken.None);
+
+        Assert.Equal(error, observer.ShouldHaveFailed(context.NotificationDeliveryId).Error);
+        var thrown = Assert.Throws<InvalidOperationException>(() => observer.ShouldHaveSucceeded(context.NotificationDeliveryId));
+        Assert.Contains(NotificationErrorCodes.ProviderTimeout, thrown.Message, StringComparison.Ordinal);
+    }
 }

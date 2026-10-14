@@ -191,8 +191,8 @@ Section `SharedKernel:Presentation:OpenApi` (`SharedKernelOpenApiOptions`), vali
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 14300 | Information | `MapSharedKernelOpenApi()` mapped nothing: not Development and `ExposeInProduction` is off |
-| 14301 | Warning | Documents served outside Development with no authorization convention, `AllowAnonymous()` or fallback policy |
+| 14300 | Information | `MapSharedKernelOpenApi()` mapped nothing: not Development and `ExposeInProduction` is off. Set `ExposeInProduction` to serve the documents |
+| 14301 | Warning | Documents served outside Development with no authorization convention, `AllowAnonymous()` or fallback policy. Protect them, as in `app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read")`, or call `AllowAnonymous()` on the builder if they are meant to be public |
 
 ## Testing
 

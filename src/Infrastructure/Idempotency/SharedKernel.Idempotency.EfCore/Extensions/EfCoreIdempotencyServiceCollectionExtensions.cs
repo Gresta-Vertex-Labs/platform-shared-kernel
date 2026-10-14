@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Idempotency.EfCore.Context;
+using SharedKernel.Idempotency.EfCore.Diagnostics;
 using SharedKernel.Idempotency.EfCore.Internal;
 using SharedKernel.Idempotency.EfCore.Options;
 using SharedKernel.Idempotency.EfCore.Store;
@@ -36,6 +37,10 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
     /// by the tenant of the ambient request context, which the service's inbound adapters set.
     /// </para>
     /// <para>
+    /// Also calls <c>AddMetrics()</c> and registers the singleton instruments of the <c>SharedKernel.Idempotency</c>
+    /// meter, so a host that never configured metrics still resolves the store.
+    /// </para>
+    /// <para>
     /// This package ships no EF Core migrations. See <c>README.md</c> for the design-time factory recipe and the
     /// cleanup job that bounds table growth.
     /// </para>
@@ -65,6 +70,9 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
         foreach (var purpose in selected)
             services.AddIdempotencyStore<EfCoreIdempotencyStore>(purpose);
 
+        // The metrics singleton holds instruments only; it never touches the scoped IdempotencyDbContext.
+        services.AddMetrics();
+        services.TryAddSingleton<EfCoreIdempotencyMetrics>();
         services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 
         return services;

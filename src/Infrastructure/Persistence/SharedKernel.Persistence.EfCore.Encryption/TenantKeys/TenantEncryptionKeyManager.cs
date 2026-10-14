@@ -45,7 +45,7 @@ internal sealed class TenantEncryptionKeyManager<TContext>(
         {
             throw new InvalidOperationException(
                 "Tenant data keys are not enabled ('UseFieldEncryption(k => k.UseTenantDataKeys())'): every encrypted value is " +
-                "under a root key, which shredding a tenant cannot erase.");
+                "under a root key, which shredding a tenant does not erase.");
         }
 
         var targets = MaintenanceTarget.Build(context.Model, context.GetService<ISqlGenerationHelper>())
@@ -85,7 +85,7 @@ internal sealed class TenantEncryptionKeyManager<TContext>(
         }
 
         runtime.TenantKeys.MarkShredded(id);
-        EncryptionMeter.RecordTenantKeyShredded();
+        EncryptionInstruments.RecordTenantKeyShredded();
         EncryptionLog.TenantKeyShredded(logger, cleared);
         if (remaining.RootKey > 0 || remaining.Plaintext > 0)
             EncryptionLog.TenantShredIncomplete(logger, remaining.RootKey, remaining.Plaintext);

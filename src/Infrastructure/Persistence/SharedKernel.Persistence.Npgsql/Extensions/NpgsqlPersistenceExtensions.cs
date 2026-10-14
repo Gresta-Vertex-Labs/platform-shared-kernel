@@ -29,7 +29,6 @@ namespace SharedKernel.Persistence;
 // connection-string name; IConfigurationSection + a service key), which already select one overload.
 public static class NpgsqlPersistenceExtensions
 {
-    private const string LoggerCategoryName = "SharedKernel.Persistence.Npgsql";
     private const string DefaultDataSourceName = "default";
 
     /// <summary>
@@ -203,7 +202,7 @@ public static class NpgsqlPersistenceExtensions
 
         services.TryAddSingleton<IMigrationLock>(sp => new NpgsqlAdvisoryMigrationLock(
             sp.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.Migration) ?? sp.GetRequiredService<NpgsqlDataSource>(),
-            sp.GetService<ILogger<NpgsqlAdvisoryMigrationLock>>()));
+            sp.GetRequiredService<ILogger<NpgsqlAdvisoryMigrationLock>>()));
         services.TryAddSingleton<ITenantSessionBinder, NpgsqlTenantSessionBinder>();
         services.TryAddSingleton<IAdvisoryTransactionLock, NpgsqlAdvisoryTransactionLock>();
 
@@ -278,8 +277,8 @@ public static class NpgsqlPersistenceExtensions
 
         if (sslMode < SslMode.VerifyFull && !NpgsqlConnectionStringPolicy.IsLoopback(connectionString))
         {
-            var logger = loggerFactory?.CreateLogger(LoggerCategoryName) ?? NullLogger.Instance;
-            logger.InsecureSslMode(dataSourceName, sslMode.ToString());
+            ILogger logger = loggerFactory is null ? NullLogger.Instance : loggerFactory.CreateLogger<NpgsqlPersistenceOptions>();
+            NpgsqlLog.InsecureSslMode(logger, dataSourceName, sslMode.ToString());
         }
 
         configureDataSource?.Invoke(serviceProvider, dataSourceBuilder);

@@ -1,31 +1,37 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Persistence.EfCore.Diagnostics;
 
 /// <summary>
-/// Shared distributed-tracing helper for <c>EfRepository{TAggregate,TId}</c>/
-/// <c>EfReadRepository{TAggregate,TId}</c> repository operations.
+/// Shared distributed-tracing helper for <c>EfRepository{TAggregate,TId}</c>/<c>EfReadRepository{TAggregate,TId}</c>
+/// repository operations.
 /// </summary>
 /// <remarks>
-/// Avoids duplicating the start/tag/try-catch/finish boilerplate across every repository method.
-/// Span name is <c>"{typeof(TAggregate).Name}.{operationName}"</c>,
-/// <see cref="ActivityKind.Internal"/> (an EF Core repository call is in-process
-/// persistence-layer work, not an outbound RPC to a separate service; <c>ActivityKind.Client</c> is
-/// reserved for spans representing a synchronous call to a remote/external service).
-/// <see cref="PersistenceTagKeys.AggregateType"/>/<see cref="PersistenceTagKeys.Operation"/> (plus
-/// their OpenTelemetry-semantic-convention mirrors <see cref="PersistenceTagKeys.DbCollectionName"/>/
-/// <see cref="PersistenceTagKeys.DbOperationName"/>) are set at span start;
-/// <see cref="PersistenceTagKeys.Outcome"/> is set to <c>"success"</c>, <c>"failure"</c>, or
-/// <c>"canceled"</c> at completion (plus <see cref="WellKnownTagKeys.ErrorType"/> and
-/// <see cref="ActivityStatusCode.Error"/> on a genuine failure — NEVER for a caller-requested
-/// cancellation, which is expected control flow, not an error). Never a raw SQL parameter
-/// value, entity property value, or tenant/user identifier in any tag — mirrors the
-/// <c>cache.key_prefix</c>-never-full-key precedent from <c>02.Caching</c>.
+/// <para>
+/// The span is named <c>persistence {operation}</c> with the operation in lowercase snake case and without the
+/// <c>Async</c> suffix (<c>persistence get_by_id</c>), kind <see cref="ActivityKind.Internal"/>: the <c>Client</c>
+/// span of the database call is the one Npgsql emits, and a repository call is in-process work around it. The
+/// aggregate and operation are tags (<see cref="PersistenceTagKeys"/>), never part of the name.
+/// </para>
+/// <para>
+/// The outcome (<see cref="WellKnownTagKeys.Outcome"/>) is the string the shared recorder returns:
+/// <c>success</c>, <c>exception</c> (status Error, <c>error.type</c>, <c>error.code</c> for a classified exception and
+/// the exception event) or <c>canceled</c> (never an error). No SQL parameter, entity value or tenant or user
+/// identifier is ever a tag.
+/// </para>
 /// </remarks>
 internal static class RepositoryTracing
 {
+    private const string AsyncSuffix = "Async";
+    private const string SpanNamePrefix = "persistence ";
+
+    private static readonly ConcurrentDictionary<string, string> SpanNames = new(StringComparer.Ordinal);
+
     /// <summary>Traces a <see cref="Task{TResult}"/>-returning repository operation.</summary>
     public static async Task<TResult> ExecuteTracedAsync<TAggregate, TResult>(
         string operationName,
@@ -36,12 +42,12 @@ internal static class RepositoryTracing
         try
         {
             var result = await operation().ConfigureAwait(false);
-            SetSuccess(activity);
+            Succeed(activity);
             return result;
         }
         catch (Exception ex)
         {
-            SetOutcome(activity, ex);
+            Fail(activity, ex);
             throw;
         }
     }
@@ -56,27 +62,24 @@ internal static class RepositoryTracing
         try
         {
             await operation().ConfigureAwait(false);
-            SetSuccess(activity);
+            Succeed(activity);
         }
         catch (Exception ex)
         {
-            SetOutcome(activity, ex);
+            Fail(activity, ex);
             throw;
         }
     }
 
     /// <summary>
-    /// Traces an <see cref="IAsyncEnumerable{TResult}"/>-returning streaming repository operation —
-    /// the span wraps the FULL enumeration (starts before the first yield, ends after the last).
+    /// Traces an <see cref="IAsyncEnumerable{TResult}"/>-returning streaming repository operation: the span wraps the
+    /// full enumeration (starts before the first yield, ends after the last).
     /// </summary>
     /// <remarks>
-    /// <strong>Early-disposal fix:</strong> when the caller stops enumerating before
-    /// exhaustion (e.g. an <c>await foreach</c> with a <c>break</c>), the iterator's own
-    /// <see cref="IAsyncDisposable.DisposeAsync"/> path runs WITHOUT ever reaching code placed after
-    /// the enumeration loop in a plain iterator method — the pre-W2 version left the span outcome
-    /// untagged in that case. The whole body now runs inside <see langword="try"/>/<see langword="finally"/>
-    /// so the span is always finalized (as "success" unless a genuine exception was already recorded)
-    /// regardless of how the enumeration ends.
+    /// <strong>Early disposal:</strong> when the caller stops enumerating before exhaustion (an <c>await foreach</c>
+    /// with a <c>break</c>), the iterator's own dispose path runs without reaching code placed after the loop. The whole
+    /// body therefore runs inside <see langword="try"/>/<see langword="finally"/>, so the span is always finalized (as
+    /// <c>success</c> unless an exception was already recorded) however the enumeration ends.
     /// </remarks>
     public static async IAsyncEnumerable<TResult> ExecuteTracedStreamAsync<TAggregate, TResult>(
         string operationName,
@@ -100,7 +103,7 @@ internal static class RepositoryTracing
                     }
                     catch (Exception ex)
                     {
-                        SetOutcome(activity, ex);
+                        Fail(activity, ex);
                         outcomeSet = true;
                         throw;
                     }
@@ -115,14 +118,42 @@ internal static class RepositoryTracing
         finally
         {
             if (!outcomeSet)
-                SetSuccess(activity);
+                Succeed(activity);
         }
+    }
+
+    /// <summary>The span name of <paramref name="operationName"/> (<c>GetByIdAsync</c> becomes <c>persistence get_by_id</c>), derived once.</summary>
+    internal static string SpanName(string operationName) =>
+        SpanNames.GetOrAdd(operationName, static name => SpanNamePrefix + ToSnakeCase(name));
+
+    private static string ToSnakeCase(string operationName)
+    {
+        var name = operationName.EndsWith(AsyncSuffix, StringComparison.Ordinal)
+            ? operationName[..^AsyncSuffix.Length]
+            : operationName;
+
+        var builder = new StringBuilder(name.Length + 4);
+        for (var i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (char.IsUpper(c))
+            {
+                if (i > 0)
+                    builder.Append('_');
+                builder.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                builder.Append(c);
+            }
+        }
+
+        return builder.ToString();
     }
 
     private static Activity? StartActivity<TAggregate>(string operationName)
     {
-        var activity = PersistenceActivitySource.Source.StartActivity(
-            $"{typeof(TAggregate).Name}.{operationName}", ActivityKind.Internal);
+        var activity = PersistenceActivitySource.Source.StartActivity(SpanName(operationName), ActivityKind.Internal);
 
         activity?.SetTag(PersistenceTagKeys.AggregateType, typeof(TAggregate).Name);
         activity?.SetTag(PersistenceTagKeys.Operation, operationName);
@@ -132,26 +163,11 @@ internal static class RepositoryTracing
         return activity;
     }
 
-    private static void SetSuccess(Activity? activity) =>
-        activity?.SetTag(PersistenceTagKeys.Outcome, "success");
+    private static void Succeed(Activity? activity) =>
+        activity?.SetTag(WellKnownTagKeys.Outcome, WellKnownOutcomes.Success);
 
-    // Dispatches to SetCanceled/SetFailure — a caller-requested cancellation is expected control
-    // flow, never an error.
-    private static void SetOutcome(Activity? activity, Exception ex)
-    {
-        if (ex is OperationCanceledException)
-            SetCanceled(activity);
-        else
-            SetFailure(activity, ex);
-    }
-
-    private static void SetCanceled(Activity? activity) =>
-        activity?.SetTag(PersistenceTagKeys.Outcome, "canceled");
-
-    private static void SetFailure(Activity? activity, Exception ex)
-    {
-        activity?.SetTag(PersistenceTagKeys.Outcome, "failure");
-        activity?.SetTag(WellKnownTagKeys.ErrorType, ex.GetType().Name);
-        activity?.SetStatus(ActivityStatusCode.Error);
-    }
+    // The shared recorder sets status, error.type, error.code and the exception event, and treats a caller-requested
+    // cancellation as expected control flow: no error status, outcome "canceled".
+    private static void Fail(Activity? activity, Exception exception) =>
+        activity?.SetTag(WellKnownTagKeys.Outcome, activity.RecordException(exception));
 }

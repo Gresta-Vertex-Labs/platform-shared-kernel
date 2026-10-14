@@ -53,7 +53,7 @@ internal static class ConcurrencyConflictTranslator
         }
         catch (Exception lookupFailure) when (lookupFailure is not OperationCanceledException)
         {
-            PersistenceContextLog.ConflictRowLookupFailed(logger, lookupFailure, entry.Metadata.ClrType.Name);
+            EfCoreLog.ConflictRowLookupFailed(logger, entry.Metadata.ClrType.Name, lookupFailure);
             return ToConflict(context, entry, null, exception, logger);
         }
 
@@ -72,9 +72,9 @@ internal static class ConcurrencyConflictTranslator
         {
             current = entry.GetDatabaseValues();
         }
-        catch (Exception lookupFailure)
+        catch (Exception lookupFailure) when (lookupFailure is not OperationCanceledException)
         {
-            PersistenceContextLog.ConflictRowLookupFailed(logger, lookupFailure, entry.Metadata.ClrType.Name);
+            EfCoreLog.ConflictRowLookupFailed(logger, entry.Metadata.ClrType.Name, lookupFailure);
             return ToConflict(context, entry, null, exception, logger);
         }
 
@@ -97,7 +97,7 @@ internal static class ConcurrencyConflictTranslator
             if (!Equals(assumed, actual))
             {
                 var entityTypeName = entry.Metadata.ClrType.Name;
-                PersistenceContextLog.TenantIsolationViolationProven(logger, entityTypeName);
+                EfCoreLog.TenantIsolationViolationProven(logger, entityTypeName);
                 PersistenceMeter.TenantIsolationViolations.Add(1,
                     new KeyValuePair<string, object?>(PersistenceTagKeys.AggregateType, entityTypeName));
 
@@ -125,7 +125,7 @@ internal static class ConcurrencyConflictTranslator
         if (entry is not null && current is not null && ConcurrencyVersion.FindToken(entry.Metadata) is { } token)
             currentVersion = ConcurrencyVersion.TrySeal(context, entry, ConcurrencyVersion.ToVersion(current[token.Name]));
 
-        PersistenceLog.ConcurrencyConflictDetected(logger, entityTypeName);
+        EfCoreLog.ConcurrencyConflictDetected(logger, entityTypeName);
         PersistenceMeter.ConcurrencyConflicts.Add(1,
             new KeyValuePair<string, object?>(PersistenceTagKeys.AggregateType, entityTypeName));
 

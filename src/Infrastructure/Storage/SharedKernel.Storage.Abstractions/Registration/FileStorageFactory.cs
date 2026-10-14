@@ -59,9 +59,9 @@ internal sealed class FileStorageFactory : IFileStorageFactory
             (false, null) => entry.Store.Value,
             (true, { } tenantId) => entry.TenantStore.Value.ForTenant(tenantId),
             (true, null) => throw new InvalidOperationException(
-                $"The reference has no tenant, but storage store '{entry.Registration.Name}' is tenant-scoped."),
+                $"The reference has no tenant, but storage store '{entry.Registration.Name}' is tenant-scoped. Open a reference that carries its tenant."),
             (false, _) => throw new InvalidOperationException(
-                $"The reference has a tenant, but storage store '{entry.Registration.Name}' is shared by all tenants."),
+                $"The reference has a tenant, but storage store '{entry.Registration.Name}' is shared by all tenants. Open a reference without a tenant."),
         };
     }
 
@@ -79,11 +79,11 @@ internal sealed class FileStorageFactory : IFileStorageFactory
             1 => candidates[0],
             0 => throw new InvalidOperationException(
                 $"No {(tenantScoped ? "tenant-scoped" : "shared")} storage store is registered, so {serviceName} cannot be resolved. "
-                + "Register one with AddSharedKernelStorage().Add<Provider>(...)."
-                + (tenantScoped ? "AddTenantStore(name)." : "AddStore(name).")),
+                + "Register one with AddSharedKernelStorage().Add<Provider>(...)"
+                + (tenantScoped ? ".AddTenantStore('name')." : ".AddStore('name').")),
             _ => throw new InvalidOperationException(
                 $"{candidates.Length} {(tenantScoped ? "tenant-scoped" : "shared")} storage stores are registered "
-                + $"({string.Join(", ", candidates.Select(c => c.Registration.Name))}), so an unkeyed {serviceName} is ambiguous. "
+                + $"({string.Join(", ", candidates.Select(c => $"'{c.Registration.Name}'"))}), so an unkeyed {serviceName} is ambiguous. "
                 + $"Inject {keyedForm} or use IFileStorageFactory."),
         };
     }
@@ -97,7 +97,7 @@ internal sealed class FileStorageFactory : IFileStorageFactory
             : throw new InvalidOperationException(
                 _entries.Count == 0
                     ? $"No storage store named '{storeName}' is registered; no stores are registered at all."
-                    : $"No storage store named '{storeName}' is registered. Registered stores: {string.Join(", ", StoreNames)}.");
+                    : $"No storage store named '{storeName}' is registered. Registered stores: {string.Join(", ", StoreNames.Select(n => $"'{n}'"))}.");
     }
 
     private sealed class Entry
@@ -120,7 +120,8 @@ internal sealed class FileStorageFactory : IFileStorageFactory
         private static IFileStorage CreateStore(FileStoreRegistration registration, IServiceProvider services)
         {
             IFileStorage store = registration.Factory(services)
-                ?? throw new InvalidOperationException($"The factory of storage store '{registration.Name}' returned null.");
+                ?? throw new InvalidOperationException(
+                    $"The factory of storage store '{registration.Name}' returned null. Return the provider's store for that name.");
 
             if (!string.Equals(store.StoreName, registration.Name, StringComparison.Ordinal) || store.TenantId is not null)
             {

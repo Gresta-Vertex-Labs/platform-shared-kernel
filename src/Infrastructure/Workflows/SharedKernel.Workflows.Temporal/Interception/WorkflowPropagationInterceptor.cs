@@ -2,7 +2,7 @@ using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Workflows.Temporal.Constants;
-using SharedKernel.Workflows.Temporal.Logging;
+using SharedKernel.Workflows.Temporal.Diagnostics;
 using Temporalio.Api.Common.V1;
 using Temporalio.Client.Interceptors;
 using Temporalio.Converters;
@@ -113,7 +113,7 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
             var headers = Workflow.Info.Headers;
             if (headers is null || !headers.ContainsKey(WorkflowWellKnown.TenantHeaderKey))
             {
-                WorkflowLog.TenantHeaderMissingOnWorkflow(Workflow.Logger, Workflow.Info.WorkflowId);
+                WorkflowLog.TenantHeaderMissingOnWorkflow(Workflow.Logger, Workflow.Info.WorkflowType);
             }
 
             return base.ExecuteWorkflowAsync(input);

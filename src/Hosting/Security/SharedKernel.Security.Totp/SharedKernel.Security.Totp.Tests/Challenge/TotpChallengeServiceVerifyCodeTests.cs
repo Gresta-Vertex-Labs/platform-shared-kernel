@@ -1,3 +1,4 @@
+using SharedKernel.Security.Totp.Diagnostics;
 using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Totp;
 using SharedKernel.Security.Abstractions;
@@ -10,8 +11,8 @@ namespace SharedKernel.Security.Totp.Tests.Challenge;
 
 public sealed class TotpChallengeServiceVerifyCodeTests
 {
-    private const int ChallengeNotAcceptedEventId = 12400;
-    private const int StepUpRecordedEventId = 12401;
+    private const int ChallengeNotAcceptedEventId = TotpLoggingEventIds.ChallengeNotAccepted;
+    private const int StepUpRecordedEventId = TotpLoggingEventIds.StepUpRecorded;
 
     private readonly TotpTestHarness _harness = new();
     private readonly byte[] _secret = TotpTestHarness.NewSecret();

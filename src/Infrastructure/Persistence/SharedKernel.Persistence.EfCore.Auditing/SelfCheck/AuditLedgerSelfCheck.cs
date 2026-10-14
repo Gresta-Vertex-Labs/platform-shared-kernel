@@ -24,9 +24,12 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
     /// <summary>The tables only the sealer writes.</summary>
     private static readonly string[] SealerWrittenTables = [AuditLedgerSchema.LinksTable, AuditLedgerSchema.CheckpointsTable];
 
-    public async Task<IReadOnlyList<string>> RunAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>> RunAsync(CancellationToken cancellationToken) =>
+        [.. (await RunDetailedAsync(cancellationToken).ConfigureAwait(false)).Select(f => f.Text)];
+
+    public async Task<IReadOnlyList<SelfCheckFinding>> RunDetailedAsync(CancellationToken cancellationToken)
     {
-        var findings = new List<string>();
+        var findings = new List<SelfCheckFinding>();
         var separateSealer = sealer is { IsSeparate: true };
 
         var connection = await connectionFactory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -48,7 +51,7 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
         string label,
         bool rejectSealerInserts,
         bool checkTriggers,
-        List<string> findings,
+        List<SelfCheckFinding> findings,
         CancellationToken cancellationToken)
     {
         await using (var role = LedgerDb.CreateCommand(connection, null,
@@ -56,7 +59,7 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
         await using (var reader = await role.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
             if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && reader.GetBoolean(1))
-                findings.Add($"the {label} '{reader.GetString(0)}' is a superuser and can disable the ledger's triggers.");
+                findings.Add(new(AuditSelfCheckProblem.RoleIsSuperuser, $"the {label} '{reader.GetString(0)}' is a superuser and can disable the ledger triggers."));
         }
 
         foreach (var table in AuditLedgerSchema.Tables)
@@ -69,7 +72,7 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
         string label,
         bool rejectSealerInserts,
         bool checkTriggers,
-        List<string> findings,
+        List<SelfCheckFinding> findings,
         CancellationToken cancellationToken)
     {
         var allowDelete = table == AuditLedgerSchema.PayloadsTable;
@@ -93,23 +96,23 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (checkTriggers)
-                    findings.Add($"table '{table}' does not exist; apply migrationBuilder.CreateAuditLedgerTable().");
+                    findings.Add(new(AuditSelfCheckProblem.TableMissing, $"table '{table}' does not exist; apply migrationBuilder.CreateAuditLedgerTable()."));
                 return;
             }
 
             oid = reader.GetInt64(0);
             if (reader.GetBoolean(1))
-                findings.Add($"the {label} owns (or is a member of the owner of) '{table}' and can disable its triggers or drop it.");
+                findings.Add(new(AuditSelfCheckProblem.RoleOwnsTable, $"the {label} owns (or is a member of the owner of) '{table}' and can disable its triggers or drop it."));
             if (reader.GetBoolean(2))
-                findings.Add($"the {label} has UPDATE on '{table}'.");
+                findings.Add(new(AuditSelfCheckProblem.RoleHasUpdate, $"the {label} has UPDATE on '{table}'."));
             if (!allowDelete && reader.GetBoolean(3))
-                findings.Add($"the {label} has DELETE on '{table}'.");
+                findings.Add(new(AuditSelfCheckProblem.RoleHasDelete, $"the {label} has DELETE on '{table}'."));
             if (reader.GetBoolean(4))
-                findings.Add($"the {label} has TRUNCATE on '{table}'.");
+                findings.Add(new(AuditSelfCheckProblem.RoleHasTruncate, $"the {label} has TRUNCATE on '{table}'."));
             if (checkTriggers && reader.GetBoolean(5))
-                findings.Add($"row-level security is enabled on '{table}'; the ledger enforces tenant isolation itself and the sealer must see every tenant's rows, so ledger tables must not use RLS.");
+                findings.Add(new(AuditSelfCheckProblem.RowLevelSecurityEnabled, $"row-level security is enabled on '{table}'; the ledger enforces tenant isolation itself and the sealer must see every tenant's rows, so ledger tables must not use RLS."));
             if (rejectSealerInserts && SealerWrittenTables.Contains(table) && reader.GetBoolean(6))
-                findings.Add($"the {label} has INSERT on '{table}', although a separate sealer role writes it (Sealer:DataSourceName): revoke it, or the runtime role can forge seals.");
+                findings.Add(new(AuditSelfCheckProblem.RuntimeCanInsertSealedTable, $"the {label} has INSERT on '{table}', although a separate sealer role writes it (Sealer:DataSourceName): revoke it, or the runtime role can forge seals."));
         }
 
         if (!checkTriggers)
@@ -128,9 +131,9 @@ internal sealed class AuditLedgerSelfCheck(IDbConnectionFactory connectionFactor
         foreach (var trigger in AuditLedgerSchema.ExpectedTriggers[table])
         {
             if (!present.TryGetValue(trigger, out var enabled))
-                findings.Add($"trigger '{trigger}' on '{table}' is missing.");
+                findings.Add(new(AuditSelfCheckProblem.TriggerMissing, $"trigger '{trigger}' on '{table}' is missing."));
             else if (enabled != "A")
-                findings.Add($"trigger '{trigger}' on '{table}' is not ENABLE ALWAYS (tgenabled = '{enabled}').");
+                findings.Add(new(AuditSelfCheckProblem.TriggerNotAlways, $"trigger '{trigger}' on '{table}' is not ENABLE ALWAYS (tgenabled = '{enabled}')."));
         }
     }
 }
@@ -163,7 +166,7 @@ internal sealed class AuditLedgerSelfCheckHostedService(
         if (persistenceStartup is not null)
             await persistenceStartup.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var findings = await check.RunAsync(cancellationToken).ConfigureAwait(false);
+        var findings = await check.RunDetailedAsync(cancellationToken).ConfigureAwait(false);
         if (findings.Count == 0)
         {
             AuditingLog.SelfCheckPassed(logger);
@@ -171,16 +174,21 @@ internal sealed class AuditLedgerSelfCheckHostedService(
         }
 
         foreach (var finding in findings)
-            AuditingLog.SelfCheckFinding(logger, finding);
+            AuditingLog.SelfCheckFinding(logger, finding.Problem);
 
         if (mode == AuditSelfCheckMode.Fail)
         {
             AuditingLog.SelfCheckFailed(logger, findings.Count);
             throw new InvalidOperationException(
-                "The audit ledger self-check failed: " + string.Join(" ", findings) +
+                "The audit ledger self-check failed: " + string.Join(" ", findings.Select(f => f.Text)) +
                 " See the SharedKernel.Persistence.EfCore.Auditing README for the role and grant script.");
         }
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+/// <summary>One thing the audit ledger self-check found: a closed cause for the log and the readable text for the startup failure.</summary>
+/// <param name="Problem">The closed cause.</param>
+/// <param name="Text">The readable sentence; it names roles and tables, never a tenant or a value.</param>
+internal sealed record SelfCheckFinding(AuditSelfCheckProblem Problem, string Text);

@@ -14,7 +14,7 @@
 | `builder.AddMtlsForwardedHeaderCertificate(o => …)` + `MtlsForwardedHeaderMiddleware` | A certificate an ingress forwards becomes `HttpContext.Connection.ClientCertificate` |
 | A `TrustedNetworks` allow-list | Only the ingress can set the certificate header; anyone else's header is ignored, never decoded |
 | One validator for both paths | The mTLS authentication handler and the transport layer agree on who is trusted |
-| Accept/reject events with thumbprint and subject | An audit trail of certificate decisions, never raw certificate bytes |
+| Accept/reject events with the thumbprint | An audit trail of certificate decisions, never raw certificate bytes, a subject or a remote address |
 
 ## Install
 
@@ -78,13 +78,13 @@ Without `SharedKernel.Presentation.WebApi`, add `app.UseMiddleware<MtlsForwarded
   callback is synchronous while the validator is async, so the call blocks inside the TLS handshake.
 - **Forwarded-header path**, per request:
   1. With `TrustedNetworks` configured, a request whose remote IP is outside every network is passed on untouched: the
-     header is never decoded and no certificate is set (a rejection is logged, EventId 13001).
+     header is never decoded and no certificate is set (EventId 13302 is logged, with no parameters and no address).
   2. The header value is decoded as Base64 DER, or else as URL-encoded PEM (the formats nginx-ingress, Envoy and
      HAProxy use); an undecodable value is ignored.
   3. The validator decides. Accepted → `HttpContext.Connection.ClientCertificate` is set (disposed when the response
-     completes) and 13000 is logged; rejected → 13001 and no certificate.
+     completes) and 13300 is logged; rejected → 13301 and no certificate.
   The middleware never ends the request itself — authentication and authorization decide what a missing certificate means.
-- With `TrustedNetworks` empty, every remote address is trusted and a one-time startup warning (EventId 13003) fires.
+- With `TrustedNetworks` empty, every remote address is trusted and a one-time startup warning (EventId 13303) fires.
 - `HeaderName` is validated at host start; an empty value stops the host.
 
 ## Configuration
@@ -113,11 +113,14 @@ Set in code on `AddMtlsForwardedHeaderCertificate(o => …)` (`MtlsForwardedHead
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13000 | Information | Client certificate accepted (thumbprint, subject) |
-| 13001 | Warning | Client certificate rejected (thumbprint, subject, reason) |
-| 13003 | Warning | Forwarded-header path has no `TrustedNetworks` allow-list for header `{HeaderName}` |
+| 13300 | Debug | Accepted the client certificate with the thumbprint `'{Thumbprint}'` |
+| 13301 | Warning | Rejected the client certificate with the thumbprint `'{Thumbprint}'` (the validator said no) |
+| 13302 | Warning | Ignored a forwarded client certificate because its source is outside the configured trusted networks (no parameters) |
+| 13303 | Warning | No trusted networks are configured for the forwarded certificate header `'{HeaderName}'`, so any network path that reaches this host can forge it |
 
-Raw certificate bytes are never logged.
+Event ids before this release: 13000 → 13300, 13001 → 13301, 13008 → 13302, 13003 → 13303. The package owns the sub-block 13300-13399 of the ServiceDefaults EventId block (13000-13999); `SharedKernel.Security.Mtls` (the Security capability) logs in 12300-12399.
+
+Raw certificate bytes, the certificate subject, the remote IP address and a validator's free-text reason are never logged.
 
 ## Testing
 

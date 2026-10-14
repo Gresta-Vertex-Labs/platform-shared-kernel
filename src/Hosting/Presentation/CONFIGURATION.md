@@ -103,7 +103,7 @@ The example shows the defaults, except `Cors:AllowedOrigins` and `Problems:Unava
 | `AllowCredentials` | `bool` | `false` | Requires explicit origins (no empty list, no `*`); outside Development, no `http://` origin | Browsers may send cookies and HTTP authentication |
 | `PreflightMaxAge` | `TimeSpan` | `00:10:00` | Not negative | How long a browser caches a preflight response |
 
-The two `AllowCredentials` failures and the `null` origin are also logged at Critical (EventId 14004). When origins
+The two `AllowCredentials` failures and the `null` origin are also logged at Warning (EventId 14004). When origins
 are configured, a WebSocket request from an origin the policy does not allow is refused with 403
 `forbidden.origin_not_allowed`.
 
@@ -141,7 +141,7 @@ A `null` or empty value turns that header off. A header the endpoint set itself 
 | `UnavailableRetryAfter` | `TimeSpan?` | `null` | Not negative | `Retry-After` on a 503, in whole seconds rounded up; `null` sends none |
 | `PreconditionFailedErrorCodes` | `string[]` | `persistence.concurrency_conflict`, `storage.precondition_failed`, `storage.already_exists` | No empty entry | A `Conflict` with one of these codes, in a request carrying `If-Match` or `If-None-Match`, is answered 412 with its code; every other conflict stays 409. Codes compare ordinally; configured values are added to the defaults |
 
-The three default codes are owned by Persistence (`ConcurrencyVersion.ConflictErrorCode`) and Storage
+The three default codes are owned by Persistence (`PersistenceErrorCodes.Concurrency.Conflict`) and Storage
 (`StorageErrorCodes`); a Governance test pins the literals to those constants.
 
 ### Constants

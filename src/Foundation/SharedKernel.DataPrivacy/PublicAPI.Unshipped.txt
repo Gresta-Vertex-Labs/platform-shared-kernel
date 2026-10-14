@@ -2,7 +2,7 @@
 abstract SharedKernel.DataPrivacy.Redaction.MaskingRedactor.Mask(string! value) -> string!
 const SharedKernel.DataPrivacy.Classification.PrivacyTaxonomy.TaxonomyName = "SharedKernel.Privacy" -> string!
 const SharedKernel.DataPrivacy.DataSubjectRequests.DataPrivacyErrorCodes.RequestIdConflict = "data_privacy.request_id_conflict" -> string!
-const SharedKernel.DataPrivacy.DataSubjectRequests.DataPrivacyErrorCodes.TemporarilyUnavailable = "data_privacy.temporarily_unavailable" -> string!
+const SharedKernel.DataPrivacy.DataSubjectRequests.DataPrivacyErrorCodes.Unavailable = "data_privacy.unavailable" -> string!
 const SharedKernel.DataPrivacy.Masking.PiiMasking.RedactedSentinel = "[REDACTED]" -> string!
 const SharedKernel.DataPrivacy.Masking.Pseudonymizer.MinimumKeyLength = 32 -> int
 const SharedKernel.DataPrivacy.Masking.Pseudonymizer.TokenLength = 22 -> int

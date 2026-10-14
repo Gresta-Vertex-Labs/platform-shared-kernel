@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.ServiceDefaults.Logging;
+using SharedKernel.ServiceDefaults.Security.Mtls.Diagnostics;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.ServiceDefaults.Security;
@@ -61,9 +61,6 @@ public sealed class MtlsForwardedHeaderMiddleware(
     IOptions<MtlsForwardedHeaderOptions> options,
     ILogger<MtlsForwardedHeaderMiddleware> logger)
 {
-    /// <summary>Placeholder logged in place of a thumbprint/subject when a certificate was never decoded.</summary>
-    private const string NotDecodedPlaceholder = "(not decoded)";
-
     /// <summary>
     /// Reads, decodes, and validates the forwarded client certificate for the current request
     /// (setting it on <c>HttpContext.Connection.ClientCertificate</c> when validation succeeds),
@@ -87,11 +84,7 @@ public sealed class MtlsForwardedHeaderMiddleware(
         if (trustedNetworks.Count > 0
             && !IsTrustedRemoteAddress(context.Connection.RemoteIpAddress, trustedNetworks))
         {
-            MtlsLog.MtlsCertificateRejected(
-                logger,
-                NotDecodedPlaceholder,
-                NotDecodedPlaceholder,
-                $"remote IP '{context.Connection.RemoteIpAddress}' is not within the configured TrustedNetworks allowlist");
+            ServiceDefaultsSecurityMtlsLog.ForwardedCertificateRefused(logger);
 
             await next(context).ConfigureAwait(false);
             return;
@@ -114,15 +107,11 @@ public sealed class MtlsForwardedHeaderMiddleware(
                     certificate!.Dispose();
                     return Task.CompletedTask;
                 });
-                MtlsLog.MtlsCertificateAccepted(logger, certificate!.Thumbprint, certificate.Subject);
+                ServiceDefaultsSecurityMtlsLog.CertificateAccepted(logger, certificate!.Thumbprint);
             }
             else
             {
-                MtlsLog.MtlsCertificateRejected(
-                    logger,
-                    certificate!.Thumbprint,
-                    certificate.Subject,
-                    "rejected by IMtlsCertificateValidator");
+                ServiceDefaultsSecurityMtlsLog.CertificateRejected(logger, certificate!.Thumbprint);
                 certificate.Dispose();
             }
         }

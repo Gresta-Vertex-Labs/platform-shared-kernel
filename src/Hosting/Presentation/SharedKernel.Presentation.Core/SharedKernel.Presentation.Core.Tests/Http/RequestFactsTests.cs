@@ -38,6 +38,47 @@ public sealed class RequestFactsTests
         RequestFacts.GetCorrelationId(new DefaultHttpContext()).Should().BeNull();
     }
 
+    [Fact]
+    public void GetTraceId_IsTheCurrentActivitysW3CId_WhenThereIsOne()
+    {
+        using var source = new System.Diagnostics.ActivitySource("Test.RequestFacts." + Guid.NewGuid().ToString("N"));
+        using var listener = Listen(source);
+        using var activity = source.StartActivity("request");
+        var context = new DefaultHttpContext { TraceIdentifier = "kestrel-id" };
+
+        activity.Should().NotBeNull();
+        RequestFacts.GetTraceId(context).Should().Be(activity!.Id).And.StartWith("00-");
+        RequestFacts.GetTraceId(null).Should().Be(activity.Id);
+    }
+
+    [Fact]
+    public void GetTraceId_IsTheRequestsOwnIdentifier_WithoutAnActivity()
+    {
+        System.Diagnostics.Activity.Current = null;
+
+        RequestFacts.GetTraceId(new DefaultHttpContext { TraceIdentifier = "kestrel-id" }).Should().Be("kestrel-id");
+    }
+
+    [Fact]
+    public void GetTraceId_IsNull_WithNeitherAnActivityNorARequest()
+    {
+        System.Diagnostics.Activity.Current = null;
+
+        RequestFacts.GetTraceId(null).Should().BeNull();
+    }
+
+    private static System.Diagnostics.ActivityListener Listen(System.Diagnostics.ActivitySource source)
+    {
+        var listener = new System.Diagnostics.ActivityListener
+        {
+            ShouldListenTo = candidate => candidate == source,
+            Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) =>
+                System.Diagnostics.ActivitySamplingResult.AllDataAndRecorded,
+        };
+        System.Diagnostics.ActivitySource.AddActivityListener(listener);
+        return listener;
+    }
+
     [Theory]
     [InlineData("application/grpc", true)]
     [InlineData("application/grpc+proto", true)]

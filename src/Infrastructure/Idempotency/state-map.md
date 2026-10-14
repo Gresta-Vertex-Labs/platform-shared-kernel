@@ -18,7 +18,10 @@ Test double: `FakeIdempotencyStore` + `AddFakeIdempotencyStore(purposes)` in `sr
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | :---: |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -30,4 +33,6 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. (The domain needs no readiness probe of its own: Redis and database connectivity are covered by the `redis` probe and the persistence readiness checks.)
+None open.
+
+The domain needs no readiness probe of its own: Redis and database connectivity are covered by the `redis` probe and the persistence readiness checks.

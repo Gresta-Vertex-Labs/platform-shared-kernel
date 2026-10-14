@@ -84,12 +84,14 @@ public sealed class TenantOnboardingTests
 - **Workflow ids.** `{TenantScope}:{typeof(TWorkflow).Name}:{BusinessKey}` joined with
   `WorkflowWellKnown.IdSeparator`, or the result of the `IWorkflowIdFactory` passed to the constructor. A blank
   `BusinessKey` fails with `workflow.invalid_workflow_id`.
-- **Fail-closed tenancy.** `StartAsync` and `DescribeAsync` answer `TenantScope.Global` with
-  `workflow.tenant_scope_missing`; `GetHandle` throws `ArgumentException` for it.
+- **Fail-closed tenancy.** `StartAsync`, `GetHandle` and `DescribeAsync` answer `TenantScope.Global` with
+  `workflow.tenant_scope_missing`, a blank id with `workflow.invalid_workflow_id`, and (`GetHandle`, `DescribeAsync`) an id
+  whose tenant segment is not the caller's with `workflow.not_found`, exactly as the real dispatcher does. `GetHandle`
+  returns a `Result`.
 - **One running execution per id.** Starting an id that is still `Running` fails with `workflow.already_started`; an id
   whose execution has ended can be started again.
 - **Shared state.** Every handle for the same workflow id — from `StartAsync` or `GetHandle` — is a view over the same
-  execution. `GetHandle` never checks existence; operations on a missing execution return `workflow.not_found`.
+  execution. `GetHandle` never checks that the execution exists (only that the id is the caller's); operations on a missing execution return `workflow.not_found`.
 - **Results.** `GetResultAsync` returns the value from `CompleteWorkflow` or the error from `FailWorkflow` at once, and
   throws `InvalidOperationException` when neither was called. It never waits.
 - **Simplified:** `IdReusePolicy`, `IdConflictPolicy`, timeouts and retry policies are ignored; signals are accepted
@@ -124,7 +126,7 @@ Assert.Equal("r-1", report.Value.ReportId);
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Workflows;
 
-var handle = (InMemoryWorkflowHandle)dispatcher.GetHandle(workflowId, runId: null, TenantScope.For(Tenant));
+var handle = (InMemoryWorkflowHandle)dispatcher.GetHandle(workflowId, runId: null, TenantScope.For(Tenant)).Value;
 
 await new ApprovalService(dispatcher).ApproveAsync(workflowId, Tenant, CancellationToken.None);
 
@@ -157,7 +159,7 @@ Assert.Equal(WorkflowLifecycleStatus.Terminated, handle.Status);
 ### 5. Test the Temporal-outage path
 
 ```csharp
-dispatcher.SimulateFailure = true;   // StartAsync and DescribeAsync → workflow.service_unavailable
+dispatcher.SimulateFailure = true;   // StartAsync and DescribeAsync → workflow.service_unavailable (Unavailable)
 
 var result = await onboarding.StartAsync(Tenant, CancellationToken.None);
 
@@ -215,12 +217,12 @@ never started.
 
 | Code | Returned when |
 | --- | --- |
-| `workflow.tenant_scope_missing` | `TenantScope.Global` on `StartAsync` or `DescribeAsync` |
-| `workflow.invalid_workflow_id` | A blank `BusinessKey` |
+| `workflow.tenant_scope_missing` | `TenantScope.Global` on `StartAsync`, `GetHandle` or `DescribeAsync` |
+| `workflow.invalid_workflow_id` | A blank `BusinessKey`, or a blank id on `GetHandle` or `DescribeAsync` |
 | `workflow.already_started` | The composed id is still running |
-| `workflow.not_found` | An operation on an id with no execution |
+| `workflow.not_found` | An operation on an id with no execution, or `GetHandle`/`DescribeAsync` on another tenant's id |
 | `workflow.query_failed` | No handler configured for the query name |
-| `workflow.service_unavailable` | `SimulateFailure` is set |
+| `workflow.service_unavailable` (`ErrorType.Unavailable`) | `SimulateFailure` is set |
 
 ## Testing
 

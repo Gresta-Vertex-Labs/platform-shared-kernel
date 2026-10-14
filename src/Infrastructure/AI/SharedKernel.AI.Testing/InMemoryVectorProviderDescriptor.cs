@@ -85,7 +85,7 @@ public sealed class InMemoryVectorProviderDescriptor : IVectorProviderDescriptor
         if (query.Vector.Length > MaxVectorDimension)
         {
             return SharedKernel.Primitives.Results.Result.Failure(IntelligenceErrors.InvalidQuery(
-                $"Query vector dimension {query.Vector.Length} exceeds provider '{ProviderName}''s MaxVectorDimension ceiling of {MaxVectorDimension}."));
+                $"Query vector dimension {query.Vector.Length} must not exceed the ceiling of {MaxVectorDimension}."));
         }
 
         var depth = FilterDepth(query.Filter);

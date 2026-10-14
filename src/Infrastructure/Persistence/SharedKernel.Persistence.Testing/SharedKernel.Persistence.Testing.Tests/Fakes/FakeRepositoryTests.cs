@@ -57,11 +57,15 @@ public sealed class FakeRepositoryTests
     }
 
     [Fact]
-    public async Task UpdateAsync_MissingKey_ThrowsKeyNotFoundException()
+    public async Task UpdateAsync_MissingKey_ThrowsTheConcurrencyConflictOfARealSave()
     {
         var repo = CreateRepository();
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(() => repo.UpdateAsync(NewOrder()));
+        var thrown = await Assert.ThrowsAsync<SharedKernel.Core.Exceptions.ConflictException>(() => repo.UpdateAsync(NewOrder()));
+
+        Assert.Equal("persistence.concurrency_conflict", thrown.Error.Code);
+        Assert.Equal(SharedKernel.Primitives.Errors.ErrorType.Conflict, thrown.Error.Type);
+        Assert.Equal("'TestSoftDeletableOrder' was changed or deleted by someone else. Reload it and retry.", thrown.Error.Message);
     }
 
     // ----- DeleteAsync -----
@@ -118,7 +122,7 @@ public sealed class FakeRepositoryTests
         var updatedA = new TestSoftDeletableOrder(orderA.Id, orderA.Customer, 42m, orderA.Rank, new FakeClock());
         var updateForMissing = new TestSoftDeletableOrder(missingOrderId, "Missing", 1m, 0, new FakeClock());
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(
+        await Assert.ThrowsAsync<SharedKernel.Core.Exceptions.ConflictException>(
             () => repo.UpdateRangeAsync([updatedA, updateForMissing]));
 
         var reloaded = await repo.GetByIdAsync(orderA.Id);

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Application.Pipeline.Diagnostics;
 using SharedKernel.Application.Pipeline.Shared;
 
 namespace SharedKernel.Application.Pipeline.Logging;
@@ -14,17 +15,19 @@ namespace SharedKernel.Application.Pipeline.Logging;
 /// <typeparam name="TResponse">The response type returned by the pipeline.</typeparam>
 /// <remarks>
 /// <para>
-/// Logs <see cref="LogLevel.Debug"/> at start ("Handling {RequestType}"), timed via
+/// The category is this behavior (<c>ILogger&lt;LoggingBehavior&lt;,&gt;&gt;</c>), never the request type; the request
+/// type is the <c>{RequestType}</c> placeholder. Logs <see cref="LogLevel.Debug"/> at start, timed via
 /// <see cref="Stopwatch.GetTimestamp"/>/<see cref="Stopwatch.GetElapsedTime(long)"/> (no
 /// <see cref="Stopwatch"/> allocation).
 /// </para>
 /// <para>
 /// On completion:
 /// <list type="bullet">
-///   <item><description>Success within <see cref="ApplicationLoggingOptions.SlowRequestThreshold"/> — <see cref="LogLevel.Information"/>.</description></item>
+///   <item><description>Success within <see cref="ApplicationLoggingOptions.SlowRequestThreshold"/> — <see cref="LogLevel.Debug"/>.</description></item>
 ///   <item><description>Success over the threshold — <see cref="LogLevel.Warning"/>, naming the threshold that was exceeded.</description></item>
 ///   <item><description>A <c>Result</c>/<c>Result&lt;T&gt;</c> failure — <see cref="LogLevel.Warning"/>, naming the error's type and code.</description></item>
-///   <item><description>A thrown exception — <see cref="LogLevel.Error"/> with the exception, then rethrown unchanged; never swallowed.</description></item>
+///   <item><description>A cancellation (an <see cref="OperationCanceledException"/>) — <see cref="LogLevel.Debug"/>, then rethrown unchanged.</description></item>
+///   <item><description>Any other thrown exception — <see cref="LogLevel.Error"/> with the exception, then rethrown unchanged; never swallowed.</description></item>
 /// </list>
 /// Classification is delegated to <see cref="ResponseOutcome"/>, the same helper
 /// <see cref="Metrics.MetricsBehavior{TRequest,TResponse}"/> uses, so the two behaviors' taxonomy
@@ -32,8 +35,8 @@ namespace SharedKernel.Application.Pipeline.Logging;
 /// <see cref="ILoggableRequest{TResponse}"/> for the opt-in mechanism.
 /// </para>
 /// </remarks>
-internal sealed partial class LoggingBehavior<TRequest, TResponse>(
-    ILogger<TRequest> logger,
+internal sealed class LoggingBehavior<TRequest, TResponse>(
+    ILogger<LoggingBehavior<TRequest, TResponse>> logger,
     IOptions<ApplicationLoggingOptions> options)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
@@ -52,7 +55,7 @@ internal sealed partial class LoggingBehavior<TRequest, TResponse>(
 
         using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
         {
-            LogHandling(logger, requestType);
+            PipelineLog.Handling(logger, requestType);
         }
 
         try
@@ -66,19 +69,30 @@ internal sealed partial class LoggingBehavior<TRequest, TResponse>(
                 var error = ResponseOutcome.TryGetError(response);
                 if (error is not null)
                 {
-                    LogHandledFailure(logger, requestType, error.Type.ToString(), error.Code, elapsed.TotalMilliseconds);
+                    PipelineLog.HandledFailure(logger, requestType, error.Type.ToString(), error.Code, elapsed.TotalMilliseconds);
                 }
                 else
                 {
                     var threshold = options.Value.SlowRequestThreshold;
                     if (elapsed > threshold)
-                        LogHandledSuccessSlow(logger, requestType, elapsed.TotalMilliseconds, threshold.TotalMilliseconds);
+                        PipelineLog.HandledSlow(logger, requestType, elapsed.TotalMilliseconds, threshold.TotalMilliseconds);
                     else
-                        LogHandledSuccess(logger, requestType, elapsed.TotalMilliseconds);
+                        PipelineLog.HandledSuccess(logger, requestType, elapsed.TotalMilliseconds);
                 }
             }
 
             return response;
+        }
+        catch (OperationCanceledException)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
+
+            using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
+            {
+                PipelineLog.HandlingCanceled(logger, requestType, elapsed.TotalMilliseconds);
+            }
+
+            throw;
         }
         catch (Exception ex)
         {
@@ -86,45 +100,10 @@ internal sealed partial class LoggingBehavior<TRequest, TResponse>(
 
             using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
             {
-                LogHandlingFailed(logger, requestType, elapsed.TotalMilliseconds, ex);
+                PipelineLog.HandlingThrew(logger, requestType, elapsed.TotalMilliseconds, ex);
             }
 
             throw;
         }
     }
-
-    /// <summary>Entry log (Debug) — emitted once per request before <c>next()</c> runs.</summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogHandling,
-        Level = LogLevel.Debug,
-        Message = "Handling {RequestType}")]
-    private static partial void LogHandling(ILogger logger, string requestType);
-
-    /// <summary>Completion log, success path within threshold (Information).</summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogHandledSuccess,
-        Level = LogLevel.Information,
-        Message = "Handled {RequestType} in {ElapsedMilliseconds}ms")]
-    private static partial void LogHandledSuccess(ILogger logger, string requestType, double elapsedMilliseconds);
-
-    /// <summary>Completion log, success path over the configured slow-request threshold (Warning).</summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogHandledSuccessSlow,
-        Level = LogLevel.Warning,
-        Message = "Handled {RequestType} in {ElapsedMilliseconds}ms, over the {ThresholdMilliseconds}ms threshold")]
-    private static partial void LogHandledSuccessSlow(ILogger logger, string requestType, double elapsedMilliseconds, double thresholdMilliseconds);
-
-    /// <summary>Completion log, failure path — <c>next()</c> returned a <c>Result</c>/<c>Result&lt;T&gt;</c> failure (Warning).</summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogHandledFailure,
-        Level = LogLevel.Warning,
-        Message = "Handled {RequestType} with failure {ErrorType} {ErrorCode} in {ElapsedMilliseconds}ms")]
-    private static partial void LogHandledFailure(ILogger logger, string requestType, string errorType, string errorCode, double elapsedMilliseconds);
-
-    /// <summary>Fault log (Error) — <c>next()</c> threw; the exception is rethrown unchanged after this log call.</summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogHandlingFailed,
-        Level = LogLevel.Error,
-        Message = "Handling {RequestType} failed after {ElapsedMilliseconds}ms")]
-    private static partial void LogHandlingFailed(ILogger logger, string requestType, double elapsedMilliseconds, Exception exception);
 }

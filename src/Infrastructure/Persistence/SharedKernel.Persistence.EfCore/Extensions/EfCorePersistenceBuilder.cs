@@ -299,7 +299,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
             var startup = new MigrationAndSeedHostedService<TContext>.StartupOptions(_migrateOnStartup, _startupLockTimeout);
             var seedSteps = _seedSteps.ToArray();
             services.AddHostedService(sp => new MigrationAndSeedHostedService<TContext>(
-                sp, startup, seedSteps, sp.GetService<ILogger<MigrationAndSeedHostedService<TContext>>>(), startupSignal));
+                sp, startup, seedSteps, sp.GetRequiredService<ILogger<MigrationAndSeedHostedService<TContext>>>(), startupSignal));
         }
 
         // Startup validation: builds and validates the model, warns when domain events have no dispatcher.
@@ -329,6 +329,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
         if (_serviceName is { } serviceName)
             serviceOptions.Configure(o => o.ServiceName = serviceName);
 
+        // Every logger of the registration is a required dependency; AddLogging is idempotent and a host that configured logging keeps its providers.
+        services.AddLogging();
         services.TryAddSingleton<IClock, SystemClock>();
         services.AddSharedKernelCrossTenantScope();
 

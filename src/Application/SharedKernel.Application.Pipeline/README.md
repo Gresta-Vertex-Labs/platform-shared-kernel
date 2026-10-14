@@ -110,6 +110,9 @@ Five stages, always in this order, regardless of the order you called the `With�
 | 10b | Command | inner auditing half (`Succeeded`, queued on `OnBeforeCommit`) | commands implementing `IAuditableRequest<T>` | `WithAuditing()` |
 | 11 | Command | *(yours, or cache invalidation)* | commands | `WithBehavior(…, PipelineStage.Command)` / `WithCaching()` |
 
+A streaming query (`IStreamQuery<T>`) has its own, shorter chain: stream observability (span, metrics, log), outermost
+so a denial is observed too, then the `[RequirePermission]` check, then the handler.
+
 The behavior classes are internal: the public surface is the registration call, its builder, the options and
 `RequestPipeline<,>`.
 
@@ -140,16 +143,19 @@ They compose: a refund command can be all four at once. Caching markers live in 
 
 #### `TracingBehavior`
 
-Starts an `Activity` named after the request type (`PlaceOrderCommand`), tagged `request.type` (full name)
-and `request.kind` (`command`/`query`/`request`). On a failed `Result` it sets the span status to `Error`
-with `error.type` and `error.code`; on an exception it sets `Error`, records the exception as a span event,
-and rethrows. No listener registered means no allocation.
+Starts the span `application send` (constant name, low cardinality), tagged `application.request_type` (full name),
+`application.request_kind` (`command`/`query`/`request`) and `outcome` (`success`, `failure`, `exception`,
+`canceled`). Failures go through the shared recorder: a failed `Result` sets status `Error` (the error code) with
+`error.type`/`error.code`; an exception sets `Error` described by its **full name** (never its message), adds the
+exception event and rethrows; a cancellation is not an error. No listener registered means no allocation.
 
 #### `LoggingBehavior`
 
-`Debug` on entry, then one completion line: `Information` on success, `Warning` when the elapsed time crosses
-`SlowRequestThreshold` (500 ms by default), `Warning` with the error type and code on a failed `Result`, and
-`Error` with the exception on a throw. Payloads are never logged unless the request opts in by implementing
+`Debug` on entry, then one completion line: `Debug` on success, `Warning` when the elapsed time crosses
+`SlowRequestThreshold` (500 ms by default), `Warning` with the error type and code on a failed `Result`, `Debug`
+on a cancellation and `Error` with the exception on any other throw. The logger category is the behavior
+(`SharedKernel.Application.Pipeline.Logging.LoggingBehavior`), never the request type: filter by that category, or
+by the `{RequestType}` placeholder in the message. Payloads are never logged unless the request opts in by implementing
 `ILoggableRequest<TResponse>`, which supplies exactly the fields it considers safe:
 
 ```csharp
@@ -167,9 +173,9 @@ public sealed record PlaceOrderCommand(string Customer, string CardNumber, decim
 #### `MetricsBehavior`
 
 Records one histogram measurement per request — `sharedkernel.application.request.duration`, **in seconds**,
-from an `IMeterFactory` meter named `SharedKernel.Application`. Tags: `request.type`, `request.kind`,
-`outcome` (`success`/`failure`/`exception`), and `error.type` when not successful. Recorded in a `finally`,
-so a throw is measured too.
+from a versioned `IMeterFactory` meter named `SharedKernel.Application`. Tags: `application.request_type`,
+`application.request_kind`, `outcome` and, for a failure or an exception (never a cancellation), `error.type` (the
+`ErrorType` name or exception full name, the text the span carries). Recorded in a `finally`, so a throw is measured.
 
 #### Authorization
 
@@ -217,6 +223,20 @@ before the handler runs, and settles it afterwards:
 | `InProgress` | `Error.Conflict(ErrorCodes.Idempotency.InProgress)` (`idempotency.in_progress`) |
 | `FingerprintMismatch` | `Error.Conflict(ErrorCodes.Idempotency.KeyReused)` (`idempotency.key_reused`) |
 
+**The store call is the fault boundary.** The package cannot reference Redis or PostgreSQL to classify their
+exceptions, and `IIdempotencyStore` documents that an unreachable store throws, so:
+
+| The store… | The behavior |
+| --- | --- |
+| throws from `TryBeginAsync` | Fails closed: `Error.Unavailable(ErrorCodes.Idempotency.StoreUnavailable)` (`idempotency.store_unavailable`, 503) and the handler does not run. The exception is logged (5121) and added to the request span; no exception text reaches the caller |
+| throws a `SharedKernelException` from `TryBeginAsync` | Returns that exception's own `Error`, unchanged |
+| throws because the caller cancelled | The cancellation propagates |
+| throws from `CompleteAsync` | Logs it (5122) and returns the handler's response; the reservation expires on its lease |
+| throws from `ReleaseAsync` | Logs it (5123) and keeps the handler's own outcome or exception; the reservation expires on its lease |
+
+A defect inside a store reads as Unavailable too (the exception is on the log and the span). A fault inside the
+handler is never caught here.
+
 An empty key is `Error.Validation(ErrorCodes.Idempotency.KeyRequired)` (`idempotency.key_required`), the code
 `SharedKernel.Presentation.WebApi` answers a missing `Idempotency-Key` header with — both take it from `SharedKernel.Primitives`'
 `ErrorCodes.Idempotency`.
@@ -259,6 +279,10 @@ exception rolls back and propagates.
   `TransactionRolledBackException`.
 - **An ambiguous commit is not retried.** `CommitOutcomeUnknownException` means the commit may or may not have
   happened — re-read (or rely on the idempotency key) before repeating.
+- **It is traced.** The outermost transaction and a joined one each get an `application transaction` span tagged
+  `application.transaction_joined` and `application.attempts` (how often the unit of work ran the delegate). A
+  rollback caused by a failed `Result` is logged at Warning (5160), one caused by an exception at Error (5161), and a
+  replay at Warning (5162); a joined command leaves the rollback log to the command that owns the transaction.
 
 #### `AuditingBehavior`
 
@@ -296,6 +320,7 @@ correlation are never in `AuditEntry`: the writer resolves them from `IRequestCo
 | denied | `Error.Unauthorized` (401) or `Error.Forbidden` (403) | no | no | released |
 | with a failed `Result` from the handler | the failure, unchanged | no | written | released |
 | with a handler exception | the exception, rethrown | no | written | released |
+| because the idempotency store is unreachable | `Error.Unavailable` (`idempotency.store_unavailable`, 503); the handler never ran | no | no | not reserved |
 | successfully | the value | yes | written | completed, then `OnCompleted` callbacks |
 
 **Only a successful outcome persists anything** — except the audit trail, which records the attempt either way.
@@ -388,8 +413,12 @@ are public so a mediator adapter (and tests) can resolve them; the behaviors are
 | `idempotency.key_required` | Validation | An `IIdempotentRequest` with an empty key |
 | `idempotency.in_progress` | Conflict | The same key is being handled right now |
 | `idempotency.key_reused` | Conflict | The same key arrived with a different fingerprint |
+| `idempotency.store_unavailable` | Unavailable | The idempotency store threw while reserving the key (503); a classified provider exception keeps its own error |
 
 All come from `ErrorCodes` in `SharedKernel.Primitives`.
+
+Application declares no error codes of its own. A configuration error throws `InvalidOperationException` with a sentence
+naming the remedy; an undefined idempotency reservation status throws `UnreachableException` and never runs the handler.
 
 ### Seams
 
@@ -408,26 +437,50 @@ keeps this package from referencing persistence, security or a cache.
 
 | Signal | Name | Detail |
 | --- | --- | --- |
-| Activity source | `SharedKernel.Application` | Span name = request type short name, kind Internal |
-| Span tags | | `request.type`, `request.kind`, plus `error.type`/`error.code` on failure |
-| Meter | `SharedKernel.Application` | via `IMeterFactory` |
-| Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `request.type`, `request.kind`, `outcome`, `error.type` |
+| Activity source | `SharedKernel.Application` (`ApplicationDiagnostics.ActivitySourceName`) | Request span `application send`, kind Internal |
+| Span tags | | `application.request_type`, `application.request_kind`, `outcome`, plus `error.type`/`error.code` on failure |
+| Meter | `SharedKernel.Application` (`ApplicationDiagnostics.MeterName`) | via `IMeterFactory`, versioned |
+| Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `application.request_type`, `application.request_kind` (`command`, `query`, `request` or `stream`), `outcome`, `error.type` |
+| Counter | `sharedkernel.application.stream.items` | `{item}`; items a streaming query yielded, including those before a fault; tags `application.request_type`, `outcome` |
+| Span | `application stream` | One per enumerated streaming query, kind Internal, tags `application.request_type`, `application.request_kind` = `stream`, `outcome` |
+| Span | `application dispatch_events` | One per non-empty domain-event dispatch, tag `application.event_count`, `outcome` |
+| Span | `application handle_event` | One child per event type that has a handler, tag `application.event_type` (and `application.handler_type` when a handler fails), `outcome` |
+| Span | `application transaction` | The transaction around a command, tags `application.transaction_joined`, `application.attempts`, `outcome` |
 
-Wire the meter and activity source into a host with `SharedKernel.ServiceDefaults`' `WithApplicationTelemetry()`,
-which also registers the seconds-based bucket boundaries this histogram needs.
+A stream's span, timer and log start at the first read and end once; a stream never read records nothing. Ran to the
+end is `success`; a cancellation or an early dispose is `canceled` (status unset, no error log); any other exception is
+`exception` and is rethrown unchanged. A stream has no slow-request warning, because its consumer sets its pace.
+
+`AddServiceDefaults` subscribes to every `SharedKernel.*` source and meter by wildcard (and registers this histogram's
+second-scale buckets), so a service registers nothing; to subscribe by name use `ApplicationDiagnostics.ActivitySourceName` and `.MeterName`.
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
 | 5100 | Debug | A request enters the pipeline |
-| 5101 | Information | A request completed successfully |
+| 5101 | Debug | A request completed successfully |
 | 5102 | Warning | A successful request crossed `SlowRequestThreshold` |
 | 5103 | Warning | A request returned a failed `Result` (carries error type and code) |
 | 5104 | Error | A request threw |
+| 5105 | Debug | A request was canceled by its caller |
 | 5110 | Error | A post-commit `OnCompleted` callback threw |
 | 5120 | Warning | `CompleteAsync` reported the idempotency reservation was lost |
+| 5121 | Error (Warning for a classified exception) | The idempotency store threw while reserving the key; the request was not handled |
+| 5122 | Error | The idempotency store threw while completing the reservation; the response is returned |
+| 5123 | Warning | The idempotency store threw while releasing the reservation |
 | 5130 | Error | The audit write failed while handling a handler exception |
+| 5140 | Debug | A stream ran to the end (item count, elapsed time) |
+| 5141 | Debug | A stream was canceled or disposed before the end |
+| 5142 | Warning | A stream failed with a classified exception (error type and code) |
+| 5143 | Error | A stream failed with an unexpected exception |
+| 5150 | Error (Warning for a classified exception) | A domain-event handler threw (event type and handler type, never the payload) |
+| 5160 | Warning | A transaction was rolled back because the command returned a failed `Result` |
+| 5161 | Error | A transaction was rolled back because the command threw |
+| 5162 | Warning | The unit of work ran the transaction delegate more than once |
+
+Every event is a one-sentence template, and a log on a caught-exception path passes the exception last. The category is
+the behavior that logs, never the request type. No key, tenant, actor or exception message is a placeholder.
 
 ## Testing
 

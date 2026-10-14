@@ -11,7 +11,8 @@ namespace SharedKernel.Communication.Grpc.Internal;
 /// <remarks>
 /// Kept by hand in step with the forward map, since no package may hold both directions (<c>11.Communication</c> never
 /// references <c>14.Presentation</c>). Codes: <c>grpc.{status}</c>, the names <c>14.Presentation</c>'s
-/// <c>GrpcErrorCodes.ForStatus</c> gives a status that carries no code of its own.
+/// <c>GrpcErrorCodes.ForStatus</c> gives a status that carries no code of its own, declared in
+/// <see cref="CommunicationErrorCodes.GrpcStatus"/>.
 /// </remarks>
 internal static class GrpcStatusErrorTypeMap
 {
@@ -30,36 +31,23 @@ internal static class GrpcStatusErrorTypeMap
 
     public static string CodeFor(StatusCode statusCode) => statusCode switch
     {
-        StatusCode.OK => "grpc.ok",
-        StatusCode.Cancelled => "grpc.cancelled",
-        StatusCode.Unknown => "grpc.unknown",
-        StatusCode.InvalidArgument => "grpc.invalid_argument",
-        StatusCode.DeadlineExceeded => "grpc.deadline_exceeded",
-        StatusCode.NotFound => "grpc.not_found",
-        StatusCode.AlreadyExists => "grpc.already_exists",
-        StatusCode.PermissionDenied => "grpc.permission_denied",
-        StatusCode.ResourceExhausted => "grpc.resource_exhausted",
-        StatusCode.FailedPrecondition => "grpc.failed_precondition",
-        StatusCode.Aborted => "grpc.aborted",
-        StatusCode.OutOfRange => "grpc.out_of_range",
-        StatusCode.Unimplemented => "grpc.unimplemented",
-        StatusCode.Internal => "grpc.internal",
-        StatusCode.Unavailable => "grpc.unavailable",
-        StatusCode.DataLoss => "grpc.data_loss",
-        StatusCode.Unauthenticated => "grpc.unauthenticated",
-        _ => "grpc." + ((int)statusCode).ToString(CultureInfo.InvariantCulture),
-    };
-
-    public static Error Create(ErrorType type, string code, string message) => type switch
-    {
-        ErrorType.Validation => Error.Validation(code, message),
-        ErrorType.Unauthorized => Error.Unauthorized(code, message),
-        ErrorType.Forbidden => Error.Forbidden(code, message),
-        ErrorType.NotFound => Error.NotFound(code, message),
-        ErrorType.Conflict => Error.Conflict(code, message),
-        ErrorType.BusinessRule => Error.BusinessRule(code, message),
-        ErrorType.Unavailable => Error.Unavailable(code, message),
-        ErrorType.Timeout => Error.Timeout(code, message),
-        _ => Error.Unexpected(code, message),
+        StatusCode.OK => CommunicationErrorCodes.GrpcStatus.Ok,
+        StatusCode.Cancelled => CommunicationErrorCodes.GrpcStatus.Cancelled,
+        StatusCode.Unknown => CommunicationErrorCodes.GrpcStatus.Unknown,
+        StatusCode.InvalidArgument => CommunicationErrorCodes.GrpcStatus.InvalidArgument,
+        StatusCode.DeadlineExceeded => CommunicationErrorCodes.GrpcStatus.DeadlineExceeded,
+        StatusCode.NotFound => CommunicationErrorCodes.GrpcStatus.NotFound,
+        StatusCode.AlreadyExists => CommunicationErrorCodes.GrpcStatus.AlreadyExists,
+        StatusCode.PermissionDenied => CommunicationErrorCodes.GrpcStatus.PermissionDenied,
+        StatusCode.ResourceExhausted => CommunicationErrorCodes.GrpcStatus.ResourceExhausted,
+        StatusCode.FailedPrecondition => CommunicationErrorCodes.GrpcStatus.FailedPrecondition,
+        StatusCode.Aborted => CommunicationErrorCodes.GrpcStatus.Aborted,
+        StatusCode.OutOfRange => CommunicationErrorCodes.GrpcStatus.OutOfRange,
+        StatusCode.Unimplemented => CommunicationErrorCodes.GrpcStatus.Unimplemented,
+        StatusCode.Internal => CommunicationErrorCodes.GrpcStatus.Internal,
+        StatusCode.Unavailable => CommunicationErrorCodes.GrpcStatus.Unavailable,
+        StatusCode.DataLoss => CommunicationErrorCodes.GrpcStatus.DataLoss,
+        StatusCode.Unauthenticated => CommunicationErrorCodes.GrpcStatus.Unauthenticated,
+        _ => CommunicationErrorCodes.GrpcStatus.NumberPrefix + ((int)statusCode).ToString(CultureInfo.InvariantCulture),
     };
 }

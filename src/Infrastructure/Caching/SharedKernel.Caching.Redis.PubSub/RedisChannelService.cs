@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Caching.Redis.PubSub.Diagnostics;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.PubSub;
@@ -53,7 +54,7 @@ internal sealed class RedisChannelService(IConnectionMultiplexer multiplexer, IL
                 }
                 catch (JsonException ex)
                 {
-                    RedisChannelSubscription.Log.MessageNotDeserialized(logger, channel, typeof(T).Name, ex);
+                    PubSubLog.MessageNotDeserialized(logger, channel, typeof(T).Name, ex);
                     return ValueTask.CompletedTask;
                 }
 

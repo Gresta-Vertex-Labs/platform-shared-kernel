@@ -73,6 +73,9 @@
          this package from SharedKernel.Presentation.Core (P-579). -->
     <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR" />
+    <!-- GraphQL answers with the problem defaults, field-error grouping and exception classification of this package. -->
+    <InternalsVisibleTo Include="SharedKernel.Presentation.GraphQL" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.GraphQL.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.WebApi.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR.Tests" />

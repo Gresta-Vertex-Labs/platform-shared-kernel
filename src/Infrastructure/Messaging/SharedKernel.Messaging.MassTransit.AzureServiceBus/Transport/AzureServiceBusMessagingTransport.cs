@@ -120,10 +120,10 @@ internal sealed class AzureServiceBusMessagingTransport : MessagingTransport
 
         if (hasConnectionString && hasNamespace)
             throw new InvalidOperationException(
-                "AzureServiceBusOptions: ConnectionString and FullyQualifiedNamespace are mutually exclusive. Set exactly one.");
+                "AzureServiceBusOptions.ConnectionString and AzureServiceBusOptions.FullyQualifiedNamespace are mutually exclusive, so set exactly one.");
 
         if (!hasConnectionString && !hasNamespace)
             throw new InvalidOperationException(
-                "AzureServiceBusOptions: Either ConnectionString or FullyQualifiedNamespace must be set.");
+                "Either AzureServiceBusOptions.ConnectionString or AzureServiceBusOptions.FullyQualifiedNamespace must be set.");
     }
 }

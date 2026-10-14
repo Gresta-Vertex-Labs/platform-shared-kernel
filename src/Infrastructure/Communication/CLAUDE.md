@@ -27,8 +27,10 @@ Overloads, options and defaults: each package's `README.md`.
   the protocol options below).
 - Endpoints live in Microsoft.Extensions.ServiceDiscovery's own `Services:{service}:{endpoint}` section (the shape
   Aspire emits) — never under `SharedKernel:`.
-- `IAccessTokenProvider` / `AccessToken` / `AccessTokenUnavailableException`; `CommunicationErrorCodes`
-  (`communication.unreachable`, `.timeout`, `.circuit_open`, `.access_token_unavailable`, `.empty_body`, `.invalid_body`).
+- `IAccessTokenProvider` / `AccessToken` / `AccessTokenUnavailableException` (a `SharedKernelException`, `Unavailable`); `CommunicationErrorCodes`
+  (`communication.unavailable`, `.timeout`, `.circuit_open`, `.access_token_unavailable`, `.empty_body`, `.invalid_body`,
+  `communication.grpc.invalid_money`; the protocol-mirror family `ForHttpStatus(int)` for `http.{status}` and the nested
+  `GrpcStatus` constants for the 17 `grpc.{status}` names).
 - **Rest** — `.AddRestClient<TClient, TImpl>("name")` → `IRestClientBuilder` (`UseHedging()`,
   `UseAccessTokenProvider<T>()`); `RestClientOptions`. `HttpClientResultExtensions` (`GetResultAsync`,
   `PostResultAsync`, …) and `HttpResponseMessageResultExtensions` (`ToResultAsync`, `ReadResultAsync<T>`) → `Result<T>`.
@@ -49,14 +51,19 @@ Overloads, options and defaults: each package's `README.md`.
 10. **Options are read per call** through `IOptionsMonitor<T>.Get(name)`; the only registration-time reads are the discovery mode and code-level switches (`UseHedging()`, `UseAccessTokenProvider<T>()`).
 11. **Switches must switch**: `MaxRetryAttempts = 0` keeps the strategy with `ShouldHandle = false`; `CircuitBreaker:Enabled = false` disables the breaker (and raises its sampling window to the validated floor). An enabled breaker with a too-short window is a startup validation error.
 12. **Resilience is mapped, never hand-built** (`RestResilience`). `HttpClient.Timeout` is infinite; the pipeline owns every timeout. Do not wrap the hedging `ActionGenerator` (the standard handler replaces it).
-13. **Results, not exceptions**: `HttpFailure.TryMap` maps `AccessTokenUnavailableException` → its error, `BrokenCircuitException` → `CircuitOpen`, timeout/non-caller cancellation → `Timeout`, `HttpRequestException` → `Unreachable`; only the caller's own cancellation and unrelated exceptions pass through.
-14. **ProblemDetails → `Error`**: `errorCode` → `Code`, else `http.{status}` — never `title` or `type`. `detail` → `Message`. Status → `ErrorType` via `HttpStatusErrorTypeMap` (hand-kept reverse of `14.Presentation`'s map; never reference `14.Presentation`). Only 400/422 rebuild `errors`/`errorCodes` into `Error.Validation`. `ProblemDetailsDto` binds only `detail`, `errorCode`, `errors`, `errorCodes`.
+13. **Results, not exceptions**: `HttpFailure.TryMap` maps `AccessTokenUnavailableException` → its error (first arm, by intent), `BrokenCircuitException` → `CircuitOpen`, timeout/non-caller cancellation → `Timeout`, `HttpRequestException` → `Unavailable`; only the caller's own cancellation and unrelated exceptions pass through.
+14. **ProblemDetails → `Error`**: `errorCode` → `Code`, else `CommunicationErrorCodes.ForHttpStatus` (`http.{status}`) — never `title` or `type`. `detail` → `Message`. Status → `ErrorType` via `HttpStatusErrorTypeMap` (hand-kept reverse of `14.Presentation`'s map; never reference `14.Presentation`). Only 400/422 rebuild `errors`/`errorCodes` into `Error.Validation`. `ProblemDetailsDto` binds only `detail`, `errorCode`, `errors`, `errorCodes`.
 15. **gRPC**: deadline = `IClock.UtcNow + Deadline` only when the call has none; retries are the channel `ServiceConfig` policy (`MaxAttempts` 1–5, `Unavailable` by default), never `DeadlineExceeded`; `Address` must be `http`/`https`.
-16. **Money**: round to nine places, then split units/nanos; refuse invalid wire messages (`money.proto.invalid`).
+16. **Money**: round to nine places, then split units/nanos; refuse invalid wire messages (`communication.grpc.invalid_money`, a fixed message that never repeats the amounts).
 17. A client name is reserved once across REST and gRPC (`CommunicationClientRegistry`); no `:` in a name.
 18. Option collections default to `null` (the binder appends to non-null defaults).
 19. **Credentials never leave the process**: no token, secret or API key in a log, exception message or `ToString()` (`AccessToken.ToString()` redacts).
 20. A typed client takes `HttpClient` in its primary constructor and is registered with `AddRestClient` (SK0013 flags an explicit constructor taking `HttpClient`).
+21. **`AccessTokenUnavailableException` is a `SharedKernelException`** (E1), not an `HttpRequestException`: an inbound edge maps it to `Unavailable`. REST keeps retrying, breaking and hedging on it through `RestResilience`'s explicit predicate (rules 9 and 12 still hold); the gRPC channel reports it as `Internal`, so its channel retry does not cover it.
+22. **No URL, host, OAuth client id or remote free text** in a log or an `Error` on the token path: logs name the client by its kernel client name; the token endpoint's `error` is reduced to the RFC 6749 section 5.2 values (else `unrecognized`); a provider's failure gets a fixed message; the token `HttpClient` has the factory's request logging removed (`RemoveAllLoggers()`), which prints the endpoint URL.
+23. **Observability gold standard**: every `[LoggerMessage]` takes its id from the package's `*LoggingEventIds` class and its logger category from `ILogger<KernelType>`; one `*Log` class per package under `Diagnostics/`; templates are one sentence with quoted identifier values; every swallowed exception is logged with the exception object (never silent), except the caller's cancellation which propagates; every `Error` is built by the internal `CommunicationErrors` factory; every code is a `CommunicationErrorCodes` constant. The domain emits no `ActivitySource` or `Meter`.
+24. **Protocol-mirror exemption** (read by `00.Governance`'s error-code check): the `grpc` and `http` code prefixes (`grpc.{status}`, `http.{status}`) are not `{domain}.{reason}` codes of this domain. They are the hand-kept mirror of `14.Presentation`'s `GrpcErrorCodes.ForStatus` and framework-problem codes, keep their wire values byte-for-byte, and live in `CommunicationErrorCodes` (`ForHttpStatus`, `GrpcStatus`; the bare prefixes `http.` and `grpc.` are internal constants, because the error-code format assertion reads every public constant and a bare prefix is not a code). A rename on the `14.Presentation` side is mirrored here, never the other way round.
+25. **No failure is silent**: a `catch (Exception)` that continues logs the exception (Rest 11200-11202, gRPC 11100, token path 11002); the caller's own cancellation is never caught. An undefined `Mode` and a missing keyed `IAccessTokenProvider` fail host startup (options validation, naming the client and the remedy); `UnreachableException` guards the request-time arms that validation makes impossible.
 
 ## Decisions
 
@@ -73,6 +80,13 @@ Overloads, options and defaults: each package's `README.md`.
 | No `Timestamp` helpers in `.Grpc` | Google.Protobuf already ships them |
 | OpenTelemetry gRPC/HTTP instrumentation lives in `13.ServiceDefaults` (`WithCommunicationTelemetry()`) | Telemetry is host composition, not a client dependency |
 | No response envelope on REST | Handlers return `Result`; ProblemDetails is the error shape |
+| `AccessTokenUnavailableException` derives `SharedKernelException`, and REST preserves its retry/breaker/hedging behaviour by an explicit predicate | C# single inheritance: the edges match `SharedKernelException`; token failures send nothing, so repeating them is side-effect free. Supersedes "a provider's own failure keeps its detail": the `Error` crosses the trust boundary, so its message is fixed and the provider logs its own detail |
+| `Grpc.Net.Client` reports a token failure (not an `HttpRequestException`) as `Internal`, so the channel retry does not cover it | Accepted; the call still returns the same `Error`. Pinned by a test, not worked around |
+| `communication.unreachable` is `communication.unavailable`; `money.proto.invalid` is `communication.grpc.invalid_money`; `grpc.{status}` and `http.{status}` keep their values and live in `CommunicationErrorCodes` | C3 (same condition, same reason word across domains); the `grpc.*`/`http.*` values are the hand-kept mirror of `14.Presentation`'s names and must not drift |
+| No `ActivitySource`/`Meter` in this domain (name `SharedKernel.Communication.*` reserved, a public `const` the day one is added) | Runtime HttpClient/gRPC client spans and `http.client.*` metrics (subscribed by `WithCommunicationTelemetry()` and the SK.13 base) already cover the call, token fetches are ordinary HttpClient calls, and a `Result` failure is recorded by the span owner (the caller), the same stance as `ResultTry`. T1-T6 hold vacuously; T7 is inbound; T8 holds (the only header writers are `RequestContextPropagationHandler` and `RequestContextInterceptor`, both through `RequestContextPropagation.WriteHeaders`) |
+| Rest reaches its logger through `HttpRequestMessage.Options` (set by the per-client propagation handler), `NullLogger` when the response did not come through a registered client | The `Result` verbs are static extensions over `HttpClient`/`HttpResponseMessage` and hold no container; a documented, narrow exception to L8 |
+| A missing keyed `IAccessTokenProvider` is an options-validation failure (reads the keyed registration without resolving it); the request-time arm is `UnreachableException` | Startup fails with the client name and the remedy instead of the first request; the provider may have dependencies that must not be built by a check |
+| All `Error`s are built by the internal `CommunicationErrors` factory (one `ErrorType` switch) | One place per code and message; messages are fixed sentences with no amounts, hosts or remote text beyond a service's own ProblemDetails/`ErrorInfo` |
 
 ## Logging
 
@@ -80,14 +94,16 @@ Overloads, options and defaults: each package's `README.md`.
 
 | Sub-block | Package | Events |
 | --- | --- | --- |
-| 11000–11099 | `SharedKernel.Communication` (`Internal/CommunicationLog.cs`) | 11000 token acquired · 11001 token endpoint refused the client · 11002 token endpoint unreachable · 11003 no access token, request not sent · 11004 401 answered with a new token |
-| 11100–11199 | `.Grpc` (`RequestContextInterceptor`) | 11100 the caller could not be written onto a call |
-| 11200–11299 | `.Rest` | none |
+| 11000–11099 | `SharedKernel.Communication` (`Diagnostics/CommunicationLog.cs`, ids in `CommunicationLoggingEventIds`; the client is named by its kernel client name, never the endpoint or OAuth client id) | 11000 token acquired · 11001 token endpoint refused the client · 11002 token endpoint unreachable · 11003 no access token, request not sent · 11004 401 answered with a new token |
+| 11100–11199 | `SharedKernel.Communication.Grpc` (`Diagnostics/CommunicationGrpcLog.cs`, `CommunicationGrpcLoggingEventIds`; `RequestContextInterceptor`) | 11100 the caller could not be written onto a call |
+| 11200–11299 | `SharedKernel.Communication.Rest` (`Diagnostics/CommunicationRestLog.cs`, `CommunicationRestLoggingEventIds`) | 11200 the caller could not be written onto a request (the call is still sent) · 11201 a problem-details body could not be read (an HTML or empty gateway body is expected and silent) · 11202 a success body could not be read as the expected type |
 | 11300–11399 | — | retired; do not reuse |
+
+Each package's ids are const arithmetic from `LoggingEventIdRanges.Communication` + sub-block index. Loggers are `ILogger<KernelType>` (the authentication handler logs under `ClientAuthenticationHandler`, the propagation handler under `RequestContextPropagationHandler`). Every template is one sentence ending in a period with quoted identifier values; 11002, 11100 and 11200-11202 pass the exception last.
 
 ## Cross-Domain Couplings
 
-- **01.Core** — `Primitives` (`Result`, `Error`, `IClock`, `WellKnownHeaders`), `Execution` (`IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`), `Configuration`.
+- **01.Core** — `Primitives` (`Result`, `Error`, `IClock`, `WellKnownHeaders`), `Core` (`SharedKernelException`, the base of `AccessTokenUnavailableException`), `Execution` (`IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`), `Configuration`.
 - **03.Domain** — `.Grpc` uses `Money` (`SharedKernel.Domain.Monetary`).
 - **13.ServiceDefaults** — `WithCommunicationTelemetry()`; `ServiceDefaults.Security`'s `EndToEndPropagationTests` prove HTTP → REST/gRPC, consumer → REST and job → REST propagation.
 - **14.Presentation** — the server side of the same contracts: ProblemDetails shape and `GrpcErrorCodes.ForStatus` names; mirrored here by hand, never referenced.
@@ -102,11 +118,16 @@ Overloads, options and defaults: each package's `README.md`.
 - The resolving handler restores the original request URI after the call — a test inspecting the URI must copy it at send time (`StubHttpMessageHandler` does).
 - gRPC tests run a real service on `TestServer` (test proto) as the client's primary handler (`GrpcHarness`). Transport failures: a stub that throws `HttpRequestException` with a `SocketException` inner.
 - Token caching with `FakeClock`; certificates made in memory (`CertificateRequest`).
-- EventIds checked over the real assemblies (`LoggingEventIdIntegrityRealAssemblyTests`).
+- EventIds checked over the real assemblies (`LoggingEventIdIntegrityRealAssemblyTests`) and pinned by literal per sub-block (`CommunicationConformanceTests`, `RestConformanceTests`, `GrpcConformanceTests`); logs are captured with `InMemoryLoggerFactory` (swap `ILoggerFactory` in the harness `services` callback) and asserted with `ShouldFollowLogConvention`, `ShouldOnlyLogEventIdsInSubBlock` and `ShouldNotLeak`.
+- `CommunicationErrorCodesTests` pins every code by literal, checks the C1 pattern and scans the compiled assemblies (and READMEs) for the retired names.
 
 ## Known Limitations
 
+- `GrpcCalls.cs` (`SharedKernel.Communication.Testing`, `GrpcCalls.Failure`) carries an in-source `SK0036` suppression: the double plays a service outside the platform, whose bare status no platform interceptor enriched, so it constructs a raw `RpcException` on purpose.
 - `HttpStatusErrorTypeMap` and the gRPC status map are hand-kept mirrors of `14.Presentation`'s maps; a change there must be mirrored here.
 - A gRPC channel refuses the composite `https+http` scheme, so gRPC clients cannot use Aspire's scheme-fallback addresses.
 - The reflection-based `Result` verb overloads carry `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`; AOT callers pass a `JsonTypeInfo`.
 - A 401 retry only happens for resendable bodies (`null`, `ByteArrayContent`, `JsonContent`).
+- A gRPC channel reports a token failure as `Internal`, so the channel retry policy (`Unavailable` only) does not repeat it; the call still ends in `communication.access_token_unavailable`.
+- A call that fails before any HTTP exchange (no access token, open circuit) has no client span of its own, because this domain emits none; the failure is a `Result` the caller records.
+- A malformed `grpc-status-details-bin` trailer is read as a bare status without a log, because the static `RpcException.ToError()` holds no logger; and a Rest response that did not come through a client registered with `AddRestClient` logs nothing (a `NullLogger`).

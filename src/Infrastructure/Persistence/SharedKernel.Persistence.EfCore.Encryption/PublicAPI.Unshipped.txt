@@ -17,7 +17,6 @@ SharedKernel.Persistence.EfCore.BlindIndexNormalization.CaseFold = 2 -> SharedKe
 SharedKernel.Persistence.EfCore.BlindIndexNormalization.None = 0 -> SharedKernel.Persistence.EfCore.BlindIndexNormalization
 SharedKernel.Persistence.EfCore.BlindIndexNormalization.RemoveWhitespace = 4 -> SharedKernel.Persistence.EfCore.BlindIndexNormalization
 SharedKernel.Persistence.EfCore.BlindIndexNormalization.Trim = 1 -> SharedKernel.Persistence.EfCore.BlindIndexNormalization
-SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter
 SharedKernel.Persistence.EfCore.EncryptedQueryExtensions
 SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException
 SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException.EncryptionKeyNotFoundException(string! keyId) -> void
@@ -151,11 +150,7 @@ SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.Plaintex
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.RootKeyValues.get -> long
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.RootKeyValues.init -> void
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantId.init -> void
-const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.Name = "SharedKernel.Persistence.EfCore.Encryption" -> string!
-const SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException.ErrorCode = "Persistence.Encryption.KeyNotFound" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.TenantDataKeysLabel = "(tenant data keys)" -> string!
-const SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantKeyShreddedException.ErrorCode = "Persistence.Encryption.TenantKeyShredded" -> string!
-const SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredIncompleteException.ErrorCode = "Persistence.Encryption.TenantShredIncomplete" -> string!
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceProgress.Equals(object? obj) -> bool
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceProgress.GetHashCode() -> int
 override SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceProgress.ToString() -> string!
@@ -197,3 +192,6 @@ SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantSh
 static SharedKernel.Persistence.EfCore.EncryptedQueryExtensions.WhereEncryptedEquals<T>(this System.Linq.IQueryable<T!>! query, Microsoft.EntityFrameworkCore.DbContext! context, System.Linq.Expressions.Expression<System.Func<T!, string?>!>! property, string! value, SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> System.Linq.IQueryable<T!>!
 SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionReadiness
 const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionReadiness.ProbeName = "field-encryption" -> string!
+SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException
+SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.FieldEncryptionException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.FieldEncryptionException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void

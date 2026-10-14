@@ -7,9 +7,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Contracts.Events;
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using SharedKernel.Integration.Notifications.Abstractions.Extensions;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
 using SharedKernel.Integration.Notifications.Abstractions.Observability;
+using SharedKernel.Integration.Notifications.Abstractions.Tracing;
 using SharedKernel.Integration.Notifications.Email.SendGrid;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
 using SharedKernel.Integration.Notifications.Sms.Twilio;
@@ -50,6 +52,11 @@ using SharedKernel.Storage;
         new ConsumerVerifyIntegrationEvent(Guid.NewGuid(), DateTimeOffset.UtcNow),
         CancellationToken.None);
     Verify(results.Count == 0, "DispatchAsync completes with zero matched subscriptions, zero DI exceptions");
+
+    // The error codes, the instruments and the result shape of the webhook family resolve and agree.
+    Verify(scope.ServiceProvider.GetService<WebhookMetrics>() is not null, "WebhookMetrics resolves from the container (IMeterFactory registered by AddSharedKernelWebhooks)");
+    Verify(WebhookErrorCodes.EndpointUnavailable.StartsWith("integration.webhook.", StringComparison.Ordinal), "WebhookErrorCodes uses the integration.webhook prefix");
+    Verify(WebhookDeliveryResult.Failed(Guid.NewGuid(), Guid.NewGuid(), SharedKernel.Primitives.Errors.Error.Timeout(WebhookErrorCodes.Timeout, "The webhook delivery timed out.")).Error is not null, "A failed WebhookDeliveryResult carries an Error");
 }
 
 Console.WriteLine("Surface 1 PASS: AddSharedKernelWebhooks() + registered IWebhookSubscriptionStore resolves IWebhookDispatcher with zero DI exceptions");
@@ -116,6 +123,11 @@ Console.WriteLine("Surface 2 PASS: omitting IWebhookSubscriptionStore produces a
     Verify(emailSender is SendGridEmailNotificationSender, "NotificationChannel.Email resolves the SendGrid sender");
     Verify(smsSender is TwilioSmsNotificationSender, "NotificationChannel.Sms resolves the Twilio sender");
     Verify(!ReferenceEquals(emailSender, smsSender), "The two keyed registrations resolve distinct sender instances — no ambiguity");
+
+    var notificationMetrics = scope.ServiceProvider.GetRequiredService<NotificationMetrics>();
+    Verify(ReferenceEquals(notificationMetrics, scope.ServiceProvider.GetRequiredService<NotificationMetrics>()), "NotificationMetrics is one shared singleton for both providers");
+    Verify(NotificationErrors.AttachmentUnresolvable().Code == NotificationErrorCodes.AttachmentUnresolvable, "NotificationErrors and NotificationErrorCodes agree");
+    Verify(NotificationDeliveryResult.Failed(Guid.NewGuid(), NotificationErrors.ProviderTimeout()).Error is not null, "A failed NotificationDeliveryResult carries an Error");
 }
 
 Console.WriteLine("Surface 3 PASS: both Notifications providers registered together resolve unambiguously by NotificationChannel");

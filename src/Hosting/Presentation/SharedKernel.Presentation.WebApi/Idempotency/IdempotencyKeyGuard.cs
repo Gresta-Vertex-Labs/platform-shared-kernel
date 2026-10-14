@@ -2,9 +2,8 @@ using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Presentation.WebApi.Diagnostics;
 using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Presentation.WebApi;
@@ -13,13 +12,17 @@ namespace SharedKernel.Presentation.WebApi;
 /// Reads and checks the <c>Idempotency-Key</c> header, for the header-requirements middleware, the
 /// <see cref="IdempotencyKey"/> parameter and <c>GetIdempotencyKey()</c> alike.
 /// </summary>
-internal static partial class IdempotencyKeyGuard
+internal sealed class IdempotencyKeyGuard
 {
     private const string RequiredMessage = "This request requires an Idempotency-Key header.";
 
     private static readonly string InvalidMessage = string.Create(
         CultureInfo.InvariantCulture,
         $"The Idempotency-Key header must be 1 to {IdempotencyKey.MaxLength} visible ASCII characters.");
+
+    private IdempotencyKeyGuard()
+    {
+    }
 
     private enum KeyState
     {
@@ -60,10 +63,9 @@ internal static partial class IdempotencyKeyGuard
         var code = state == KeyState.Missing
             ? PresentationErrorCodes.IdempotencyKeyRequired
             : PresentationErrorCodes.IdempotencyKeyInvalid;
-
-        var logger = httpContext.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(IdempotencyKeyGuard))
-            ?? NullLogger.Instance;
-        Log.IdempotencyKeyRejected(logger, RequestFacts.GetEndpointDisplayName(httpContext), code);
+        // The category is this type, so the line is found under the kernel type that wrote it.
+        var logger = httpContext.RequestServices.GetRequiredService<ILogger<IdempotencyKeyGuard>>();
+        WebApiLog.IdempotencyKeyRefused(logger, RequestFacts.GetEndpointDisplayName(httpContext), code);
 
         return new PresentationProblemResult(
             StatusCodes.Status400BadRequest,
@@ -109,13 +111,4 @@ internal static partial class IdempotencyKeyGuard
     /// </summary>
     public static bool IsValid(string? key) =>
         key is { Length: > 0 and <= IdempotencyKey.MaxLength } && !key.AsSpan().ContainsAnyExceptInRange('!', '~');
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = LoggingEventIdRanges.Presentation + 3,
-            Level = LogLevel.Warning,
-            Message = "Rejected a request to {EndpointDisplayName} without a valid idempotency key ({ErrorCode}).")]
-        public static partial void IdempotencyKeyRejected(ILogger logger, string endpointDisplayName, string errorCode);
-    }
 }

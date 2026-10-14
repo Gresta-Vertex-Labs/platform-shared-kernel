@@ -19,7 +19,7 @@
 | A closed 8-node `VectorFilter` over a five-kind `VectorValue` | Metadata filters mean the same thing on every provider. Nothing is dropped or approximated |
 | `VectorCollectionDefinition` with a `Fingerprint` | The embedding model, dimension, metric and fields are declared once and drift is detectable |
 | `ISemanticKernel` (`CompleteAsync`, `CompleteStreamingAsync`) | Chat completion with tool *requests*, token usage and no hidden retries, caching or tool execution |
-| `IntelligenceErrors` + `Result` everywhere | Expected failures are values with stable `intelligence.*` codes |
+| `IntelligenceErrors` + `Result` everywhere | Expected failures are values with stable `intelligence.*` codes, an `ErrorType` that matches the condition, and kernel-authored text only |
 | `VectorCollectionReadinessProbe` | Every provider reports collection health the same way on `/health/ready` |
 
 ## Contents
@@ -46,7 +46,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Abstractions: reference it from your **Application** project |
-| Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution` (no third-party packages) |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Core` (no third-party packages) |
 | Namespaces | `SharedKernel.AI.Abstractions.Abstractions` (contracts, requests, results), `.Models` (records, filters, definitions), `.Errors`, `.Constants`, `.Exceptions` |
 | Implemented by | [`SharedKernel.AI.Qdrant`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/SharedKernel.AI.Qdrant/README.md) (vectors), [`SharedKernel.AI.SemanticKernel`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/SharedKernel.AI.SemanticKernel/README.md) (embeddings, completions) |
 
@@ -120,8 +120,18 @@ flowchart LR
   tenant as the `TenantId` `"D"` string. A collection that declares a `TenantField` rejects `TenantScope.Global` with
   `intelligence.tenant_scope_missing` and sends nothing.
 - **Failures.** Every method returns `Result`/`Result<T>`, except the two streams: `ScrollAsync` and
-  `CompleteStreamingAsync` return `IAsyncEnumerable<T>` and throw `IntelligenceStreamException` (carrying the
-  `Error`) mid-stream.
+  `CompleteStreamingAsync` return `IAsyncEnumerable<T>` and throw `IntelligenceStreamException` mid-stream.
+  `IntelligenceStreamException` is a sealed `SharedKernelException` (and `IHasError`), so the HTTP, gRPC and SignalR
+  edges map it by its `Error`: an outage answers 503, a timeout 504, not a bare 500. Its message is the error's
+  kernel-authored message; the provider's own exception is the inner exception.
+- **What an `Error` may say.** `Error.Message` holds kernel-authored wording and bounded identifiers only: provider,
+  operation, collection and model names, the caller's own record id, numbers, an HTTP status or a gRPC status name.
+  Never an exception message, a gRPC status detail, a response body, an endpoint or host, a filter value, a key or
+  prompt text: the message reaches ProblemDetails. The detail is not lost, it reaches the log through the exception
+  parameter. The `reason` parameters of the factory are kernel-authored text.
+- **Classify or rethrow.** Only a recognised provider fault becomes a `Result` failure. A defect (a bug in a provider
+  or in your code) is not caught and propagates with its stack. The caller's cancellation is always an
+  `OperationCanceledException`, never a failure value.
 - **Cost.** `TokenUsage` (`PromptTokens`, `CompletionTokens`, `TotalTokens`) is on every `EmbeddingResult`,
   `EmbeddingBatchResult` and `CompletionResult`. A streamed completion carries it on `CompletionChunk.TokenUsage`, which providers usually
   fill only once the stream completes.
@@ -222,21 +232,42 @@ before is deleted. Re-embedding the corpus is your job.
 
 ### Errors
 
-All from `IntelligenceErrors` (`SharedKernel.AI.Abstractions.Errors`).
+Every code is a constant of `IntelligenceErrorCodes` and every `Error` is built by `IntelligenceErrors` (both in `SharedKernel.AI.Abstractions.Errors`). The factory is public because the providers and the in-memory double build the same vocabulary from separate assemblies.
 
 | Code | Type |
 | --- | --- |
 | `intelligence.collection_not_found`, `.record_not_found`, `.model_not_found` | NotFound |
-| `intelligence.invalid_query`, `.invalid_filter`, `.invalid_collection_definition`, `.invalid_record_id`, `.field_not_filterable`, `.embedding_model_mismatch`, `.dimension_mismatch`, `.distance_metric_mismatch`, `.batch_size_exceeded`, `.filter_depth_exceeded`, `.context_window_exceeded`, `.unsupported_capability` | Validation |
+| `intelligence.invalid_query`, `.invalid_filter`, `.invalid_collection_definition`, `.invalid_record_id`, `.field_not_filterable`, `.embedding_model_mismatch`, `.dimension_mismatch`, `.distance_metric_mismatch`, `.batch_size_exceeded`, `.filter_depth_exceeded`, `.context_window_exceeded`, `.not_supported` | Validation |
 | `intelligence.collection_already_exists`, `.collection_definition_conflict`, `.cutover_failed`, `.schema_fingerprint_mismatch` | Conflict |
-| `intelligence.unauthorized`, `.tenant_scope_missing` | Unauthorized |
-| `intelligence.unreachable`, `.timeout`, `.write_rejected`, `.write_timeout`, `.bulk_partially_failed`, `.probe_failed`, `.engine_version_unsupported`, `.engine_fault`, `.rate_limited`, `.completion_failed` | Unexpected |
+| `intelligence.tenant_scope_missing` | Unauthorized |
+| `intelligence.unavailable` (a provider that is down), `.rate_limited` (throttling; there is no rate-limit `ErrorType`) | Unavailable (HTTP 503, gRPC `Unavailable`) |
+| `intelligence.timeout`, `.write_timeout` | Timeout (HTTP 504, gRPC `DeadlineExceeded`) |
+| `intelligence.write_rejected`, `.bulk_partially_failed`, `.probe_failed`, `.engine_version_not_supported`, `.engine_fault`, `.completion_failed`, `.engine_unauthorized` | Unexpected |
+
+The same condition has the same code and type on every provider: gRPC `Unavailable` and HTTP 502/503/504 are
+`intelligence.unavailable`, `ResourceExhausted` and 429 are `intelligence.rate_limited`, `DeadlineExceeded`, HTTP 408
+and a client timeout are `intelligence.timeout`. `IntelligenceErrors.Unavailable(provider)` and `Timeout(operation)`
+name no endpoint and no elapsed time; `EngineFault(provider, operation, engineErrorCode)` takes only a bounded token
+(a gRPC status name or an HTTP status number) and never exception text. `intelligence.engine_unauthorized` (gRPC `PermissionDenied`/`Unauthenticated`, HTTP 401/403) is the provider rejecting the kernel's own key: a deployment defect, so it is `Unexpected` and never answers the end user with 401. Messages are kernel-authored sentences ending in a period; the `reason` parameters are kernel-authored text too.
 
 ### Constants
 
 `IntelligenceWellKnown`: `DefaultQueryLimit` (10), `MaxQueryLimit` (1000), `ActivitySourceName` and `MeterName`
-(`SharedKernel.AI`), `QdrantProviderName` (`qdrant`), `SemanticKernelProviderName` (`semantickernel`), tag keys
-`ai.provider`, `ai.collection`, `ai.model`.
+(`SharedKernel.AI`), `QdrantProviderName` (`qdrant`), `SemanticKernelProviderName` (`semantickernel`), the token-type values (`input`/`output`), the instrument names and `OtherModel` (`_OTHER`). `IntelligenceTagKeys` holds the tag keys `ai.provider`, `ai.collection`, `ai.model`, `ai.operation` and `ai.token_type`. `IntelligenceOperations` holds the closed set of operation names: the data plane (`upsert`, `upsert_many`, `delete`, `delete_many`, `delete_by_filter`, `query`, `query_hybrid`, `get`, `count`, `scroll`), embeddings and completion (`embed`, `embed_many`, `complete`, `complete_stream`) and the control plane (`ensure_collection`, `collection_exists`, `delete_collection`, `cutover`, `quantization_profile`).
+
+### Telemetry
+
+This package declares the vocabulary; each provider emits it (`ActivitySource` and `Meter` both named `SharedKernel.AI`, subscribed by the host's `SharedKernel.*` wildcard).
+
+| What | Name | Unit | Tags |
+| --- | --- | --- | --- |
+| Span, kind Client | `ai {operation}` | | `ai.provider`, `ai.operation`, `ai.collection` (vector operations) or `ai.model` (embeddings, completions) |
+| Duration histogram | `sharedkernel.ai.operation.duration` | `s` | the span tags plus `outcome` (`success`, `failure`, `exception`, `canceled`) and `error.type` on a non-success |
+| Token counter | `sharedkernel.ai.tokens` | `{token}` | `ai.provider`, `ai.operation`, `ai.model`, `ai.token_type` |
+| Record counter | `sharedkernel.ai.vector.records` | `{record}` | `ai.provider`, `ai.operation`, `ai.collection`, `outcome` |
+
+Never a tag: record ids, vectors, filter values, metadata values, prompts, completion text, keys, hosts. A caller-supplied
+model id that is not the configured one is tagged `_OTHER`.
 
 ### Logging
 

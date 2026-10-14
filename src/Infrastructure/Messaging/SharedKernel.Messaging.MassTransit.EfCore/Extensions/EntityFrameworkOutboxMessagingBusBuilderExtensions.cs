@@ -61,8 +61,7 @@ public static class EntityFrameworkOutboxMessagingBusBuilderExtensions
             OutboxDatabase.Sqlite => o => o.UseSqlite(),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(configure),
-                opts.Database,
-                $"{nameof(OutboxOptions)}.{nameof(OutboxOptions.Database)} is not a defined {nameof(OutboxDatabase)} value."),
+                $"{nameof(OutboxOptions)}.{nameof(OutboxOptions.Database)} is not a defined {nameof(OutboxDatabase)} value, so set it to one of the enum members."),
         };
 
         return builder.ConfigureMassTransit(cfg =>

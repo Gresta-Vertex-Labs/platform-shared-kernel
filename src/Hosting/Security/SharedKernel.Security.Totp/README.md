@@ -348,9 +348,9 @@ enrollment; recovery-code hashing follows `SharedKernel:Cryptography:OneWayHashi
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 12400 | Warning | TOTP challenge not accepted (result: `{Result}`, operation: `{Operation}` — `Code`, `RecoveryCode`, `ConfirmEnrollment`) |
-| 12401 | Information | TOTP step-up completed (operation: `{Operation}`) |
-| 12402 | Information | Recovery code redeemed; `{Remaining}` unused recovery codes remain |
+| 12400 | Warning | The TOTP challenge was not accepted with result '`{Result}`' during operation '`{Operation}`' (`Code`, `RecoveryCode`, `ConfirmEnrollment`). |
+| 12401 | Information | The TOTP step-up completed during operation '`{Operation}`'. |
+| 12402 | Information | A recovery code was redeemed and `{Remaining}` unused recovery codes remain. |
 
 Codes, secrets and recovery codes are never logged.
 
@@ -413,6 +413,8 @@ carrying `sub` and `sid`; `clock.Advance(...)` past `FreshnessWindow` removes `a
 | Expect the verifying request to carry `amr=otp` | Retry the gated request | The transformation runs during authentication of the next request |
 
 ## Design decisions
+
+**Why do the logs carry no subject or session?** Who verified is ambient request context; the events state only the operation and result (`Code`, `RecoveryCode`, `ConfirmEnrollment`), so a log line cannot be used to link a code attempt to a person.
 
 **Why bind a step-up to the session?** Bound to the user, a code entered in one session would elevate every other —
 including a stolen token or a session opened with a phished password. An attacker holding another session must pass the

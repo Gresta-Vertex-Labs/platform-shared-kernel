@@ -104,6 +104,7 @@ public sealed class ApiVersioningTests
         using var client = app.GetTestClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/items");
         request.Headers.Add(VersionHeader, "not-a-version");
+        request.Headers.Add(WellKnownHeaders.CorrelationId, "corr-456");
 
         using var response = await client.SendAsync(request);
         var problem = await ReadProblemAsync(response);
@@ -111,6 +112,10 @@ public sealed class ApiVersioningTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         problem["title"]!.GetValue<string>().Should().Be("Bad Request");
         problem[ProblemDetailsExtensionNames.ErrorCode]!.GetValue<string>().Should().Be("http.400");
+
+        // Like every client-facing error: the trace id and the correlation id of the request.
+        problem[ProblemDetailsExtensionNames.TraceId]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        problem[ProblemDetailsExtensionNames.CorrelationId]!.GetValue<string>().Should().Be("corr-456");
         problem[ApiVersioningProblems.CodeMember].Should().BeNull();
     }
 

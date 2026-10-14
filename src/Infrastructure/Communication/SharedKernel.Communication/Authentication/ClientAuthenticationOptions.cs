@@ -33,7 +33,8 @@ public sealed class ClientAuthenticationOptions
 
         if (!Enum.IsDefined(Mode))
         {
-            yield return new ValidationResult($"{Prefix}:Mode '{Mode}' is not a defined value.", [Prefix]);
+            yield return new ValidationResult(
+                $"'{Mode}' is not a defined {nameof(ClientAuthenticationMode)} value. Set {Prefix}:Mode to one of its names.", [Prefix]);
             yield break;
         }
 
@@ -55,7 +56,8 @@ public sealed class ClientAuthenticationOptions
             if (!Enum.IsDefined(cc.SecretTransport))
             {
                 yield return new ValidationResult(
-                    $"{Prefix}:ClientCredentials:SecretTransport '{cc.SecretTransport}' is not a defined value.", [Prefix]);
+                    $"'{cc.SecretTransport}' is not a defined {nameof(ClientSecretTransport)} value. Set {Prefix}:ClientCredentials:SecretTransport to one of its names.",
+                    [Prefix]);
             }
 
             if (cc.RefreshBeforeExpiry < TimeSpan.Zero || cc.RefreshBeforeExpiry > TimeSpan.FromHours(1))

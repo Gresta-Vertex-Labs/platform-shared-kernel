@@ -1,6 +1,5 @@
 using System.Runtime.Serialization;
 using System.Text.Json;
-using SharedKernel.Messaging.Abstractions.Errors;
 using SharedKernel.Primitives.Errors;
 
 // Every MassTransit type here is aliased from the global namespace on purpose. This assembly's own
@@ -46,14 +45,14 @@ internal static class MessagingExceptionClassifier
         // compression/encryption payload transform. These are the BCL types the serializers
         // actually throw — MassTransit 8.5.x declares no SerializationException of its own, so
         // matching on a MassTransit-namespaced one would never fire.
-        SerializationException or JsonException => MessagingErrors.SerializationFailed(messageTypeName),
+        SerializationException or JsonException => MassTransitErrors.SerializationFailed(messageTypeName),
 
         // The broker could not be reached, or did not answer in time. Retryable unchanged.
-        MtRequestTimeoutException or TimeoutException => MessagingErrors.Unavailable(operation),
-        MtConnectionException or MtTransportUnavailableException => MessagingErrors.Unavailable(operation),
+        MtRequestTimeoutException or TimeoutException => MassTransitErrors.Unavailable(operation),
+        MtConnectionException or MtTransportUnavailableException => MassTransitErrors.Unavailable(operation),
 
         // Reachable, but this specific message was refused — unroutable, oversized, or policy-rejected.
-        MtTransportException => MessagingErrors.PublishRejected(messageTypeName),
+        MtTransportException => MassTransitErrors.PublishRejected(messageTypeName),
 
         _ => null,
     };

@@ -2,7 +2,7 @@
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope
-SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope(SharedKernel.Execution.Context.IRequestContext! requestContext, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Abstractions.Context.CrossTenantScope!>? logger = null) -> void
+SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope(SharedKernel.Execution.Context.IRequestContext! requestContext, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Abstractions.Context.CrossTenantScope!>! logger) -> void
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.Enter(string! reason) -> System.IDisposable!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.IsActive.get -> bool
 SharedKernel.Persistence.CrossTenantScopeServiceCollectionExtensions
@@ -100,3 +100,39 @@ static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryParse
 static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator !=(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool
 static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator ==(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool
 SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, SharedKernel.Execution.Tenancy.TenantId? tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes
+SharedKernel.Persistence.Abstractions.Errors.PersistenceSharedErrors
+static SharedKernel.Persistence.Abstractions.Errors.PersistenceSharedErrors.TenantRequired() -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Persistence.Abstractions.Diagnostics.PersistenceTelemetry
+const SharedKernel.Persistence.Abstractions.Diagnostics.PersistenceTelemetry.Name = "SharedKernel.Persistence" -> string!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Tenancy
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Tenancy.TenantRequired = "persistence.tenant_required" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Tenancy.TenantIsolationViolation = "persistence.tenant_isolation_violation" -> string!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Concurrency.Conflict = "persistence.concurrency_conflict" -> string!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.UniqueViolation = "persistence.postgresql.unique_violation" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.ForeignKeyReferenceMissing = "persistence.postgresql.foreign_key_reference_missing" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.ForeignKeyDependentExists = "persistence.postgresql.foreign_key_dependent_exists" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.ForeignKeyViolation = "persistence.postgresql.foreign_key_violation" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.NotNullViolation = "persistence.postgresql.not_null_violation" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.CheckViolation = "persistence.postgresql.check_violation" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.ExclusionViolation = "persistence.postgresql.exclusion_violation" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.ValueTooLong = "persistence.postgresql.value_too_long" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.TransientConflict = "persistence.postgresql.transient_conflict" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.LockTimeout = "persistence.postgresql.lock_timeout" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.StatementTimeout = "persistence.postgresql.statement_timeout" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Postgresql.InsufficientPrivilege = "persistence.postgresql.insufficient_privilege" -> string!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Audit
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Audit.RecordNotFound = "persistence.audit_record_not_found" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Audit.ChainNotIntact = "persistence.audit_chain_not_intact" -> string!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption.MalformedPayload = "persistence.encryption.malformed_payload" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption.DecryptionFailed = "persistence.encryption.decryption_failed" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption.DataKeyInvalid = "persistence.encryption.data_key_invalid" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption.DataKeyUnwrapFailed = "persistence.encryption.data_key_unwrap_failed" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption.KeyNotFound = "persistence.encryption.key_not_found" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption.TenantKeyShredded = "persistence.encryption.tenant_key_shredded" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.Encryption.TenantShredIncomplete = "persistence.encryption.tenant_shred_incomplete" -> string!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.BulkMutation
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.BulkMutation.SpecificationNotSupported = "persistence.bulk_mutation.specification_not_supported" -> string!

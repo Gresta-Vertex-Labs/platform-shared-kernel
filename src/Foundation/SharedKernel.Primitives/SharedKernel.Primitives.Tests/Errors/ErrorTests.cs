@@ -78,9 +78,9 @@ public sealed class ErrorTests
     [Fact]
     public void BusinessRule_SetsCorrectType()
     {
-        var error = Error.BusinessRule("domain.rule.violated", "Order cannot be cancelled after shipping.");
+        var error = Error.BusinessRule("domain.rule_violated", "Order cannot be cancelled after shipping.");
         Assert.Equal(ErrorType.BusinessRule, error.Type);
-        Assert.Equal("domain.rule.violated", error.Code);
+        Assert.Equal("domain.rule_violated", error.Code);
         Assert.Equal("Order cannot be cancelled after shipping.", error.Message);
     }
 
@@ -110,8 +110,8 @@ public sealed class ErrorTests
     [Fact]
     public void BusinessRule_RecordEquality_SameCodeMessageType_AreEqual()
     {
-        var a = Error.BusinessRule("domain.rule.violated", "msg");
-        var b = Error.BusinessRule("domain.rule.violated", "msg");
+        var a = Error.BusinessRule("domain.rule_violated", "msg");
+        var b = Error.BusinessRule("domain.rule_violated", "msg");
         Assert.Equal(a, b);
     }
 

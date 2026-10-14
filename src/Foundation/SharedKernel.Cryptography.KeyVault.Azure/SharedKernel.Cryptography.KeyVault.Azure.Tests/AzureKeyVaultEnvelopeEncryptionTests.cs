@@ -448,7 +448,7 @@ public sealed class AzureKeyVaultEnvelopeEncryptionTests
     [Theory]
     [InlineData("P-256")]
     [InlineData("P-384")]
-    public async Task GenerateDataKeyAsync_EcMasterKey_ThrowsNotSupportedException(string curve)
+    public async Task GenerateDataKeyAsync_EcMasterKey_ThrowsInvalidOperation(string curve)
     {
         var vault = new FakeKeyVault();
         vault.AddEcKey("ec-kek", curve == "P-256" ? ECCurve.NamedCurves.nistP256 : ECCurve.NamedCurves.nistP384);
@@ -459,8 +459,8 @@ public sealed class AzureKeyVaultEnvelopeEncryptionTests
             new SharedKernel.Cryptography.Random.SecureRandomGenerator(),
             _fixture.Time);
 
-        await Assert.ThrowsAsync<NotSupportedException>(async () => await provider.GenerateDataKeyAsync());
-        await Assert.ThrowsAsync<NotSupportedException>(async () => await provider.RotateDataKeyAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await provider.GenerateDataKeyAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await provider.RotateDataKeyAsync());
         Assert.Equal(0, vault.WrapCalls);
         Assert.Equal(0, vault.SetSecretCalls);
     }

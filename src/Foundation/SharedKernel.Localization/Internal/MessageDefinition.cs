@@ -23,7 +23,7 @@ internal sealed class MessageDefinition
         }
         catch (FormatException ex)
         {
-            throw new ArgumentException($"The default text of message '{code}' is not valid. {ex.Message}", nameof(defaultTemplate), ex);
+            throw new ArgumentException($"The default text of message '{code}' is not a valid template. Fix its placeholder syntax.", nameof(defaultTemplate), ex);
         }
 
         for (int i = 0; i < argumentNames.Length; i++)
@@ -65,7 +65,7 @@ internal sealed class MessageDefinition
         catch (FormatException ex)
         {
             throw new ArgumentException(
-                $"A placeholder format in message '{code}' does not suit its argument type. {ex.Message}",
+                $"A placeholder format in message '{code}' does not suit its argument type. Fix the format specifier.",
                 nameof(defaultTemplate),
                 ex);
         }

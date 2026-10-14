@@ -50,7 +50,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project; application code references only the Abstractions |
-| Depends on | `SharedKernel.Messaging.Abstractions`, `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Contracts`, `SharedKernel.Configuration`, `SharedKernel.Compression`, `SharedKernel.Cryptography`, `MassTransit` 8.5.x |
+| Depends on | `SharedKernel.Messaging.Abstractions`, `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Contracts`, `SharedKernel.Configuration`, `SharedKernel.Compression`, `SharedKernel.Cryptography`, `SharedKernel.Core`, `MassTransit` 8.5.x |
 | Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (builder; satellites extend it here), `.Consumers`, `.Options`, `.HeaderPropagation`, `.MessageBus`, `.Serialization`, `.Transports` |
 
 ## Quick start
@@ -131,17 +131,25 @@ flowchart LR
   `queue:{service-name}-{kebab-type}`.
 - **Failures.** Timeouts and connection faults → `messaging.unavailable`; broker refusals → `messaging.publish_rejected`;
   serializer failures → `messaging.serialization_failed`; an unknown send endpoint → `messaging.endpoint_not_found`.
-  Anything else is rethrown; only cancellation throws by design.
+  Anything else is rethrown with its original stack trace; only cancellation throws by design.
 - **Consume order.** The inbound request-context filter runs first, then idempotency, then retry and the circuit
   breaker (retry inner, breaker outer), then the consumer. `ConsumerBase` logs (7001) and **rethrows**, which is how
   a consumer asks for a retry.
 - **Idempotency.** Key `{MessageId:D}:{sha256-hex("{receive-endpoint path}|{consumer type}")}`, scoped by the ambient
   tenant. `Completed` acknowledges without consuming; `InProgress` throws `ConcurrentMessageDeliveryException`
   so the message stays unacknowledged (expected, not an alert); an exception releases the reservation and
-  rethrows; no `MessageId` passes through.
+  rethrows; no `MessageId` passes through. `ConcurrentMessageDeliveryException` is deliberately retried by the broker:
+  never list it in `NonRetryableExceptions`.
+- **Log scope.** `ConsumerBase` opens a scope with `CorrelationId`, `MessageType`, `messaging.message_type`,
+  `messaging.destination` (when known) and `ActorKind` (from `x-sk-actor-kind`, when present). Headers reach the scope
+  only through a closed allow-list (today the actor kind alone): the actor id, client id, tenant and idempotency key
+  never enter a scope, and no other header is copied.
 - **Caller.** `WithInboundRequestContext()` writes correlation id, tenant and actor as `WellKnownHeaders` and, on
   consume, opens a `RequestContextScope` with a `PropagatedRequestContext`; outside a consume `IRequestContext`
   still resolves to the host's own. A malformed tenant header yields no tenant; a missing correlation id is replaced.
+- **Outgoing headers.** Every outgoing message carries the correlation id header (`X-Correlation-Id`) and, when known, the tenant header, written
+  through the platform mapping (`RequestContextPropagation`). That mapping also writes `x-sk-actor-kind`, so the header is
+  always present (`Anonymous` unless a propagator or the caller sets it); readers treat an absent kind as `Anonymous`.
 - **Ordering.** `PublishContext.WithPartitionKey` maps to the transport's native mechanism (RabbitMQ routing key,
   Azure Service Bus session id). It holds per key with a single active consumer.
 - **The window before ready.** MassTransit starts the bus in the background. A message published before the broker
@@ -220,7 +228,8 @@ builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSynchrono
 Always compress-then-encrypt on publish and decrypt-then-decompress on consume. Encryption needs the **synchronous**
 `ISynchronousSymmetricEncryptionService` (keys in memory) because MassTransit's serializer is synchronous; a
 KMS-only key provider cannot be used. The associated data is the CLR message type name; any mismatch throws
-`PayloadTransformMismatchException`. Every service on the queue must use the same settings.
+`PayloadTransformMismatchException` (code `messaging.payload_transform_mismatch`, `Unexpected`; the original failure is
+its `InnerException`). Every service on the queue must use the same settings.
 
 ### 6. Customise MassTransit beyond the builder
 
@@ -283,27 +292,68 @@ Authoring bases (`SharedKernel.Messaging.MassTransit.Consumers`): `ConsumerBase<
 and `messaging.publish_rejected` (Unexpected), `messaging.invalid_message` and `messaging.contract_violation`
 (Validation) — constants in `MessagingErrorCodes` (Abstractions).
 
+Two exceptions raised on the consume side are sealed `SharedKernelException`s, so any edge that sees one can map
+its `Error`; each keeps the original exception as `InnerException` and its message never embeds inner text:
+
+| Exception | Code | `ErrorType` | Behaviour |
+| --- | --- | --- | --- |
+| `ConcurrentMessageDeliveryException` | `messaging.concurrent_delivery` | `Conflict` | Another delivery of the message id holds the reservation; the message stays unacknowledged and the broker redelivers it |
+| `PayloadTransformMismatchException` | `messaging.payload_transform_mismatch` | `Unexpected` | Publisher and consumer disagree on `PayloadTransformOptions`, or the body cannot be deserialized after reversal |
+
+`IMessageScheduler.CancelAsync` propagates cancellation of its own token (the token stays cancellable); a gone schedule
+token remains a silent no-op. A recognised transport fault while cancelling is swallowed and logged (7014); any other
+exception propagates.
+
+The error factory is internal to this package; `MessagingErrorCodes` stays public in `SharedKernel.Messaging.Abstractions`.
+
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
 | 7001 | Error | Unhandled exception consuming a message (`ConsumerBase`) |
-| 7002 | Information | Processing a batch (`BatchConsumerBase`) |
+| 7002 | Debug | Processing a batch (`BatchConsumerBase`) |
 | 7003 | Error | Unhandled exception processing a batch |
-| 7004 | Error | Handling a fault; invoking the fault consumer |
+| 7004 | Warning | Observing a fault; invoking the fault consumer |
 | 7005 | Error | Unhandled exception in a fault consumer |
 | 7008 | Debug | Translating a message from an old to a new type |
 | 7009 | Warning | A version translator has no consumer for its new type |
-| 7010 | Warning | Dead-letter policy ignored under Azure Service Bus (`.AzureServiceBus`) |
 | 7011 | Warning | `IRequestContext` was registered after `WithInboundRequestContext()` |
 | 7012 | Debug | `IRequestContext` could not be resolved during the startup check |
+| 7013 | Warning | A recognised transport fault became a failed `Result` (the exception is attached) |
+| 7014 | Warning | A recognised fault while cancelling a scheduled message (the exception is attached) |
+
+Log events are numbered 7000–7099 for this package; the Azure Service Bus package owns 7200–7299 (7010 was retired
+and its event is now 7200), RabbitMQ 7100–7199 and EF Core 7300–7399 are reserved. Ids 7006, 7007 and 7010 are never
+reused.
 
 ### Telemetry
 
-`ActivitySource` and `Meter` named `SharedKernel.Messaging`, wired by `WithMessagingTelemetry()`
-(`SharedKernel.ServiceDefaults`). Spans `MessageBus.Publish`, `MessageBus.Send`, `EventPublisher.Publish`,
-`Consumer.Consume`; instruments `messaging.publish.count`, `messaging.send.count`, `messaging.consume.count`,
-`messaging.consume.duration`, `messaging.retry.count`, `messaging.fault.count`.
+`ActivitySource` and `Meter` named `SharedKernel.Messaging` (`MessagingTelemetry.SourceName` / `MeterName`), versioned
+from the assembly, wired by `WithMessagingTelemetry()` (`SharedKernel.ServiceDefaults`).
+
+| Span | Kind | Emitted by |
+| --- | --- | --- |
+| `messaging publish` | Producer | `IMessageBus.PublishAsync` |
+| `messaging send` | Producer | `IMessageBus.SendAsync` |
+| `messaging publish_event` | Producer | `IEventPublisher.PublishAsync` |
+| `messaging consume` | Consumer | `ConsumerBase<T>` |
+| `messaging consume_batch` | Consumer | `BatchConsumerBase<T>` |
+
+Tag keys (`MessagingTagKeys`): `messaging.message_type`, `messaging.event_type`, `messaging.destination.name`,
+`messaging.batch.message_count`, plus `outcome`. Failures are recorded as span status Error with `error.code` and
+`error.type`; cancellation is never an error.
+
+| Instrument | Unit | Notes |
+| --- | --- | --- |
+| `sharedkernel.messaging.publish.count` | `{message}` | every attempt, tagged `outcome` |
+| `sharedkernel.messaging.send.count` | `{message}` | every attempt, tagged `outcome` |
+| `sharedkernel.messaging.consume.count` | `{message}` | every attempt (a batch adds its size), tagged `outcome` |
+| `sharedkernel.messaging.consume.duration` | `s` | histogram, tagged `outcome` |
+| `sharedkernel.messaging.retry.count` | `{retry}` | per invocation |
+| `sharedkernel.messaging.fault.count` | `{fault}` | per observed fault |
+
+`outcome` is one of `success`, `failure`, `exception`, `canceled`; filter `outcome=success` for the count of
+delivered messages.
 
 ### Health
 

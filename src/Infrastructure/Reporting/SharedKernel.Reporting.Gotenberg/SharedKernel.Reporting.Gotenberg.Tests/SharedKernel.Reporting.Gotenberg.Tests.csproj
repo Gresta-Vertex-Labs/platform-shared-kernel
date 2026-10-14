@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Reporting.Gotenberg.csproj" />
     <ProjectReference Include="..\..\..\Storage\SharedKernel.Storage.Testing\SharedKernel.Storage.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

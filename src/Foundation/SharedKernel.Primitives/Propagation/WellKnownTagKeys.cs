@@ -25,8 +25,8 @@ namespace SharedKernel.Primitives.Propagation;
 /// <b>Only cross-domain keys belong here.</b> A key used by a single package stays in that
 /// package — <c>06.Persistence.EfCore</c>'s <c>PersistenceTagKeys</c> is the shipped example, and
 /// it references <see cref="ErrorType"/> from here for the one key it shares while keeping its own
-/// local. Promoting a single-package key to this registry adds a cross-domain contract nobody
-/// needed.
+/// local. A key joins this registry only when two or more domains tag it; promoting a
+/// single-package key adds a cross-domain contract nobody needed.
 /// </para>
 /// <para>
 /// Values follow OpenTelemetry semantic-convention style: dotted lowercase.
@@ -60,14 +60,29 @@ public static class WellKnownTagKeys
     public const string CorrelationId = "correlation.id";
 
     /// <summary>
-    /// Span attribute carrying a coarse error classification — conventionally the exception type
-    /// name (<c>"error.type"</c>).
+    /// Span attribute carrying a coarse, bounded error classification (<c>"error.type"</c>).
     /// </summary>
+    /// <remarks>
+    /// Written by <c>Activity.RecordFailure</c>/<c>RecordException</c> (<c>SharedKernel.Primitives.Telemetry</c>):
+    /// the <see cref="Errors.ErrorType"/> member name (for example <c>NotFound</c>) for a failed <c>Result</c>, the
+    /// exception's full type name for an exception. Both value sets are bounded (an enum or a CLR type), so the tag is
+    /// safe as a metric dimension. A dashboard that keyed this tag on exception names for <c>Result</c> failures now
+    /// sees <see cref="Errors.ErrorType"/> names.
+    /// </remarks>
     public const string ErrorType = "error.type";
 
     /// <summary>
-    /// Span attribute carrying a domain error code, conventionally an
-    /// <see cref="Errors.Error.Code"/> value (<c>"error.code"</c>).
+    /// Span attribute carrying a domain error code: an <see cref="Errors.Error.Code"/> value (<c>"error.code"</c>).
     /// </summary>
+    /// <remarks>
+    /// Written by the same recorder, from the failed <c>Result</c>'s error or from an exception that implements
+    /// <see cref="Errors.IHasError"/>.
+    /// </remarks>
     public const string ErrorCode = "error.code";
+
+    /// <summary>
+    /// Tag (span attribute and metric dimension) carrying how an operation ended, one of the
+    /// <see cref="WellKnownOutcomes"/> values (<c>"outcome"</c>).
+    /// </summary>
+    public const string Outcome = "outcome";
 }

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Google.Rpc;
@@ -121,8 +120,8 @@ internal static class RpcStatusFactory
     {
         var errorInfo = new ErrorInfo { Reason = reason, Domain = domain };
 
-        // The same trace id an HTTP problem carries: the W3C id of the current activity, else the request's own id.
-        var traceId = Activity.Current?.Id ?? httpContext?.TraceIdentifier;
+        // The same trace id an HTTP problem carries, from the same Core helper.
+        var traceId = RequestFacts.GetTraceId(httpContext);
         if (!string.IsNullOrEmpty(traceId))
         {
             errorInfo.Metadata[ErrorMemberNames.TraceId] = traceId;

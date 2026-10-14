@@ -18,11 +18,7 @@ public sealed class WithDeletedSpecification<TAggregate> : Specification<TAggreg
         foreach (var include in inner.Includes)
             AddInclude(include);
 
-        if (inner.OrderBy is not null)
-            ApplyOrderBy(inner.OrderBy);
-
-        if (inner.OrderByDescending is not null)
-            ApplyOrderByDescending(inner.OrderByDescending);
+        CopyPrimaryOrdering(inner);
 
         foreach (var (keySelector, descending) in inner.ThenBys)
         {
@@ -44,6 +40,15 @@ public sealed class WithDeletedSpecification<TAggregate> : Specification<TAggreg
             AddStringInclude(path);
 
         IncludeSoftDeleted();
+    }
+
+    // A specification carries exactly one primary sort direction; further keys arrive through ThenBys.
+    private void CopyPrimaryOrdering(ISpecification<TAggregate> inner)
+    {
+        if (inner.OrderBy is not null)
+            ApplyOrderBy(inner.OrderBy);
+        else if (inner.OrderByDescending is not null)
+            ApplyOrderByDescending(inner.OrderByDescending);
     }
 
     /// <summary>

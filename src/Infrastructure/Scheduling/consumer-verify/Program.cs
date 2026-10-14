@@ -1,7 +1,7 @@
 // consumer-verify — exercises SharedKernel.Scheduling exactly as a downstream microservice would:
 // real DI composition through ProjectReference (standing in for a packed NuGet reference — the
 // compiled surface is identical either way), driven through a real Host.CreateApplicationBuilder() ->
-// IHost.StartAsync() composition, never a bare BuildServiceProvider(). Four surfaces:
+// IHost.StartAsync() composition, never a bare BuildServiceProvider(). Five surfaces:
 //   1. AddSharedKernelScheduling() + AddRecurring/AddDeferred resolves IScheduledJobRegistry/
 //      the scheduler readiness probe with zero DI exceptions through a real IHost.StartAsync(), and no
 //      IDistributedLockService registered logs the single-replica startup Warning.
@@ -11,6 +11,7 @@
 //   3. Registration fails fast — before IHost.StartAsync(), before even builder.Build() — when
 //      MisfirePolicy/OverlapPolicy are left unset.
 //   4. The probe reports IsRunning/RegisteredJobCount correctly through the real host.
+//   5. SchedulingTelemetry.Name is a public constant.
 
 using SharedKernel.Application.Mediator.MediatR;
 using SharedKernel.Application.Pipeline;
@@ -22,6 +23,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Scheduling.Diagnostics;
 using SharedKernel.Scheduling.Extensions;
 using SharedKernel.Scheduling.Policies;
 using SharedKernel.Scheduling.Probes;
@@ -30,6 +32,7 @@ using SharedKernel.Scheduling.Registry;
 await Surface1And4_RegistrationResolvesAndProbeReportsThroughRealHost();
 await Surface2_DeferredJobFiresEndToEndThroughMediatR();
 Surface3_RegistrationFailsFastOnMissingPolicies();
+Surface5_TelemetryNameIsPublic();
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
@@ -155,6 +158,17 @@ static void Verify(bool condition, string label)
     }
 
     Console.WriteLine($"  - {label}");
+}
+
+// ── Surface 5: the telemetry name is a public constant a host or a governance check can reference ─────────
+static void Surface5_TelemetryNameIsPublic()
+{
+    if (SchedulingTelemetry.Name != "SharedKernel.Scheduling")
+    {
+        throw new InvalidOperationException($"Expected the telemetry name 'SharedKernel.Scheduling', but it was '{SchedulingTelemetry.Name}'.");
+    }
+
+    Console.WriteLine("  [5] SchedulingTelemetry.Name is public and stable: OK");
 }
 
 // A minimal void command + handler used by every surface above. The handler for Surface 2 records

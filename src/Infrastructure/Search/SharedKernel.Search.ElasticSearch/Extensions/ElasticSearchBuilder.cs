@@ -12,7 +12,6 @@ using SharedKernel.Search.ElasticSearch.Analytics;
 using SharedKernel.Search.ElasticSearch.Cursors;
 using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Index;
-using SharedKernel.Search.ElasticSearch.Logging;
 using SharedKernel.Search.ElasticSearch.Options;
 using SharedKernel.Search.ElasticSearch.Provisioning;
 using SharedKernel.Search.ElasticSearch.Raw;
@@ -64,7 +63,7 @@ public sealed class ElasticSearchBuilder
         if (definitionResult.IsFailure)
         {
             throw new InvalidOperationException(
-                $"Failed to build the SearchIndexDefinition for ElasticSearch index '{readAlias}': {definitionResult.Error.Message}");
+                $"The definition of ElasticSearch index '{readAlias}' is invalid with error code '{definitionResult.Error.Code}', so correct the index configuration passed to AddIndex.");
         }
 
         var definition = definitionResult.Value;
@@ -77,18 +76,21 @@ public sealed class ElasticSearchBuilder
             writeAlias,
             sp.GetRequiredService<IOptions<ElasticSearchOptions>>().Value,
             sp.GetRequiredService<IClock>(),
-            sp.GetRequiredService<ILogger<ElasticSearchIndex<TDocument>>>()));
+            sp.GetRequiredService<ILogger<ElasticSearchIndex<TDocument>>>(),
+            sp.GetRequiredService<SearchTelemetry>()));
 
         _services.AddScoped<IAnalyticsSearch<TDocument>>(sp => new ElasticSearchAnalytics<TDocument>(
             sp.GetRequiredService<ElasticsearchClient>(),
             definition,
-            sp.GetRequiredService<ILogger<ElasticSearchAnalytics<TDocument>>>()));
+            sp.GetRequiredService<ILogger<ElasticSearchAnalytics<TDocument>>>(),
+            sp.GetRequiredService<SearchTelemetry>()));
 
         _services.AddScoped<ICursorSearch<TDocument>>(sp => new ElasticSearchCursorSearch<TDocument>(
             sp.GetRequiredService<ElasticsearchClient>(),
             definition,
             sp.GetRequiredService<IClock>(),
-            sp.GetRequiredService<ILogger<ElasticSearchCursorSearch<TDocument>>>()));
+            sp.GetRequiredService<ILogger<ElasticSearchCursorSearch<TDocument>>>(),
+            sp.GetRequiredService<SearchTelemetry>()));
 
         return this;
     }
@@ -130,8 +132,8 @@ public sealed class ElasticSearchBuilder
         if (!_indexDefinitions.TryGetValue(indexName, out var definition))
         {
             throw new InvalidOperationException(
-                $"Cannot declare a completion field on ElasticSearch index '{indexName}': it has not been " +
-                "registered. Call AddIndex<TDocument>(...) for this index first.");
+                $"A completion field cannot be declared on ElasticSearch index '{indexName}' because it is not registered. " +
+                "Call AddIndex<TDocument>(...) for this index first.");
         }
 
         if (!_completionFields.TryGetValue(indexName, out var fields))
@@ -153,7 +155,8 @@ public sealed class ElasticSearchBuilder
             definition,
             snapshot,
             sp.GetRequiredService<IOptions<ElasticSearchOptions>>().Value,
-            sp.GetRequiredService<ILogger<ElasticSearchSuggestSearch<TDocument>>>()));
+            sp.GetRequiredService<ILogger<ElasticSearchSuggestSearch<TDocument>>>(),
+            sp.GetRequiredService<SearchTelemetry>()));
 
         return this;
     }
@@ -211,7 +214,9 @@ public sealed class ElasticSearchBuilder
                 indexDefinitions,
                 completionFields,
                 writeAliases,
-                sp.GetRequiredService<ILogger<ElasticSearchIndexProvisioner>>()));
+                sp.GetRequiredService<IClock>(),
+                sp.GetRequiredService<ILogger<ElasticSearchIndexProvisioner>>(),
+                sp.GetRequiredService<SearchTelemetry>()));
 
         _services.AddSingleton<ISearchIndexProvisioner>(sp =>
             sp.GetRequiredKeyedService<ISearchIndexProvisioner>(SearchWellKnown.ElasticSearchProviderName));
@@ -242,7 +247,7 @@ public sealed class ElasticSearchBuilder
         {
             _services.AddSingleton<IElasticSearchRawClientAccessor>(sp =>
             {
-                sp.GetRequiredService<ILogger<ElasticSearchRawClientAccessor>>().ElasticSearchRawClientAccessEnabled();
+                ElasticSearchLog.RawClientAccessEnabled(sp.GetRequiredService<ILogger<ElasticSearchRawClientAccessor>>());
                 return new ElasticSearchRawClientAccessor(sp.GetRequiredService<ElasticsearchClient>());
             });
         }

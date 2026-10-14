@@ -13,18 +13,14 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the eighth sibling in the <c>With*Telemetry</c> family (alongside
-/// <see cref="ApplicationTelemetryExtensions.WithApplicationTelemetry"/>,
-/// <see cref="CachingTelemetryExtensions.WithCachingTelemetry"/>,
-/// <see cref="IntelligenceTelemetryExtensions.WithIntelligenceTelemetry"/>,
+/// This is one of the four <c>With*Telemetry</c> extensions left (alongside
 /// <see cref="MessagingTelemetryExtensions.WithMessagingTelemetry"/>,
-/// <see cref="PersistenceTelemetryExtensions.WithPersistenceTelemetry"/>,
-/// <see cref="SearchTelemetryExtensions.WithSearchTelemetry"/>, and
-/// <see cref="WorkflowTelemetryExtensions.WithWorkflowTelemetry"/>), but architecturally distinct
-/// from all seven: <c>11.Communication</c> owns no <c>"SharedKernel.Communication"</c>
-/// <see cref="System.Diagnostics.ActivitySource"/>/<see cref="System.Diagnostics.Metrics.Meter"/>
-/// of its own to wire by bare string name. Instead this method activates two independent
-/// third-party diagnostics sources:
+/// <see cref="PersistenceTelemetryExtensions.WithPersistenceTelemetry"/> and
+/// <see cref="WorkflowTelemetryExtensions.WithWorkflowTelemetry"/>), each wiring third-party instrumentation only:
+/// the kernel's own <c>SharedKernel.*</c> sources and meters are exported by the wildcard of
+/// <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/>. <c>11.Communication</c> owns no
+/// kernel <see cref="System.Diagnostics.ActivitySource"/>/<see cref="System.Diagnostics.Metrics.Meter"/>
+/// pair to wire by name. This method activates two independent third-party diagnostics sources:
 /// </para>
 /// <para>
 /// <b>(1) gRPC — tracing only.</b> <c>WithTracing(t =&gt; t.AddGrpcClientInstrumentation())</c>

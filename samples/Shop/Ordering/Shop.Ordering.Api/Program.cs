@@ -20,12 +20,10 @@ using Shop.Ordering.Infrastructure.Persistence;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.WithApplicationTelemetry();
 builder.WithPersistenceTelemetry();
 builder.WithMessagingTelemetry();
 builder.WithWorkflowTelemetry();
 builder.WithCommunicationTelemetry();
-builder.WithCachingTelemetry();
 
 // The caller: a Keycloak token, its tenant from the signed claim (13.MultiTenancy, Claim only).
 builder.Services.AddOidcAuthentication(builder.Configuration);

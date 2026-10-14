@@ -16,7 +16,10 @@ Test double: `InMemoryScheduledJobRegistry` in `src/Infrastructure/Scheduling/Sh
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -28,4 +31,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. Downstream consumers already shipped: `13.ServiceDefaults`' `WithSchedulingTelemetry` (P-465), the `scheduler` readiness probe mapped by `AddSharedKernelReadiness()` (P-466, superseded by the `IReadinessProbe` model), `16.Testing`'s registry fake (P-467).
+None open.

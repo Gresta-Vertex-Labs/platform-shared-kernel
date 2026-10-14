@@ -1,6 +1,6 @@
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Primitives.Errors;
 using SharedKernel.Persistence.Abstractions.Repositories;
+using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -11,16 +11,10 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// </summary>
 internal sealed class UnsupportedSpecificationException : SharedKernelException
 {
-    /// <summary>
-    /// Initialises a new <see cref="UnsupportedSpecificationException"/> with the given reason.
-    /// </summary>
-    /// <param name="reason">A human-readable description of which specification shape is unsupported.</param>
-    public UnsupportedSpecificationException(string reason)
-        : base(
-            $"The specification cannot be used with bulk mutation operations: {reason}",
-            Error.Validation(
-                "Persistence.BulkMutation.UnsupportedSpecification",
-                $"The specification cannot be used with bulk mutation operations: {reason}"))
+    /// <summary>Initialises a new <see cref="UnsupportedSpecificationException"/> with the given error.</summary>
+    /// <param name="error">The validation error built by the bulk-specification guard.</param>
+    public UnsupportedSpecificationException(Error error)
+        : base(error)
     {
     }
 }

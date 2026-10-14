@@ -14,9 +14,6 @@ SharedKernel.Testing.Clocks.FakeClock.SetUtcNow(System.DateTimeOffset value) -> 
 SharedKernel.Testing.Clocks.FakeClock.Today.get -> System.DateOnly
 SharedKernel.Testing.Clocks.FakeClock.UtcNow.get -> System.DateTimeOffset
 SharedKernel.Testing.Clocks.FakeClock.UtcNow.set -> void
-SharedKernel.Testing.Communication.ActivityRecorder
-SharedKernel.Testing.Communication.ActivityRecorder.Dispose() -> void
-SharedKernel.Testing.Communication.ActivityRecorder.RecordedActivities.get -> System.Collections.Generic.IReadOnlyList<System.Diagnostics.Activity!>!
 SharedKernel.Testing.Communication.AmbientActivityTestHelper
 SharedKernel.Testing.Communication.AmbientActivityTestHelper.Activity.get -> System.Diagnostics.Activity!
 SharedKernel.Testing.Communication.AmbientActivityTestHelper.Dispose() -> void
@@ -183,7 +180,7 @@ SharedKernel.Testing.Persistence.TenantedAggregateFaker<TAggregate, TId>
 SharedKernel.Testing.Persistence.TenantedAggregateFaker<TAggregate, TId>.TenantedAggregateFaker() -> void
 SharedKernel.Testing.Persistence.WithDeletedSpecification<TAggregate>
 SharedKernel.Testing.Validation.ValidationSampleGenerator
-static SharedKernel.Testing.Communication.ActivityRecorder.StartRecording(string! activitySourceName) -> SharedKernel.Testing.Communication.ActivityRecorder!
+const SharedKernel.Testing.Communication.AmbientActivityTestHelper.SourceName = "SharedKernel.Testing" -> string!
 static SharedKernel.Testing.Communication.AmbientActivityTestHelper.Start(System.Diagnostics.ActivityTraceId traceId, System.Diagnostics.ActivitySpanId? parentSpanId = null) -> SharedKernel.Testing.Communication.AmbientActivityTestHelper!
 static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldBeEmpty<T>(this SharedKernel.Contracts.Pagination.CursorPagedList<T>! list) -> void
 static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldBeEmpty<T>(this SharedKernel.Contracts.Pagination.PagedList<T>! list) -> void
@@ -242,3 +239,116 @@ static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidPan(Shared
 static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidVat(string! countryCode = "DE") -> string!
 virtual SharedKernel.Testing.Execution.TestRequestContext.HasPermission(string! permission) -> bool
 virtual SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject, TValue>.CreateFrom(TValue value) -> TValueObject!
+SharedKernel.Testing.Logging.LogRecord.Template.get -> string?
+SharedKernel.Testing.Logging.LoggerFactoryAssertions
+SharedKernel.Testing.Telemetry.ActivityAssertions
+SharedKernel.Testing.Telemetry.ActivityRecorder
+SharedKernel.Testing.Telemetry.ActivityRecorder.Clear() -> void
+SharedKernel.Testing.Telemetry.ActivityRecorder.Dispose() -> void
+SharedKernel.Testing.Telemetry.ActivityRecorder.ForTrace(System.Diagnostics.ActivityTraceId traceId) -> System.Collections.Generic.IReadOnlyList<System.Diagnostics.Activity!>!
+SharedKernel.Testing.Telemetry.ActivityRecorder.RecordedActivities.get -> System.Collections.Generic.IReadOnlyList<System.Diagnostics.Activity!>!
+SharedKernel.Testing.Telemetry.ActivityRecorder.ShouldHaveStoppedAll() -> SharedKernel.Testing.Telemetry.ActivityRecorder!
+SharedKernel.Testing.Telemetry.ActivityRecorder.StartedActivities.get -> System.Collections.Generic.IReadOnlyList<System.Diagnostics.Activity!>!
+SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.Counter = 1 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.Gauge = 4 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.Histogram = 3 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.ObservableCounter = 5 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.ObservableGauge = 7 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.ObservableUpDownCounter = 6 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.Unknown = 0 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.InstrumentKind.UpDownCounter = 2 -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.MetricAssertions
+SharedKernel.Testing.Telemetry.MetricRecorder
+SharedKernel.Testing.Telemetry.MetricRecorder.Clear() -> void
+SharedKernel.Testing.Telemetry.MetricRecorder.Collect() -> void
+SharedKernel.Testing.Telemetry.MetricRecorder.Count(string! instrument, params System.Collections.Generic.KeyValuePair<string!, object?>[]! tags) -> int
+SharedKernel.Testing.Telemetry.MetricRecorder.Dispose() -> void
+SharedKernel.Testing.Telemetry.MetricRecorder.Instruments.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Telemetry.RecordedInstrument!>!
+SharedKernel.Testing.Telemetry.MetricRecorder.Measurements.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Telemetry.RecordedMeasurement!>!
+SharedKernel.Testing.Telemetry.MetricRecorder.MeasurementsOf(string! instrument) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Telemetry.RecordedMeasurement!>!
+SharedKernel.Testing.Telemetry.MetricRecorder.Sum(string! instrument, params System.Collections.Generic.KeyValuePair<string!, object?>[]! tags) -> double
+SharedKernel.Testing.Telemetry.RecordedInstrument
+SharedKernel.Testing.Telemetry.RecordedInstrument.<Clone>$() -> SharedKernel.Testing.Telemetry.RecordedInstrument!
+SharedKernel.Testing.Telemetry.RecordedInstrument.Deconstruct(out string! MeterName, out string! Name, out string? Unit, out string? Description, out SharedKernel.Testing.Telemetry.InstrumentKind Kind, out System.Type! ValueType) -> void
+SharedKernel.Testing.Telemetry.RecordedInstrument.Description.get -> string?
+SharedKernel.Testing.Telemetry.RecordedInstrument.Description.init -> void
+SharedKernel.Testing.Telemetry.RecordedInstrument.Equals(SharedKernel.Testing.Telemetry.RecordedInstrument? other) -> bool
+SharedKernel.Testing.Telemetry.RecordedInstrument.Kind.get -> SharedKernel.Testing.Telemetry.InstrumentKind
+SharedKernel.Testing.Telemetry.RecordedInstrument.Kind.init -> void
+SharedKernel.Testing.Telemetry.RecordedInstrument.MeterName.get -> string!
+SharedKernel.Testing.Telemetry.RecordedInstrument.MeterName.init -> void
+SharedKernel.Testing.Telemetry.RecordedInstrument.Name.get -> string!
+SharedKernel.Testing.Telemetry.RecordedInstrument.Name.init -> void
+SharedKernel.Testing.Telemetry.RecordedInstrument.RecordedInstrument(string! MeterName, string! Name, string? Unit, string? Description, SharedKernel.Testing.Telemetry.InstrumentKind Kind, System.Type! ValueType) -> void
+SharedKernel.Testing.Telemetry.RecordedInstrument.Unit.get -> string?
+SharedKernel.Testing.Telemetry.RecordedInstrument.Unit.init -> void
+SharedKernel.Testing.Telemetry.RecordedInstrument.ValueType.get -> System.Type!
+SharedKernel.Testing.Telemetry.RecordedInstrument.ValueType.init -> void
+SharedKernel.Testing.Telemetry.RecordedMeasurement
+SharedKernel.Testing.Telemetry.RecordedMeasurement.<Clone>$() -> SharedKernel.Testing.Telemetry.RecordedMeasurement!
+SharedKernel.Testing.Telemetry.RecordedMeasurement.Deconstruct(out string! MeterName, out string! InstrumentName, out double Value, out System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, object?>>! Tags) -> void
+SharedKernel.Testing.Telemetry.RecordedMeasurement.Equals(SharedKernel.Testing.Telemetry.RecordedMeasurement? other) -> bool
+SharedKernel.Testing.Telemetry.RecordedMeasurement.InstrumentName.get -> string!
+SharedKernel.Testing.Telemetry.RecordedMeasurement.InstrumentName.init -> void
+SharedKernel.Testing.Telemetry.RecordedMeasurement.MeterName.get -> string!
+SharedKernel.Testing.Telemetry.RecordedMeasurement.MeterName.init -> void
+SharedKernel.Testing.Telemetry.RecordedMeasurement.RecordedMeasurement(string! MeterName, string! InstrumentName, double Value, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, object?>>! Tags) -> void
+SharedKernel.Testing.Telemetry.RecordedMeasurement.Tags.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, object?>>!
+SharedKernel.Testing.Telemetry.RecordedMeasurement.Tags.init -> void
+SharedKernel.Testing.Telemetry.RecordedMeasurement.TryGetTag(string! key, out object? value) -> bool
+SharedKernel.Testing.Telemetry.RecordedMeasurement.Value.get -> double
+SharedKernel.Testing.Telemetry.RecordedMeasurement.Value.init -> void
+override SharedKernel.Testing.Telemetry.RecordedInstrument.Equals(object? obj) -> bool
+override SharedKernel.Testing.Telemetry.RecordedInstrument.GetHashCode() -> int
+override SharedKernel.Testing.Telemetry.RecordedInstrument.ToString() -> string!
+override SharedKernel.Testing.Telemetry.RecordedMeasurement.Equals(object? obj) -> bool
+override SharedKernel.Testing.Telemetry.RecordedMeasurement.GetHashCode() -> int
+override SharedKernel.Testing.Telemetry.RecordedMeasurement.ToString() -> string!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldFollowLogConvention(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldHaveLoggedTemplate(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId, string! template) -> SharedKernel.Testing.Logging.LogRecord!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldHaveLoggedWithException(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId, System.Type! exceptionType) -> SharedKernel.Testing.Logging.LogRecord!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldHaveLoggedWithoutException(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId) -> SharedKernel.Testing.Logging.LogRecord!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldNotLeak(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, params string![]! forbiddenValues) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldOnlyLogEventIdsInSubBlock(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, int domainBase, int subBlockIndex) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>!
+static SharedKernel.Testing.Logging.LoggerFactoryAssertions.ShouldHaveCategory(this SharedKernel.Testing.Logging.InMemoryLoggerFactory! factory, System.Type! kernelType) -> SharedKernel.Testing.Logging.InMemoryLoggerFactory!
+static SharedKernel.Testing.Logging.LoggerFactoryAssertions.ShouldOnlyHaveCategoriesStartingWith(this SharedKernel.Testing.Logging.InMemoryLoggerFactory! factory, string! prefix) -> SharedKernel.Testing.Logging.InMemoryLoggerFactory!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldBeRecordedCancellation(this System.Diagnostics.Activity! activity) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldBeRecordedException(this System.Diagnostics.Activity! activity, System.Type! exceptionType, string? errorCode = null) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldBeRecordedFailure(this System.Diagnostics.Activity! activity, SharedKernel.Primitives.Errors.Error! error) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldBeRecordedSuccess(this System.Diagnostics.Activity! activity) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldBeUnset(this System.Diagnostics.Activity! activity) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldFollowSpanConvention(this System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>! activities) -> System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldFollowSpanConvention(this System.Diagnostics.Activity! activity) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveEvent(this System.Diagnostics.Activity! activity, string! name) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveKind(this System.Diagnostics.Activity! activity, System.Diagnostics.ActivityKind kind) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveOutcome(this System.Diagnostics.Activity! activity, string! outcome) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveParent(this System.Diagnostics.Activity! activity, System.Diagnostics.Activity! parent) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveSingleSpan(this System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>! activities, string! name) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveSource(this System.Diagnostics.Activity! activity, string! sourceName) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveSpan(this System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>! activities, string! name) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveSpanCount(this System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>! activities, string! name, int count) -> System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveStatus(this System.Diagnostics.Activity! activity, System.Diagnostics.ActivityStatusCode status, string? description = null) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveTag(this System.Diagnostics.Activity! activity, string! key, object? value) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldHaveTagKeys(this System.Diagnostics.Activity! activity, params string![]! keys) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldNotHaveSpan(this System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>! activities, string! name) -> System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldNotHaveTag(this System.Diagnostics.Activity! activity, string! key) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldNotLeak(this System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>! activities, params string![]! forbiddenValues) -> System.Collections.Generic.IEnumerable<System.Diagnostics.Activity!>!
+static SharedKernel.Testing.Telemetry.ActivityAssertions.ShouldNotLeak(this System.Diagnostics.Activity! activity, params string![]! forbiddenValues) -> System.Diagnostics.Activity!
+static SharedKernel.Testing.Telemetry.ActivityRecorder.StartRecording(params string![]! sourceNames) -> SharedKernel.Testing.Telemetry.ActivityRecorder!
+static SharedKernel.Testing.Telemetry.ActivityRecorder.StartRecording(string! sourceName) -> SharedKernel.Testing.Telemetry.ActivityRecorder!
+static SharedKernel.Testing.Telemetry.ActivityRecorder.StartRecordingPrefix(string! sourceNamePrefix) -> SharedKernel.Testing.Telemetry.ActivityRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldFollowMetricConvention(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldHaveInstrument(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder, string! name, string? unit = null, SharedKernel.Testing.Telemetry.InstrumentKind? kind = null) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldHaveMeasurement(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder, string! instrument, double? value = null, params System.Collections.Generic.KeyValuePair<string!, object?>[]! tags) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldHaveSum(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder, string! instrument, double expected, params System.Collections.Generic.KeyValuePair<string!, object?>[]! tags) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldHaveTagSet(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder, string! instrument, params string![]! keys) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldNotHaveTagKey(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder, string! instrument, string! key) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldNotLeak(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder, params string![]! forbiddenValues) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricAssertions.ShouldUseOutcomeVocabulary(this SharedKernel.Testing.Telemetry.MetricRecorder! recorder, string! instrument) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricRecorder.StartRecording(params string![]! meterNames) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.MetricRecorder.StartRecordingPrefix(string! meterNamePrefix) -> SharedKernel.Testing.Telemetry.MetricRecorder!
+static SharedKernel.Testing.Telemetry.RecordedInstrument.operator !=(SharedKernel.Testing.Telemetry.RecordedInstrument? left, SharedKernel.Testing.Telemetry.RecordedInstrument? right) -> bool
+static SharedKernel.Testing.Telemetry.RecordedInstrument.operator ==(SharedKernel.Testing.Telemetry.RecordedInstrument? left, SharedKernel.Testing.Telemetry.RecordedInstrument? right) -> bool
+static SharedKernel.Testing.Telemetry.RecordedMeasurement.operator !=(SharedKernel.Testing.Telemetry.RecordedMeasurement? left, SharedKernel.Testing.Telemetry.RecordedMeasurement? right) -> bool
+static SharedKernel.Testing.Telemetry.RecordedMeasurement.operator ==(SharedKernel.Testing.Telemetry.RecordedMeasurement? left, SharedKernel.Testing.Telemetry.RecordedMeasurement? right) -> bool

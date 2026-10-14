@@ -21,7 +21,7 @@ internal sealed class TenantFileStorage : ITenantFileStorage
     {
         if (tenantId.IsDefault)
         {
-            throw new ArgumentException("The tenant identifier must not be default(TenantId).", nameof(tenantId));
+            throw new ArgumentException("The tenant identifier must not be default(TenantId). Pass the identifier of the calling tenant.", nameof(tenantId));
         }
 
         return new ScopedFileStorage(_inner, tenantId);

@@ -20,7 +20,10 @@ Test kit: `src/Infrastructure/Communication/SharedKernel.Communication.Testing` 
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | :---: |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -32,4 +35,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. (The old `○` rows for `01.Core` P-249 and `00.Governance` P-250 were stale — both shipped 2026-07-13.)
+- **14.Presentation:** the `grpc.{status}` and `http.{status}` names in `GrpcErrorCodes.ForStatus` and the framework-problem codes are mirrored by hand in `CommunicationErrorCodes`, so a rename there must be mirrored here.

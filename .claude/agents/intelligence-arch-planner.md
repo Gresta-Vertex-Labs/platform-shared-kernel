@@ -85,7 +85,7 @@ Cite the rule number from `src/Infrastructure/AI/CLAUDE.md` → `## Rules & Inva
 ## Cross-domain couplings
 
 - **01.Core** — `Result`/`Error`, `IReadinessProbe`, `TenantScope`/`TenantId`, `AddValidatedOptions`.
-- **13.ServiceDefaults** — `WithIntelligenceTelemetry()` subscribes to `SharedKernel.AI` by name; `AddSharedKernelReadiness()` maps the `vector-store-*` probes.
+- **13.ServiceDefaults** — the `SharedKernel.*` wildcard of `AddServiceDefaults()` subscribes `SharedKernel.AI`; `AddSharedKernelReadiness()` maps the `vector-store-*` probes.
 - **16.Testing** — owns the double rules and `QdrantContainerFixture` (`qdrant/qdrant:v1.16.0`) in `SharedKernel.Testing.Internal`.
 - **00.Governance** — `IntelligenceTopologyRules`, SK0026, SK0027 (its XML doc still names a removed `ProbeAsync`); a new analyzer need is a note.
 - **02.Caching / 06.Persistence / 09.Search** — no references; a proposal that needs one is an adapter-edge question for arch-lead.

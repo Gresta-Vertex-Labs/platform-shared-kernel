@@ -70,8 +70,32 @@ public sealed class InMemoryReportExporterTests
         factory.GetExporter<Row>(ReportFormat.Pdf).Should().BeSameAs(factory.Exporter<Row>(ReportFormat.Pdf));
         factory.Exporter<Row>(ReportFormat.Pdf).Format.Should().Be(ReportFormat.Pdf);
         factory.ParseFormat(".XLSX").Value.Should().Be(ReportFormat.Xlsx);
-        factory.ParseFormat("docx").Error.Code.Should().Be(ReportingErrorCodes.UnsupportedFormat);
+        factory.ParseFormat("docx").Error.Code.Should().Be(ReportingErrorCodes.FormatNotSupported);
         new InMemoryReportExporterFactory(ReportFormat.Csv).Formats.Should().Equal(ReportFormat.Csv);
+    }
+
+    [Fact]
+    public void Factory_ForAnUnsupportedFormat_FailsLikeTheRealFactory()
+    {
+        var factory = new InMemoryReportExporterFactory(ReportFormat.Csv);
+
+        factory.ParseFormat("docx").Error.Should().Be(ReportingErrors.FormatNotSupported("docx", factory.Formats));
+        factory.ParseFormat("docx").Error.Message.Should().Be("The report format 'docx' is not supported. Supported formats: csv.");
+        var get = () => factory.GetExporter<Row>(ReportFormat.Pdf);
+        get.Should().Throw<InvalidOperationException>().WithMessage(
+            "No report exporter is registered for the format 'pdf'. Registered formats: csv. Create the fake factory with that format.");
+    }
+
+    [Fact]
+    public async Task Exporter_SimulatedStreamFailure_UsesTheRealDestinationErrorCode()
+    {
+        var exporter = new InMemoryReportExporter<Row> { SimulateFailure = true };
+        using var stream = new MemoryStream();
+
+        Result<ReportStreamOutcome> result = await exporter.ExportToStreamAsync(Rows(1), Definition, stream);
+
+        result.Error.Code.Should().Be(ReportingErrorCodes.InvalidDestination);
+        result.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Validation);
     }
 
     [Fact]

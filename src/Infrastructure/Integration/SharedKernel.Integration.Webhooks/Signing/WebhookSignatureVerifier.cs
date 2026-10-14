@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Integration.Webhooks.Signing;
 
@@ -15,6 +16,9 @@ namespace SharedKernel.Integration.Webhooks.Signing;
 public static class WebhookSignatureVerifier
 {
     private static readonly TimeSpan DefaultTolerance = TimeSpan.FromMinutes(5);
+
+    // The receiver is a static primitive with no container, so it reads the system clock directly (immutable, no state).
+    private static readonly IClock Clock = new SystemClock();
 
     /// <summary>
     /// Verifies that <paramref name="signatureHeaderValue"/> is a valid HMAC-SHA256 signature of
@@ -132,7 +136,7 @@ public static class WebhookSignatureVerifier
             return false;
         }
 
-        var skew = DateTimeOffset.UtcNow - signedAt;
+        var skew = Clock.UtcNow - signedAt;
         if (skew.Duration() > effectiveTolerance)
         {
             return false;

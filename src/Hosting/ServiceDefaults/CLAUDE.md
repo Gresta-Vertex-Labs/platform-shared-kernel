@@ -12,7 +12,7 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.ServiceDefaults` | Host | **Composition base.** OTel, health checks, `StartupGate`, `AddSharedKernelReadiness()`, every `WithXTelemetry()`, rate limiting, `BaggageLogRecordProcessor`, `RequestBaggageRefusingPropagator`. References `SharedKernel.Primitives` + OpenTelemetry only |
+| `SharedKernel.ServiceDefaults` | Host | **Composition base.** OTel (the `SharedKernel.*` wildcard, one resource), health checks, `StartupGate`, `AddSharedKernelReadiness()`, the four third-party `WithXTelemetry()`, rate limiting, `BaggageLogRecordProcessor`, `RequestBaggageRefusingPropagator`. References `SharedKernel.Primitives` + OpenTelemetry only |
 | `SharedKernel.ServiceDefaults.Security` | Host | `AddSharedKernelRequestContext()` / `UseSharedKernelRequestContext()` — the one `IRequestContext` over `IUserContext`; correlation id; refusal of inbound baggage |
 | `SharedKernel.ServiceDefaults.Persistence` | Host | Database and persistence-startup readiness checks |
 | `SharedKernel.ServiceDefaults.Security.Mtls` | Host | Kestrel client-certificate negotiation; forwarded-header certificate for TLS terminated at an ingress |
@@ -29,15 +29,15 @@ Overloads, option keys and defaults: each package's `README.md` (`SharedKernel.S
 
 **Composition base (`SharedKernel.ServiceDefaults`)**
 - `builder.AddServiceDefaults()` — first call: `AddSharedKernelTelemetry(entry-assembly name)` + `AddSharedKernelHealthChecks()`. Registers no dependency-specific check.
-- `builder.AddSharedKernelTelemetry(serviceName)` — tracing, metrics, logs, `BaggageLogRecordProcessor`; OTLP exporter configured only by the standard `OTEL_EXPORTER_OTLP_*` variables; installs `RequestBaggageRefusingPropagator`.
+- `builder.AddSharedKernelTelemetry(serviceName)` — tracing, metrics, logs, `BaggageLogRecordProcessor`; every `SharedKernel.*` source and meter by wildcard, HttpClient metrics, the SignalR server source, one resource (`service.version` = entry assembly informational version) and the second-scale duration view; OTLP exporter configured only by the standard `OTEL_EXPORTER_OTLP_*` variables; installs `RequestBaggageRefusingPropagator`. Adds a `Polly` logger-category filter at `LogLevel.None` (rule 32).
 - `services.AddSharedKernelHealthChecks()` — `StartupGate` + `startup` check (tag `ready`). A second call duplicates `startup` and the host throws.
-- `healthChecks.AddSharedKernelReadiness(o => …)` — one `ready` check per registered `IReadinessProbe`, named after the probe; a throwing probe → Unhealthy with the exception type only (13005); duplicate names throw.
+- `healthChecks.AddSharedKernelReadiness(o => …)` — one `ready` check per registered `IReadinessProbe`, named after the probe; a throwing probe → Unhealthy with the exception type only (13001); duplicate names throw.
 - `app.MapDefaultHealthCheckEndpoints()` — `/health/live` (`live` tag) and `/health/ready` (`ready` tag).
-- `StartupGate.MarkReady()`; `HealthCheckNames`, `HealthCheckTags`, `HealthCheckRegistrationLogging.LogRegistration` (public so a service's own check logs 13002).
-- `builder.With{Application,Caching,Communication,Integration,Intelligence,Messaging,Persistence,Reporting,Scheduling,Search,Storage,Workflow}Telemetry()` — subscribe to each domain's `ActivitySource`/`Meter` **by name**; reference nothing; idempotent.
+- `StartupGate.MarkReady()`; `HealthCheckNames`, `HealthCheckTags`, `HealthCheckRegistrationLogging.LogRegistration` (public so a service's own check logs 13000; no category argument, the base owns the category).
+- `builder.With{Communication,Messaging,Persistence,Workflow}Telemetry()` — third-party instrumentation only: gRPC client + `Polly` meter; `MassTransit` source and meter; `Npgsql` source and meter; the `Temporalio.Extensions.OpenTelemetry.*` tracing sources. Reference nothing; idempotent. Kernel names need no call.
 - `builder.AddSharedKernelRateLimiting(o => …)` — global fixed window per remote IP + `RateLimitPolicyNames.Authentication`; `configure` runs last.
 
-**`.Security`** — `services.AddSharedKernelRequestContext(o => …)` (`RequestContextOptions.TrustInboundBaggage`, default `false`; needs an `IUserContext` from `12.Security`) and `app.UseSharedKernelRequestContext()` (the first middleware; throws if the services were not added).
+**`.Security`** — `services.AddSharedKernelRequestContext(o => …)` (`RequestContextOptions.TrustInboundBaggage`, default `false`; needs an `IUserContext` from `12.Security`) and `app.UseSharedKernelRequestContext()` (the first middleware; throws if the services were not added). It tags the ambient server span with `correlation.id` and the asserted `tenant.id`; `TenantResolutionMiddleware` re-tags `tenant.id` with the resolved tenant.
 
 **`.Persistence`** — `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()`, `AddPersistenceStartupReadinessCheck()`; tagged `ready`, `db`.
 
@@ -49,7 +49,7 @@ Overloads, option keys and defaults: each package's `README.md` (`SharedKernel.S
 
 **`.Localization`** — `builder.AddSharedKernelLocalization(o => …)` (default order `UserPreference → TenantDefault → AcceptLanguageHeader`); the service still calls `app.UseRequestLocalization()`.
 
-**Canonical order** (compiled reference: `samples/Shop/Ordering/Shop.Ordering.Api/Program.cs`): `AddServiceDefaults()` → authentication (`12.Security`) → `AddSharedKernelRequestContext()` → optional `AddSharedKernelMultiTenancy()` / `AddSharedKernelRateLimiting()` → `AddHealthChecks().AddDatabaseReadinessCheck<T>().AddSharedKernelReadiness()` → the `WithXTelemetry()` the service needs. Pipeline: `UseSharedKernelRequestContext()` first → `UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()))` (or by hand: `UseExceptionHandler`, `UseAuthentication`, tenant middleware, `UseRateLimiter`, `UseAuthorization`) → `MapDefaultHealthCheckEndpoints()`.
+**Canonical order** (compiled reference: `samples/Shop/Ordering/Shop.Ordering.Api/Program.cs`): `AddServiceDefaults()` → authentication (`12.Security`) → `AddSharedKernelRequestContext()` → optional `AddSharedKernelMultiTenancy()` / `AddSharedKernelRateLimiting()` → `AddHealthChecks().AddDatabaseReadinessCheck<T>().AddSharedKernelReadiness()` → the third-party `WithXTelemetry()` the service needs. Pipeline: `UseSharedKernelRequestContext()` first → `UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()))` (or by hand: `UseExceptionHandler`, `UseAuthentication`, tenant middleware, `UseRateLimiter`, `UseAuthorization`) → `MapDefaultHealthCheckEndpoints()`.
 
 ## Rules & Invariants
 
@@ -60,7 +60,7 @@ Overloads, option keys and defaults: each package's `README.md` (`SharedKernel.S
 5. **Live ≠ ready.** Anything depending on an external system is tagged `ready`, never `live`. A backlog, queue depth or job count is data, never a failure.
 6. Helpers an integration package needs from the base are public API, never `InternalsVisibleTo`.
 7. **One request context.** `UseSharedKernelRequestContext()` is the only HTTP adapter that creates the correlation id and the request's `RequestContextScope`; it runs before `UseExceptionHandler()`. Never add a second correlation-id middleware; never read `Activity.Id`/`TraceId` as the correlation id.
-8. The correlation id is kept only when `CorrelationIds.IsValid` accepts it, else `CorrelationIds.New()`; a rejected value is never logged (length only, 13007). It is echoed via `Response.OnStarting`, also on error responses.
+8. The correlation id is kept only when `CorrelationIds.IsValid` accepts it, else `CorrelationIds.New()`; a rejected value is never logged (length only, 13201). It is echoed via `Response.OnStarting`, also on error responses.
 9. `HttpRequestContext` reads the caller **lazily** from `SecurityRequestContext`, because the middleware runs before `UseAuthentication()`.
 10. `AddSharedKernelRequestContext()` uses `Add` (not `TryAdd`) for `IRequestContext` so it replaces `Persistence.EfCore`'s fail-closed `AnonymousRequestContext` in any order. Mapping: `UserId = SubjectId ?? ClientId`; `TenantId` = `IUserContext.TenantId`; `ActorKind` from `IUserContext` when authenticated, else `Anonymous` (never `System`); `HasPermissionAsync` ordinal.
 11. **Tenant resolution only replaces the tenant**, in an inner `RequestContextScope` (`WithTenant`); caller and correlation id stay the outer scope's. The middleware also sets `WellKnownBaggageKeys.TenantId` baggage.
@@ -75,10 +75,16 @@ Overloads, option keys and defaults: each package's `README.md` (`SharedKernel.S
 20. **`AddSharedKernelRateLimiting()` never sets `OnRejected`**, is never called by `AddServiceDefaults()`, and never references `14.Presentation`; `AddSharedKernelWebApi()` fills `OnRejected` with the platform 429 only when nothing else has.
 21. Keep `AddSharedKernelKeyVaultConfiguration()` (secrets as configuration) distinct from `AddAzureKeyVaultEncryption` (keys for encryption).
 22. `requireAuthorization: true` on health endpoints is defense in depth only (it breaks kubelet probes); endpoints must be network-restricted.
-23. mTLS: the validator is resolved per handshake from a fresh scope; `MtlsForwardedHeaderOptions.HeaderName` has no vendor default; without `TrustedNetworks` a one-time warning (13003) fires.
-24. **Never log** certificate bytes, raw tokens, raw header values or a rejected correlation id — lengths, thumbprints and subjects only.
+23. mTLS: the validator is resolved per handshake from a fresh scope; `MtlsForwardedHeaderOptions.HeaderName` has no vendor default; without `TrustedNetworks` a one-time warning (13303) fires.
+24. **Never log** certificate bytes, raw tokens, raw header values or a rejected correlation id — lengths and thumbprints only. Also never a certificate subject, a remote IP address, a tenant id placeholder or free-text reasons (a validator's `FailureReason`); a caught exception is passed as the `Exception` parameter, never as its type name or message.
 25. New packages are named `SharedKernel.ServiceDefaults.{Capability}[.{Provider}]`.
 26. `StartupGate` is the only mutable singleton state. OTel, health checks, rate limiting, strategies and middleware stay reflection-free.
+27. **Kernel telemetry is subscribed by wildcard, never by copied name.** `AddSharedKernelTelemetry()` calls `AddSource("SharedKernel.*")` and `AddMeter("SharedKernel.*")`; no `SharedKernel.`-named source or meter literal is copied into this domain. A kernel source or meter is named `SharedKernel.{Capability}[.{Sub}]`; a name outside that prefix is not exported (a defect of its owner, guarded by 00.Governance). `With{X}Telemetry()` exists only for third-party instrumentation (`MassTransit`, `Npgsql`, `Polly` with gRPC client instrumentation, the `Temporalio.Extensions.OpenTelemetry.*` tracing sources), never for a name a kernel package emits itself. `NoCopiedKernelTelemetryNamesTests` fails when a `"SharedKernel.` literal appears in `Telemetry/` beside `TelemetryNames`.
+28. **One resource, one version.** `AddSharedKernelTelemetry()` configures the resource once; `service.version` is `TelemetryVersion.Of(entry assembly)` (informational version), `TelemetryVersion.Unknown` when there is no entry assembly. Second-unit `Histogram<double>` instruments of `SharedKernel.*` meters get the second-scale bucket view from the base (`DurationHistogramView`, type-pattern predicate, no reflection), registered once per service collection.
+29. **The inbound server span carries the platform's ids.** `RequestContextMiddleware` tags `Activity.Current` with `WellKnownTagKeys.CorrelationId`, and `TenantResolutionMiddleware` with `WellKnownTagKeys.TenantId` (a host without multi-tenancy gets the credential-asserted tenant from `RequestContextMiddleware`'s `finally`). Only validated, platform-made values are tagged, written before `UseExceptionHandler()` so a handled exception cannot remove them. This domain starts no span and owns no `ActivitySource`; it leaves the ASP.NET Core instrumentation's `RecordException` off (the exception handler and the gRPC interceptor of `14.Presentation` record the failure once).
+30. **Request-context headers are read through `RequestContextPropagation.ReadHeaders`, never hand-parsed, and the identity they carry is never applied.** The correlation id is taken from the result; the parsed tenant, actor id, actor kind and client id must not reach `IRequestContext`, a span tag, a log or baggage (an inbound HTTP header is forgeable; rules 9-11, 19).
+31. **One EventId sub-block per logging package** (table in `## Logging`), constants from `{Package}LoggingEventIds` over `LoggingEventIdRanges.ServiceDefaults`, one `{Package}Log` class per package under `Diagnostics/`, categories from kernel marker types (never a string, never a consumer type), required loggers, templates one sentence with quoted identifiers, `Exception` last on every caught-exception log. Tests name the domain base explicitly: `ServiceDefaults.Security.Mtls` is 13300 here, `Security.Mtls` is 12300 in `12.Security`.
+32. **The `Polly` logger category is off.** The standard resilience handler logs a failed attempt's exception message (host, URL, key) as the `{Result}` property under the `Polly` category, outside every kernel logger, and has no switch to format exceptions. `AddSharedKernelTelemetry()` adds a `Polly` filter at `LogLevel.None`; the `Polly` meter is unaffected. A service re-enables it with its own `AddFilter("Polly", …)` after `AddServiceDefaults()` and accepts the content. `PollyResilienceLogTests` drives a faulting typed `HttpClient` and also proves the leak returns when the category is re-enabled.
 
 ## Decisions
 
@@ -86,28 +92,44 @@ Overloads, option keys and defaults: each package's `README.md` (`SharedKernel.S
 | --- | --- |
 | Providers register `IReadinessProbe`; one `AddSharedKernelReadiness()` maps them | No per-dependency packages; the host cannot forget a dependency it configured |
 | Base references Foundation only | Every service restores the base; heavy dependencies stay opt-in |
-| `WithXTelemetry()` subscribe by source name | No reference from the base to any capability package |
+| The four `WithXTelemetry()` subscribe third-party names | No reference from the base to any capability or vendor package. Kernel names come from the wildcard |
+| `SharedKernel.*` wildcard in the base; eight `With{X}Telemetry()` deleted, no shims | A hand-copied name silently dropped the Messaging meter and Temporal sources; the prefix is the one contract. Pre-GA, so the deletion is a release-noted breaking change like the deleted readiness packages |
+| HttpClient metrics and the SignalR server source (`Microsoft.AspNetCore.SignalR.Server`, the one source of the .NET 10 shared framework) live in the base, not a new extension | The base already carries the HttpClient and ASP.NET Core instrumentation; an unused source costs nothing. The SignalR transport meter `Microsoft.AspNetCore.Http.Connections` is already subscribed by the ASP.NET Core metrics instrumentation |
+| `WithWorkflowTelemetry()` subscribes `Temporalio.Extensions.OpenTelemetry.*`, not `Temporalio.*` | The four `TracingInterceptor` sources (Client, Workflow, Activity, Nexus) share that prefix; the narrower pattern cannot pull in an unrelated `Temporalio.` source. A test reads the names from the SDK's own source objects, so an upstream rename fails it |
 | Baggage allow-list on log records (correlation id, tenant only) | Copying every baggage item would let an anonymous caller stamp any property on every log record of its request |
 | Inbound baggage refused by default at two stores (propagator + request `Activity`) | Baggage flows to every outbound call; a caller could plant a tenant or user id downstream services trust |
 | No default `OnRejected` in rate limiting | A default here would override `14.Presentation`'s platform 429 problem body |
 | Claim → Header → Database default order | A signature-verified claim outranks an unsigned header |
 | Tenant catalog is read-only | Provisioning/onboarding is a service concern, not host composition |
+| Request-context headers are parsed through `ReadHeaders`; the identity they carry is discarded | An inbound HTTP header is forgeable by any external caller, and traces share the trust level of logs; applying or tagging it would reopen the spoofing hole baggage refusal closed. An "on behalf of" attribution needs a security-reviewed opt-in and an `IRequestContext` member `01.Core` does not have |
+| `tenant.id` is written by the tenant middleware when it resolves, else filled from the credential-asserted tenant | Keeps the tag correct with and without `SharedKernel.MultiTenancy` using no cross-package marker. Accepted imprecision: for an inactive tenant the span shows the asserted tenant while the request ran with `TenantId = null` |
+| The request-context and tenant middleware tag the ambient server span and start no span | A per-request span in the hottest path with no failure semantic of its own earns nothing; T1 would also need a `SharedKernel.MultiTenancy` source for no reader. T1, T3, T5, T6, E1, E4, C1-C3 do not apply to this domain (no source, meter, `Error` or classified exception exists) |
+| One sub-block per package, no package families | Seven packages fit the ten slots of 13000-13999; sharing a block is only needed where packages exceed slots (`01.Core`) |
+| `UnavailableDatabaseTenantResolutionStrategy` stays a defensive stub | Startup already fails through `TenantResolutionOptionsValidator`; the stub is reachable only by bypassing it, and sharing one message constant keeps the two from drifting |
+| A static or startup-callback logging site takes its category from an `internal sealed` marker type of its package; loggers are required | L7 forbids a string or consumer-type category and L8 forbids silently logging nothing. A host without logging services fails when the health check options are resolved, instead of registering checks nobody sees in the startup log. Raised with `arch-lead`: root L7 does not yet say what a static logging site uses |
+| The base switches the `Polly` log category off instead of formatting exceptions | Polly's telemetry options are per pipeline and cannot format an exception (only a result), the handler is built by `11.Communication` and the other HTTP packages, and the leak is the exception message itself. A category filter in the one shared composition covers every pipeline; the metrics stay. T4 holds: no raw tag literal exists in this domain (`SetTag` uses `WellKnownTagKeys` only) |
 
 ## Logging
 
-Block **13000–13999**. The base and every `SharedKernel.ServiceDefaults.*` package share **13000–13099**, allocated one id at a time and never reused; `SharedKernel.MultiTenancy` owns **13100–13199**.
+Block **13000–13999**, `LoggingEventIdRanges.ServiceDefaults`. Every package owns one 100-wide sub-block of it, built in `{Package}LoggingEventIds` (`internal`, `Base = ServiceDefaults + n * PackageSubBlockWidth`); the message classes are `{Package}Log` under `Diagnostics/`. `EventIdUniquenessTests` reads this table, so a row's index and package name are load-bearing. A new package takes the next free index (7, 8, 9); a package that outgrows 100 ids is a design review. An id is never reused.
 
-| EventId | Package | Event |
-| --- | --- | --- |
-| 13000, 13001 | `.Security.Mtls` | certificate accepted / rejected (thumbprint, subject only) |
-| 13002 | base | health check registered (`HealthCheckRegistrationLogging`) |
-| 13003 | `.Security.Mtls` | forwarded-header trust not configured (once) |
-| 13004 | `.Localization` | no dynamic culture step configured (once) |
-| 13005 | base | readiness probe threw |
-| 13006, 13007 | `.Security` | correlation id created (Debug) / inbound correlation id rejected (length only) |
-| 13100, 13101 | `MultiTenancy` | tenant resolved / not resolved |
+| Index | Sub-block | Package | Events |
+| :---: | --- | --- | --- |
+| 0 | 13000-13099 | `SharedKernel.ServiceDefaults` | 13000 health check registered (Information); 13001 readiness probe threw (Error, exception passed) |
+| 1 | 13100-13199 | `SharedKernel.MultiTenancy` | 13100 tenant resolved (Debug, strategy name only); 13101 tenant not resolved (Trace) |
+| 2 | 13200-13299 | `SharedKernel.ServiceDefaults.Security` | 13200 correlation id created (Debug); 13201 inbound correlation id rejected (Warning, length only) |
+| 3 | 13300-13399 | `SharedKernel.ServiceDefaults.Security.Mtls` | 13300 certificate accepted (Debug); 13301 rejected (Warning); 13302 forwarded certificate refused, source outside `TrustedNetworks` (Warning, no parameters); 13303 forwarded-header trust not configured (Warning, once) |
+| 4 | 13400-13499 | `SharedKernel.ServiceDefaults.Localization` | 13400 no dynamic culture step can resolve (Warning, once) |
+| 5 | 13500-13599 | `SharedKernel.ServiceDefaults.Persistence` | reserved, logs nothing today |
+| 6 | 13600-13699 | `SharedKernel.ServiceDefaults.Configuration.KeyVault` | reserved, logs nothing today |
 
-Next free: 13008 (shared block), 13102 (MultiTenancy).
+Next free: 13002 (base), 13102 (MultiTenancy), 13202 (Security), 13304 (Security.Mtls), 13401 (Localization).
+
+`ServiceDefaults.Security.Mtls` is 13300 here; `Security.Mtls` is 12300 in `12.Security`. Tests name the domain base explicitly.
+
+Categories are kernel types: `ILogger<RequestContextMiddleware>`, `ILogger<TenantResolutionMiddleware>`, `ILogger<MtlsForwardedHeaderMiddleware>`, `ILogger<ReadinessProbeHealthCheck>`, and for static or startup-callback sites an `internal sealed` marker per package (`ServiceDefaultsLogCategory`, `ServiceDefaultsSecurityMtlsLogCategory`, `ServiceDefaultsLocalizationLogCategory`) through `ILoggerFactory.CreateLogger<TMarker>()`. Loggers are required: resolving the health check options in a host without logging services throws.
+
+The tenant middleware writes the `TenantId` baggage item before it logs 13100/13101, so those records carry the tenant as the ambient exported attribute while their message and placeholders carry none.
 
 ## Cross-Domain Couplings
 
@@ -117,19 +139,25 @@ Next free: 13008 (shared block), 13102 (MultiTenancy).
 - **02.Caching** — `CachedTenantCatalog` over `ICacheService` (Abstractions only).
 - **14.Presentation** — `UseSharedKernelWebApi()` composes the pipeline after `UseSharedKernelRequestContext()` and shapes the limiter's 429; this domain never references it.
 - **07.Messaging** — MassTransit copies publisher baggage onto consume activities; the log allow-list keeps only the platform keys. A consumer's tenant/actor come from `WithInboundRequestContext()`, never baggage.
+- **All capability domains** — a kernel source/meter named `SharedKernel.{Capability}[.{Sub}]` is exported with no registration here; third-party names stay byte-identical: `MassTransit` (07), `Npgsql` (06), `Polly` + gRPC client (11), the `Temporalio.Extensions.OpenTelemetry.*` tracing sources (17). A second-unit duration histogram is a `Histogram<double>` with unit `s`; the bucket view relies on that convention.
+- **14.Presentation** — the request-context and tenant tags are written before `UseExceptionHandler()`, so `SuppressDiagnosticsCallback` cannot hide them; `RecordException` stays off here because the exception handler and the gRPC interceptor record the failure on the server span themselves; gRPC hosted in ASP.NET Core inherits the tags and the validated correlation id from this pipeline.
+- **12.Security** — `Security.Mtls` is 12300 in 12.Security; `ServiceDefaults.Security.Mtls` is 13300 here. Never compare sub-block indexes without the domain base.
+- **16.Testing** — `InMemoryLogger` does not capture the ambient request context (it arrives through the OTel baggage processor); ambient enrichment is asserted through the OTel in-memory exporter.
 - **All providers** — own their probe names: `redis`, `cache`, `messaging`, `encryption-key-provider`, `field-encryption`, `audit-sealing`, `storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`, `gotenberg`.
 
 ## Testing
 
 - Nested `{Package}.Tests` projects in the **Unit** lane, except `SharedKernel.ServiceDefaults.Persistence.Tests` (Testcontainers PostgreSQL), which is in the **Integration** lane; `consumer-verify` is in the Unit lane.
 - Every readiness check is asserted tagged `ready` (never `live`) with its `HealthCheckNames` default. `AddSharedKernelReadiness()` is covered with test-double probes (mapping, exclusion, timeout, duplicate name, throwing probe).
-- `WithXTelemetry()`: a span or measurement from the named source is captured; a second call adds no duplicate.
+- Telemetry tests build the host through `TelemetryHarness` (in-memory exporters) and join the non-parallel `NonParallelTelemetryCollection`. `AddServiceDefaults()` alone exports `SharedKernel.*` (and not `Other.*`, `SharedKernel`, `OtherVendor.SharedKernel.X`), HttpClient metrics (loopback Kestrel, not `TestServer`) and the SignalR source; the duration view applies only to a `Histogram<double>` in unit `s` of a `SharedKernel.*` meter and yields one metric stream when `AddSharedKernelTelemetry` runs twice; the resource is identical on the three providers. For each of the four `WithXTelemetry()`: a span or measurement from the third-party name is captured and a second call adds no duplicate; the Temporal names are read from the SDK's `TracingInterceptor` (test-only package reference).
 - Endpoint tests use `HostBuilder().ConfigureWebHost(w => w.UseTestServer())` + `GetTestClient()`.
 - `SharedKernel.ServiceDefaults.Security.Tests/Propagation/EndToEndPropagationTests` proves correlation id, tenant and caller survive HTTP → REST, HTTP → gRPC, HTTP → bus → consumer → REST and job → REST in-process.
 - `RateLimitRejectionRecipeTests` drive real hosts with a test-only reference to `SharedKernel.Presentation.WebApi` (platform 429 with it, bare 429 without, a service's `OnRejected` wins).
 - `RequestBaggageRefusingPropagator` tests replace the process-wide propagator, so they run in a non-parallel collection.
 - `CompositionBaseIsolationTests` must fail when a SharedKernel reference is added to the base project.
 - Fakes: `SharedKernel.ServiceDefaults.Testing` — catalogue in `src/Testing/CLAUDE.md`.
+- The server span exists only when something listens to the `Microsoft.AspNetCore` source: a tag test registers a listener, filters spans by trace id and joins the non-parallel collection. Forged identity headers, the tenant-tag matrix (with and without multi-tenancy, inactive tenant) and a handled exception are covered; log tests assert no subject, IP or tenant id with canary values. The tag tests live in `ServiceDefaults.Security.Tests` (`ServerSpanTagTests`) and `MultiTenancy.Tests` (`TenantSpanTagTests`), each in a `NonParallelActivity` collection; `EventIdUniquenessTests` (in `ServiceDefaults.Tests`, test-only references to `.Security.Mtls` and `.Localization`) keeps every `[LoggerMessage]` id of the domain distinct and in its sub-block.
+- `EventIdUniquenessTests` reads the `## Logging` ownership table: ids unique, each inside its package's index over `LoggingEventIdRanges.ServiceDefaults` (the domain base named explicitly; a 12300 id fails index 3). Every message is asserted through `ShouldFollowLogConvention()` and `ShouldOnlyLogEventIdsInSubBlock`, categories through `ShouldHaveCategory`; `PollyResilienceLogTests` (non-parallel collection) proves no exception text reaches a log record of a faulting typed `HttpClient`.
 
 ## Known Limitations
 
@@ -137,3 +165,4 @@ Next free: 13008 (shared block), 13102 (MultiTenancy).
 - A default propagator set *after* the host starts removes the baggage-refusal protection (one set before is wrapped).
 - With an asynchronous `IEncryptionKeyProvider`, persistence's ETag key is warmed by a hosted service (up to 10 s) that readiness does not wait for.
 - Configuration-bound options and the Key Vault configuration provider are not trim/AOT-clean.
+- Over HTTP the upstream actor is not visible to a downstream service: the actor and client headers clients write are parsed but deliberately not applied (no "on behalf of" attribution until a security-reviewed opt-in exists). For an inactive tenant the server span carries the credential-asserted tenant while the request context has none.

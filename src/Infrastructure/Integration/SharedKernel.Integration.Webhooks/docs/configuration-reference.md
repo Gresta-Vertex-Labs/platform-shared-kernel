@@ -42,7 +42,7 @@ actionable `OptionsValidationException`, not on first dispatch.
 | `SignatureTolerance` | `TimeSpan` | `00:05:00` (5 minutes) | Must be `> TimeSpan.Zero` (via `IValidatableObject`) |
 | `MaxConcurrentDeliveries` | `int` | `8` | `[Range(1, int.MaxValue)]` — must be at least 1 |
 | `AllowPrivateNetworkTargets` | `bool` | `false` | None (a plain opt-out flag) |
-| `EncryptPayload` | `bool` | `false` | None (a plain opt-in flag) |
+| `EncryptPayload` | `bool` | `false` | Requires a registered `ISymmetricEncryptionService` (checked at startup) |
 
 ### `MaxAttempts`
 
@@ -99,9 +99,10 @@ confidentiality; this is defense-in-depth for subscribers who want payload-level
 independent of their own TLS termination boundary. Enabling this option requires an
 `ISymmetricEncryptionService` to be registered (via `SharedKernel.Cryptography`'s
 `AddSharedKernelCryptography(configuration).AddSymmetricEncryption()` plus a consumer-supplied
-`IEncryptionKeyProvider`) — omitting that registration fails loudly with an `InvalidOperationException`
-at first delivery, never silently. The transmitted body is the ciphertext's canonical
-`EncryptedPayload.ToString()` form (unpadded Base64Url).
+`IEncryptionKeyProvider`): omitting that registration fails host startup through options validation
+(`ValidateOnStart`, an `OptionsValidationException` naming the missing service), never silently; the dispatcher
+keeps a resolution-time `InvalidOperationException` as the backstop. The transmitted body is the ciphertext's
+canonical `EncryptedPayload.ToString()` form (unpadded Base64Url).
 
 ---
 

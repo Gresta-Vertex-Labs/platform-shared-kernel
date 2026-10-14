@@ -19,7 +19,8 @@ when the service already runs Redis and wants expiry handled by the server, with
 | One-statement upsert per reservation | No read-then-write window, no second `SELECT` |
 | Table `idempotency_keys`, key `(tenant_scope, purpose, key)` | A key can never collide across tenants or between requests and messages |
 | Expired rows reclaimed in place | A crashed caller cannot wedge a key |
-| Fail closed, with one explicit fail-open switch | An outage never silently turns into duplicate execution |
+| Fail closed, with one explicit fail-open switch | An outage never silently turns into duplicate execution; it surfaces as `IdempotencyStoreUnavailableException` |
+| Spans and metrics under `SharedKernel.Idempotency` | A fail-open outage is counted and alertable, not only logged |
 | Its own plain `IdempotencyDbContext`, EF retry off | The caller owns retry; the platform save pipeline cannot interfere |
 
 ## Contents
@@ -48,7 +49,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Persistence.EfCore` (for `UsePostgres`), `SharedKernel.Primitives` |
-| Namespaces | `SharedKernel.Idempotency.EfCore.Extensions`, `.Context`, `.Options`, `.Store` |
+| Namespaces | `SharedKernel.Idempotency.EfCore.Extensions`, `.Context`, `.Options`, `.Store`, `.Diagnostics` |
 | Database | PostgreSQL |
 
 ## Quick start
@@ -174,7 +175,7 @@ Options are set through the `configureOptions` delegate; the registration does n
 
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable` | `bool` | `false` | On a PostgreSQL connectivity or timeout failure, `TryBeginAsync` returns `Started` and `CompleteAsync`/`ReleaseAsync` return `false`, instead of throwing. Applies to every purpose of the registration |
+| `EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable` | `bool` | `false` | On a PostgreSQL connectivity or timeout failure, `TryBeginAsync` returns `Started` and `CompleteAsync`/`ReleaseAsync` return `false`, instead of throwing, and a Warning is logged. **Duplicate-execution risk while PostgreSQL is down.** Applies to every purpose of the registration |
 
 ## Reference
 
@@ -185,19 +186,58 @@ Options are set through the `configureOptions` delegate; the registration does n
 | `AddEfCoreIdempotency(Action<DbContextOptionsBuilder> configureDbContext, Action<IdempotencyPurposeSelection> purposes, Action<EfCoreIdempotencyOptions>? configureOptions = null)` | `IdempotencyDbContext` (scoped, retry disabled); `EfCoreIdempotencyStore` as the keyed `IIdempotencyStore` for each selected purpose (scoped); `IRequestContextAccessor` unless one exists |
 
 It throws `InvalidOperationException` when no purpose is selected or a store is already registered for a selected
-purpose. An `IClock` must be registered (`services.AddClock()`).
+purpose. An `IClock` must be registered (`services.AddClock()`). It also calls `AddMetrics()` and registers the
+singleton `EfCoreIdempotencyMetrics` that holds the instruments (it never touches the scoped context).
 
 ### Failure classification
 
 A transient `NpgsqlException`, an `NpgsqlException` wrapping a `SocketException` or `TimeoutException`, or a bare
-`SocketException`/`TimeoutException` (searched up to five inner exceptions deep) counts as "store unavailable".
-Anything else propagates regardless of the option.
+`SocketException`/`TimeoutException` (searched up to five inner exceptions deep, so EF Core's execution-strategy
+wrapper is seen through) counts as "store unavailable". Anything else propagates raw regardless of the option, and
+cancellation is never classified, wrapped or swallowed.
+
+With the default fail-closed behavior every member throws `IdempotencyStoreUnavailableException`
+(`Error.Unavailable`, code `idempotency.store_unavailable`); the database exception, or EF Core's wrapper around it,
+is its `InnerException`. A `TryBeginAsync` that timed out may have left an unconfirmed reservation; it expires after
+its `ttl`, so retrying the same key is safe.
+
+> **Fail-open means duplicate execution while PostgreSQL is down.** With `AllowExecutionOnStoreUnavailable` every
+> call, duplicates included, is treated as new. Watch `sharedkernel.idempotency.fail_open` and alert on it.
+
+### Telemetry
+
+One `ActivitySource` and one `Meter` named `SharedKernel.Idempotency` (a host subscribes through the `SharedKernel.*`
+wildcard). The instruments are created from the host's `IMeterFactory`; `AddEfCoreIdempotency` calls `AddMetrics()`.
+The `idempotency.provider` tag is `efcore`, which separates this package from the Redis provider in a host that
+registers both (for example Requests on Redis and Messages here).
+
+| Telemetry | Name | Unit | Tags |
+| --- | --- | --- | --- |
+| Span (Client) | `idempotency begin`, `idempotency complete`, `idempotency release` | | `idempotency.operation`, `idempotency.purpose`, `idempotency.provider`, `idempotency.result`, `idempotency.fail_open` (only when set), `error.type`/`error.code` on failure |
+| Histogram | `sharedkernel.idempotency.operation.duration` | `s` | `idempotency.operation`, `idempotency.purpose`, `idempotency.provider`, `outcome`, `idempotency.result` |
+| Counter | `sharedkernel.idempotency.fail_open` | `{operation}` | `idempotency.operation`, `idempotency.purpose`, `idempotency.provider` |
+
+`idempotency.result` is `started`, `in_progress`, `completed` or `fingerprint_mismatch` for a begin (an expired row
+that is reclaimed counts as `started`), `applied` or `lost` for a complete or release, and `fail_open` for an outage
+that was let through. The key, fingerprint, token, tenant and stored response are never a tag, log value or span
+attribute, and the span records an outage without the database exception text.
 
 ### Logging
 
-| Event id | Level | Event |
+| Event id | Level | Template |
 | --- | --- | --- |
-| 18100 | Warning | PostgreSQL idempotency store was unavailable during `{Operation}`; `AllowExecutionOnStoreUnavailable` is enabled, so the call proceeds as not-yet-processed |
+| 18100 | Warning | The idempotency store was unavailable during `'{Operation}'` for purpose `'{Purpose}'`, so the guarded call proceeds without duplicate protection. |
+
+The fail-closed path logs nothing; the caller that receives the exception logs the refusal.
+
+### Upgrading
+
+- A fail-closed outage now throws `IdempotencyStoreUnavailableException` instead of the raw `NpgsqlException`,
+  `TimeoutException` or EF Core's execution-strategy `InvalidOperationException`; catch the new type (the original is
+  its `InnerException`).
+- The `EfCoreIdempotencyStore` constructor takes an `EfCoreIdempotencyMetrics`; resolve the store through DI.
+- The log message text changed (event id 18100 did not), and the exception text for an impossible empty `RETURNING`
+  result is reworded. The `idempotency_keys` schema is unchanged: no migration is needed.
 
 ### Health
 

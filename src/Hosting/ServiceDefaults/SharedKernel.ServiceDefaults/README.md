@@ -10,7 +10,8 @@
 | You get | So that |
 | --- | --- |
 | `builder.AddServiceDefaults()` | Traces, metrics and logs over OTLP, plus the `startup` readiness check, in one call |
-| `WithXTelemetry()` for each kernel domain | A domain's `ActivitySource` and `Meter` are exported only when the service uses it — no extra dependency |
+| Every `SharedKernel.*` source and meter, HttpClient metrics and the SignalR server source, exported with no call | A capability's telemetry can never be dropped by a forgotten registration or a stale hand-copied name |
+| Four `WithXTelemetry()` extensions | Third-party instrumentation (MassTransit, Npgsql, Polly with gRPC client, Temporal) is exported only when the service uses it — no extra dependency |
 | `AddSharedKernelReadiness()` | Every `IReadinessProbe` a provider registered becomes a `ready` check, with no per-dependency wiring |
 | `MapDefaultHealthCheckEndpoints()` | `/health/live` and `/health/ready` for Kubernetes probes |
 | `StartupGate` | Traffic waits until migrations and warm-up finish |
@@ -55,7 +56,7 @@ using SharedKernel.ServiceDefaults.Telemetry;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();                       // first: OpenTelemetry + the "startup" check
-builder.WithMessagingTelemetry();                   // only the domains this service uses
+builder.WithMessagingTelemetry();                   // only third-party instrumentation (MassTransit); SharedKernel.* needs no call
 
 builder.Services.AddHealthChecks()
     .AddSharedKernelReadiness();                    // one "ready" check per registered IReadinessProbe
@@ -74,18 +75,24 @@ assembly's name.
 
 ## How it works
 
-- **Telemetry.** `AddServiceDefaults()` registers tracing (ASP.NET Core, HttpClient, EF Core), metrics (ASP.NET Core,
-  runtime) and logging (scopes and formatted messages), all exported over OTLP. Every `WithXTelemetry()` adds its
-  domain's instruments **by name** and references nothing, so none adds a dependency; each is idempotent.
-  `WithApplicationTelemetry()` also registers a bucket view for `sharedkernel.application.request.duration`, recorded
-  in **seconds** — without it every request would land in the first default bucket.
+- **Telemetry.** `AddServiceDefaults()` registers tracing (ASP.NET Core, HttpClient, EF Core, the SignalR server
+  source), metrics (ASP.NET Core, HttpClient, runtime) and logging (scopes and formatted messages), all exported over
+  OTLP. **Every `SharedKernel.*` source and meter is exported** through one wildcard, including ones created after the
+  host started; a name outside that prefix is not. Only third-party instrumentation needs a `WithXTelemetry()` call
+  (see [Telemetry](#telemetry)); each is idempotent and references nothing.
+- **One resource.** The three signals share one resource: `service.name` is the entry assembly's name (or the name you
+  pass to `AddSharedKernelTelemetry`), `service.version` is the entry assembly's informational version with build
+  metadata (`1.4.0+3f2a9c1`), `0.0.0` when there is no entry assembly. `OTEL_RESOURCE_ATTRIBUTES` adds attributes.
+- **Duration buckets.** A `Histogram<double>` with unit `s` in a `SharedKernel.*` meter gets the second-scale
+  boundaries (`0.005 … 10`); without them every request would land in the first default bucket. Any other histogram keeps
+  the SDK defaults.
 - **Readiness.** `AddSharedKernelReadiness()` maps each `IReadinessProbe` (`SharedKernel.Primitives.Health`) to a
   health check named after the probe and tagged `ready`:
 
   | Probe report | Health status |
   | --- | --- |
   | `ReadinessStatus.Healthy` / `Degraded` / `Unhealthy` | `Healthy` / `Degraded` / `Unhealthy` |
-  | The probe throws | `Unhealthy`, exception type only (EventId 13005) |
+  | The probe throws | `Unhealthy`, exception type only in the report; the exception object is logged (EventId 13001) |
 
   The report's latency is added as `LatencyMilliseconds`. Registration order does not matter: probes are read when
   health checks are first resolved. Two probes with the same name fail resolution with an exception naming the duplicate.
@@ -143,7 +150,7 @@ app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authenticati
 | `IHealthChecksBuilder.AddSharedKernelReadiness(Action<ReadinessHealthCheckOptions>?)` | One `ready` check per `IReadinessProbe` |
 | `IEndpointRouteBuilder.MapDefaultHealthCheckEndpoints(bool requireAuthorization = false)` | `/health/live`, `/health/ready` |
 | `IHostApplicationBuilder.AddSharedKernelRateLimiting(Action<RateLimiterOptions>?)` | ASP.NET Core rate limiting |
-| `WithApplicationTelemetry()` · `WithCachingTelemetry()` · `WithCommunicationTelemetry()` · `WithIntegrationTelemetry()` · `WithIntelligenceTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithReportingTelemetry()` · `WithSchedulingTelemetry()` · `WithSearchTelemetry()` · `WithStorageTelemetry()` · `WithWorkflowTelemetry()` | A domain's `ActivitySource` and `Meter` |
+| `WithCommunicationTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithWorkflowTelemetry()` | Third-party instrumentation, see [Telemetry](#telemetry) |
 
 ### Types
 
@@ -154,8 +161,44 @@ app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authenticati
 | `HealthCheckNames` | `database`, `database-dapper`, `persistence-startup`, `startup` |
 | `HealthCheckTags` | `live`, `ready`, `db` |
 | `RateLimitPolicyNames.Authentication` | `"authentication"` |
-| `HealthCheckRegistrationLogging.LogRegistration(services, categoryName, name, tags)` | Logs a readiness check's registration from a check of your own |
+| `HealthCheckRegistrationLogging.LogRegistration(services, name, tags)` | Logs a health check's registration (EventId 13000) from a check of your own; needs logging services in the host |
 | `BaggageLogRecordProcessor` | The log-record enricher `AddServiceDefaults()` installs |
+
+### Telemetry
+
+Exported by `AddServiceDefaults()` with no further call:
+
+| Signal | What |
+| --- | --- |
+| Traces | Every `ActivitySource` named `SharedKernel.*`; `Microsoft.AspNetCore.SignalR.Server` (hub connect, invocation, disconnect); ASP.NET Core, HttpClient and EF Core instrumentation |
+| Metrics | Every `Meter` named `SharedKernel.*`; HttpClient (`http.client.request.duration` and friends); ASP.NET Core and runtime instrumentation |
+
+A `SharedKernel.*` name matches `SharedKernel.Messaging` and `SharedKernel.Persistence.EfCore.Auditing`, but not
+`SharedKernel` or `OtherVendor.SharedKernel.X`. The four extensions subscribe third-party names that the owning
+library must keep byte-identical:
+
+| Extension | Subscribes | Owner |
+| --- | --- | --- |
+| `WithMessagingTelemetry()` | `MassTransit` source and meter | MassTransit |
+| `WithPersistenceTelemetry()` | `Npgsql` source and meter (emits once the service enables Npgsql's OpenTelemetry support) | Npgsql |
+| `WithCommunicationTelemetry()` | gRPC client instrumentation (`rpc.*` span tags) and the `Polly` meter | OpenTelemetry gRPC client instrumentation, Polly |
+| `WithWorkflowTelemetry()` | `Temporalio.Extensions.OpenTelemetry.*`: the client, workflow, activity and Nexus sources of Temporal's `TracingInterceptor` | Temporal SDK |
+
+```csharp
+builder.AddServiceDefaults();             // every SharedKernel.* source and meter, HttpClient metrics
+builder.WithMessagingTelemetry();         // MassTransit's own spans and metrics
+builder.WithWorkflowTelemetry();          // Temporal client, workflow and activity spans
+```
+
+### Resilience logs
+
+The standard resilience handler (`AddStandardResilienceHandler`) logs every failed attempt under the `Polly` logger
+category with the outcome's exception message as the `{Result}` property: a host, a URL, a key. It offers no switch to
+format exceptions and sits outside every kernel logger, so `AddServiceDefaults()` adds a `Polly` category filter at
+`LogLevel.None`. The `Polly` meter (`WithCommunicationTelemetry()`) is unaffected. A service that wants those records back
+calls `builder.Logging.AddFilter("Polly", LogLevel.Warning)` after `AddServiceDefaults()` and accepts what they carry; a
+host composed without `AddServiceDefaults()` needs the same filter. `service.version` is the entry assembly's
+informational version (build metadata kept, for example `1.4.0+3f2a9c1`), `0.0.0` when there is no entry assembly.
 
 ### Health
 
@@ -168,8 +211,12 @@ Kernel probe names: `messaging`, `redis`, `cache`, `encryption-key-provider`, `f
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13002 | Information | Health check registered (name: `{HealthCheckName}`, tags: `{Tags}`) |
-| 13005 | Warning | Readiness probe `{ProbeName}` threw `{ExceptionType}` instead of reporting unhealthy |
+| 13000 | Information | Registered the health check `'{HealthCheckName}'` with the tags `'{Tags}'` |
+| 13001 | Error | The readiness probe `'{ProbeName}'` threw an exception instead of reporting its state (the exception is passed to the logger) |
+
+This package owns the sub-block 13000-13099 of the ServiceDefaults EventId block (13000-13999); every `[LoggerMessage]` of the domain stays inside its package's sub-block. Loggers are required dependencies: resolving health checks in a host without logging services throws.
+
+Event ids before this release: 13002 → 13000, 13005 → 13001.
 
 ## Testing
 

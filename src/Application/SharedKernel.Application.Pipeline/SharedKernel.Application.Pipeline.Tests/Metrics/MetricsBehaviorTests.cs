@@ -1,5 +1,10 @@
 using SharedKernel.Application.Mediator.MediatR;
 using System.Diagnostics.Metrics;
+using SharedKernel.Application.Pipeline.Metrics;
+using SharedKernel.Application.Pipeline.Tests.Support;
+using SharedKernel.Application.Pipeline.Tracing;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Testing.Telemetry;
 using FluentAssertions;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,13 +17,13 @@ namespace SharedKernel.Application.Pipeline.Tests.Metrics;
 /// <c>MetricsBehavior&lt;TRequest, TResponse&gt;</c> and
 /// <c>ApplicationMetrics</c> are internal, so this test drives them through
 /// a real composed <c>ServiceCollection</c> + <c>AddSharedKernelApplication(..., app =&gt; app.UseMediatR())</c>
-/// dispatch and observes the published <c>"SharedKernel.Application"</c> meter directly via
-/// <see cref="MeterListener"/> — the same documented instrument name <c>13.ServiceDefaults</c>
+/// dispatch and observes the published <c>"SharedKernel.Application"</c> meter through the shared <c>MetricRecorder</c> —
+/// the same documented instrument name <c>13.ServiceDefaults</c>
 /// subscribes to at the host level.
 /// </summary>
 public sealed class MetricsBehaviorTests
 {
-    private const string MeterName = "SharedKernel.Application";
+    private const string MeterName = ApplicationDiagnostics.MeterName;
     private const string InstrumentName = "sharedkernel.application.request.duration";
 
     private sealed record SucceedingCommand : ICommand;
@@ -45,36 +50,17 @@ public sealed class MetricsBehaviorTests
             => throw new InvalidOperationException("boom");
     }
 
-    private sealed record RecordedMeasurement(double Value, Dictionary<string, object?> Tags);
+    private sealed record CancelingCommand : ICommand;
 
-    private static (MeterListener Listener, List<RecordedMeasurement> Records) Listen()
+    private sealed class CancelingCommandHandler : ICommandHandler<CancelingCommand>
     {
-        var records = new List<RecordedMeasurement>();
-        var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
-        {
-            if (instrument.Meter.Name == MeterName && instrument.Name == InstrumentName)
-                l.EnableMeasurementEvents(instrument);
-        };
-        listener.SetMeasurementEventCallback<double>((_, value, tags, _) =>
-        {
-            var dict = new Dictionary<string, object?>();
-            foreach (var tag in tags)
-                dict[tag.Key] = tag.Value;
-
-            // Every composed pipeline in this assembly records on the same meter, and tests run in
-            // parallel: keep only this class's own requests.
-            if (dict.TryGetValue("request.type", out var requestType)
-                && requestType is string name
-                && name.StartsWith(typeof(MetricsBehaviorTests).FullName!, StringComparison.Ordinal))
-            {
-                lock (records)
-                    records.Add(new RecordedMeasurement(value, dict));
-            }
-        });
-        listener.Start();
-        return (listener, records);
+        public Task<Result> Handle(CancelingCommand request, CancellationToken cancellationToken)
+            => throw new OperationCanceledException(cancellationToken);
     }
+
+    private static IReadOnlyList<RecordedMeasurement> DurationsOf(MetricRecorder recorder, Type requestType)
+        => [.. recorder.MeasurementsOf(InstrumentName)
+            .Where(m => m.TryGetTag("application.request_type", out var value) && Equals(value, requestType.FullName))];
 
     private static ServiceProvider BuildProvider()
     {
@@ -86,48 +72,121 @@ public sealed class MetricsBehaviorTests
     [Fact]
     public async Task Handle_Success_RecordsExactlyOneMeasurementWithSuccessOutcome()
     {
-        var (listener, records) = Listen();
-        using var _ = listener;
+        using var recorder = MetricRecorder.StartRecording(MeterName);
         using var provider = BuildProvider();
-        var sender = provider.GetRequiredService<ISender>();
 
-        await sender.Send(new SucceedingCommand());
+        await provider.GetRequiredService<ISender>().Send(new SucceedingCommand());
 
+        var records = DurationsOf(recorder, typeof(SucceedingCommand));
         records.Should().ContainSingle();
-        records[0].Tags["outcome"].Should().Be("success");
-        records[0].Tags["request.kind"].Should().Be("command");
-        records[0].Tags.Should().NotContainKey("error.type");
+        records[0].TryGetTag("outcome", out var outcome).Should().BeTrue();
+        outcome.Should().Be(WellKnownOutcomes.Success);
+        records[0].TryGetTag("application.request_kind", out var kind).Should().BeTrue();
+        kind.Should().Be("command");
+        records[0].TryGetTag("error.type", out _).Should().BeFalse();
+        recorder.ShouldHaveInstrument(InstrumentName, "s", InstrumentKind.Histogram)
+            .ShouldUseOutcomeVocabulary(InstrumentName)
+            .ShouldFollowMetricConvention();
     }
 
     [Fact]
     public async Task Handle_ResultFailure_RecordsFailureOutcomeWithErrorType()
     {
-        var (listener, records) = Listen();
-        using var _ = listener;
+        using var recorder = MetricRecorder.StartRecording(MeterName);
         using var provider = BuildProvider();
-        var sender = provider.GetRequiredService<ISender>();
 
-        await sender.Send(new FailingQuery());
+        await provider.GetRequiredService<ISender>().Send(new FailingQuery());
 
+        var records = DurationsOf(recorder, typeof(FailingQuery));
         records.Should().ContainSingle();
-        records[0].Tags["outcome"].Should().Be("failure");
-        records[0].Tags["error.type"].Should().Be("NotFound");
-        records[0].Tags["request.kind"].Should().Be("query");
+        records[0].TryGetTag("outcome", out var outcome);
+        outcome.Should().Be(WellKnownOutcomes.Failure);
+        records[0].TryGetTag("error.type", out var errorType);
+        errorType.Should().Be("NotFound");
+        records[0].TryGetTag("application.request_kind", out var kind);
+        kind.Should().Be("query");
     }
 
     [Fact]
     public async Task Handle_ThrownException_RecordsExceptionOutcomeAndRethrows()
     {
-        var (listener, records) = Listen();
-        using var _ = listener;
+        using var recorder = MetricRecorder.StartRecording(MeterName);
         using var provider = BuildProvider();
-        var sender = provider.GetRequiredService<ISender>();
 
-        var act = async () => await sender.Send(new ThrowingCommand());
+        var act = async () => await provider.GetRequiredService<ISender>().Send(new ThrowingCommand());
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+        var records = DurationsOf(recorder, typeof(ThrowingCommand));
         records.Should().ContainSingle();
-        records[0].Tags["outcome"].Should().Be("exception");
-        records[0].Tags["error.type"].Should().Be(typeof(InvalidOperationException).FullName);
+        records[0].TryGetTag("outcome", out var outcome);
+        outcome.Should().Be(WellKnownOutcomes.Exception);
+        records[0].TryGetTag("error.type", out var errorType);
+        errorType.Should().Be(typeof(InvalidOperationException).FullName);
+    }
+
+    [Fact]
+    public async Task Handle_Cancellation_RecordsCanceledOutcomeWithoutAnErrorType()
+    {
+        using var recorder = MetricRecorder.StartRecording(MeterName);
+        using var provider = BuildProvider();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () => await provider.GetRequiredService<ISender>().Send(new CancelingCommand(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        var records = DurationsOf(recorder, typeof(CancelingCommand));
+        records.Should().ContainSingle();
+        records[0].TryGetTag("outcome", out var outcome);
+        outcome.Should().Be(WellKnownOutcomes.Canceled);
+        records[0].TryGetTag("error.type", out _).Should().BeFalse();
+    }
+
+    public static TheoryData<ErrorType> AllErrorTypes()
+    {
+        var data = new TheoryData<ErrorType>();
+        foreach (var type in Enum.GetValues<ErrorType>().Where(static t => t != ErrorType.None))
+            data.Add(type);
+        return data;
+    }
+
+    private sealed record ParityCommand : ICommand;
+
+    /// <summary>The metric <c>error.type</c> is the same text the span carries, for every <see cref="ErrorType"/>.</summary>
+    [Theory]
+    [MemberData(nameof(AllErrorTypes))]
+    public async Task Handle_ResultFailure_MetricAndSpanCarryTheSameErrorType(ErrorType type)
+    {
+        using var probe = new TelemetryProbe();
+        var error = new Error("test.parity", "failure", type);
+        var metrics = new ApplicationMetrics(new TestMeterFactory());
+        var tracing = new TracingBehavior<ParityCommand, Result>();
+        var measuring = new MetricsBehavior<ParityCommand, Result>(metrics);
+
+        await tracing.Handle(
+            new ParityCommand(),
+            () => measuring.Handle(new ParityCommand(), () => Task.FromResult(Result.Failure(error)), CancellationToken.None),
+            CancellationToken.None);
+
+        var span = probe.Spans.Single(s => s.OperationName == ApplicationSpanNames.Send);
+        span.GetTagItem("error.type").Should().Be(type.ToString());
+    }
+
+    private sealed class TestMeterFactory : IMeterFactory
+    {
+        private readonly List<Meter> _meters = [];
+
+        public Meter Create(MeterOptions options)
+        {
+            var meter = new Meter(options.Name, options.Version, options.Tags, scope: this);
+            _meters.Add(meter);
+            return meter;
+        }
+
+        public void Dispose()
+        {
+            foreach (var meter in _meters)
+                meter.Dispose();
+        }
     }
 }

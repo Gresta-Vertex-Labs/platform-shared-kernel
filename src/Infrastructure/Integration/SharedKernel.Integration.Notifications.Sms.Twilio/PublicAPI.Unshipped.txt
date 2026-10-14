@@ -1,0 +1,21 @@
+#nullable enable
+SharedKernel.Integration.Notifications.Sms.Twilio.Extensions.ServiceCollectionExtensions
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.AccountSid.get -> string!
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.AccountSid.set -> void
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.AuthToken.get -> string!
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.AuthToken.set -> void
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.BaseAddress.get -> System.Uri!
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.BaseAddress.set -> void
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.From.get -> string?
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.From.set -> void
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.MessagingServiceSid.get -> string?
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.MessagingServiceSid.set -> void
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.TwilioNotificationOptions() -> void
+SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Integration.Notifications.Sms.Twilio.TwilioSmsNotificationSender
+SharedKernel.Integration.Notifications.Sms.Twilio.TwilioSmsNotificationSender.SendAsync<TTemplateModel>(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!>!
+SharedKernel.Integration.Notifications.Sms.Twilio.TwilioSmsNotificationSender.SupportedChannel.get -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Integration.Notifications.Sms.Twilio.TwilioSmsNotificationSender.TwilioSmsNotificationSender(System.Net.Http.IHttpClientFactory! httpClientFactory, System.Collections.Generic.IEnumerable<SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationDeliveryObserver!>! observers, Microsoft.Extensions.Options.IOptions<SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions!>! options, SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics! metrics, Microsoft.Extensions.Logging.ILogger<SharedKernel.Integration.Notifications.Sms.Twilio.TwilioSmsNotificationSender!>! logger) -> void
+static SharedKernel.Integration.Notifications.Sms.Twilio.Extensions.ServiceCollectionExtensions.AddTwilioSmsNotifications(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static readonly SharedKernel.Integration.Notifications.Sms.Twilio.Options.TwilioNotificationOptions.DefaultBaseAddress -> System.Uri!

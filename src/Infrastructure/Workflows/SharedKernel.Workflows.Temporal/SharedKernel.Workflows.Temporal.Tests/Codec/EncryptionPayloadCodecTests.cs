@@ -3,6 +3,8 @@ using Google.Protobuf;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Workflows.Temporal.Codec;
+using SharedKernel.Workflows.Temporal.Errors;
+using SharedKernel.Workflows.Temporal.Exceptions;
 using Temporalio.Api.Common.V1;
 using Temporalio.Converters;
 
@@ -155,7 +157,7 @@ public sealed class EncryptionPayloadCodecTests
 
         Func<Task> act = () => codec.DecodeAsync([tampered]);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<WorkflowPayloadCodecException>();
     }
 
     [Fact]
@@ -185,8 +187,8 @@ public sealed class EncryptionPayloadCodecTests
 
         Func<Task> act = () => codec.DecodeAsync([malformed]);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>())
-            .Which.Message.Should().StartWith("The payload codec failed:");
+        (await act.Should().ThrowAsync<WorkflowPayloadCodecException>())
+            .Which.Error.Code.Should().Be(WorkflowErrorCodes.PayloadCodecFailure);
     }
 
     [Fact]
@@ -206,6 +208,6 @@ public sealed class EncryptionPayloadCodecTests
 
         Func<Task> act = () => codecWithoutTheKey.DecodeAsync(encoded);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<WorkflowPayloadCodecException>();
     }
 }

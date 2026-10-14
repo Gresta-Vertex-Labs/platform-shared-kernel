@@ -155,6 +155,18 @@ public static class RedisTopologyRules
     private const string ExecutionAssemblyName = "SharedKernel.Execution";
 
     /// <summary>
+    /// The foundation assembly that owns <c>SharedKernelException</c>, the base of
+    /// <c>DistributedLockUnavailableException</c> so every edge maps a lock-store outage to 503 by its
+    /// <c>Error</c> (WO-087, SK.02.LockUnavailableError).
+    /// </summary>
+    private const string CoreAssemblyName = "SharedKernel.Core";
+
+    /// <summary>
+    /// The foundation assembly that owns <c>Error</c>, carried by the lock-unavailable exception.
+    /// </summary>
+    private const string PrimitivesAssemblyName = "SharedKernel.Primitives";
+
+    /// <summary>
     /// One of the two non-BCL assemblies <c>SharedKernel.Caching.Abstractions</c> may reference —
     /// <c>ICachingBuilder</c> exposes <c>IServiceCollection</c> so provider packages can chain
     /// registrations.
@@ -461,7 +473,9 @@ public static class RedisTopologyRules
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that the compiled
     /// <c>SharedKernel.Caching.Abstractions</c> assembly references no assembly other than the .NET
-    /// base class library and <c>Microsoft.Extensions.DependencyInjection.Abstractions</c>.
+    /// base class library, <c>Microsoft.Extensions.DependencyInjection.Abstractions</c> and the
+    /// Foundation assemblies <c>SharedKernel.Execution</c>, <c>SharedKernel.Core</c> and
+    /// <c>SharedKernel.Primitives</c>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -472,7 +486,7 @@ public static class RedisTopologyRules
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong> an options type bound with <c>IOptions&lt;T&gt;</c>, a
-    /// <c>BackgroundService</c>, or a reference to <c>SharedKernel.Primitives</c> added to the
+    /// <c>BackgroundService</c>, or a reference to <c>Microsoft.Extensions.Options</c> added to the
     /// abstractions package.
     /// </para>
     /// <para>
@@ -500,7 +514,11 @@ public static class RedisTopologyRules
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
-            .MeetCustomRule(new AssemblyReferenceAllowListPredicate(DependencyInjectionAbstractionsAssemblyName, ExecutionAssemblyName));
+            .MeetCustomRule(new AssemblyReferenceAllowListPredicate(
+                DependencyInjectionAbstractionsAssemblyName,
+                ExecutionAssemblyName,
+                CoreAssemblyName,
+                PrimitivesAssemblyName));
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that <c>SharedKernel.Caching.Abstractions</c>

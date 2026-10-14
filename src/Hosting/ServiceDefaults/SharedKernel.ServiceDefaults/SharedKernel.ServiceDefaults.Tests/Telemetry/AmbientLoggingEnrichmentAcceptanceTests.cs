@@ -96,6 +96,57 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
         Assert.DoesNotContain(captured, kv => kv.Key == "SubjectId");
     }
 
+    /// <summary>
+    /// The 13100 "tenant resolved" record carries the strategy but no tenant id in its message or placeholders; the
+    /// tenant still reaches the exported record, once, as the ambient <c>TenantId</c> attribute.
+    /// </summary>
+    [Fact]
+    public async Task TenantResolvedLog_ExportsTheTenantOnlyAsTheAmbientAttribute()
+    {
+        using var activity = new Activity("http-request").Start();
+        var tenantId = Guid.NewGuid();
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tenant-Id"] = tenantId.ToString();
+        var options = Microsoft.Extensions.Options.Options.Create(
+            new TenantResolutionOptions { StrategyOrder = [TenantResolutionStrategyNames.Header] });
+
+        var captured = new List<(int EventId, string? Message, IReadOnlyList<KeyValuePair<string, object?>> Attributes)>();
+        using (var loggerFactory = LoggerFactory.Create(builder =>
+            builder.SetMinimumLevel(LogLevel.Trace).AddOpenTelemetry(otel =>
+            {
+                otel.IncludeFormattedMessage = true;
+                otel.AddProcessor(new BaggageLogRecordProcessor());
+                otel.AddProcessor(new CapturingEventProcessor(captured));
+            })))
+        {
+            var middleware = new TenantResolutionMiddleware(
+                _ => Task.CompletedTask,
+                options,
+                loggerFactory.CreateLogger<TenantResolutionMiddleware>());
+
+            await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
+        }
+
+        var resolved = Assert.Single(captured, record => record.EventId == 13100);
+        Assert.DoesNotContain(tenantId.ToString(), resolved.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(resolved.Attributes, kv => kv.Key == "TenantId" && kv.Value is TenantIdPlaceholder);
+        Assert.Single(resolved.Attributes, kv => kv.Key == WellKnownBaggageKeys.TenantId);
+        Assert.Contains(
+            resolved.Attributes,
+            kv => kv.Key == WellKnownBaggageKeys.TenantId && Equals(kv.Value, tenantId.ToString()));
+        Assert.Contains(resolved.Attributes, kv => kv.Key == "StrategyName");
+    }
+
+    private sealed class TenantIdPlaceholder;
+
+    private sealed class CapturingEventProcessor(
+        List<(int EventId, string? Message, IReadOnlyList<KeyValuePair<string, object?>> Attributes)> sink)
+        : BaseProcessor<LogRecord>
+    {
+        public override void OnEnd(LogRecord data) =>
+            sink.Add((data.EventId.Id, data.FormattedMessage, data.Attributes is null ? [] : [.. data.Attributes]));
+    }
+
     private static async Task<IReadOnlyList<KeyValuePair<string, object?>>> EmitAndCaptureAsync(
         Action<ILogger> emit)
     {

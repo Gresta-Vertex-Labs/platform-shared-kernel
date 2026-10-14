@@ -3,6 +3,7 @@ using System.Text;
 using MassTransit;
 using SharedKernel.Compression;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Messaging.MassTransit.Internal;
 using SharedKernel.Messaging.MassTransit.Options;
 using SharedKernel.Primitives.Results;
 
@@ -82,11 +83,7 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
         }
         catch (Exception ex) when (ex is not PayloadTransformMismatchException)
         {
-            throw new PayloadTransformMismatchException(
-                "Failed to deserialize an incoming message after reversing its payload transform. " +
-                "This usually indicates a mismatch between the publisher's and this consumer's " +
-                "PayloadTransformOptions (EnableCompression/EnableEncryption values must match).",
-                ex);
+            throw new PayloadTransformMismatchException(MassTransitErrors.PayloadTransformMismatch(), ex);
         }
     }
 
@@ -111,9 +108,10 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
                 if (!EncryptedPayload.TryParse(bytes, out EncryptedPayload? encrypted))
                     throw new FormatException("The message body is not an encrypted payload.");
 
+                // A failed decrypt result carries its own canonical error; its text is not repeated here.
                 Result<byte[]> decrypted = _encryptionService!.Decrypt(encrypted, Encoding.UTF8.GetBytes(aad));
                 if (decrypted.IsFailure)
-                    throw new InvalidOperationException(decrypted.Error.Message);
+                    throw new PayloadTransformMismatchException(MassTransitErrors.PayloadTransformMismatch());
 
                 bytes = decrypted.Value;
             }
@@ -122,21 +120,20 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
             {
                 Result<byte[]> decompressed = _compressor!.Decompress(bytes);
                 if (decompressed.IsFailure)
-                    throw new InvalidOperationException(decompressed.Error.Message);
+                    throw new PayloadTransformMismatchException(MassTransitErrors.PayloadTransformMismatch());
 
                 bytes = decompressed.Value;
             }
 
             return bytes;
         }
+        catch (PayloadTransformMismatchException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            throw new PayloadTransformMismatchException(
-                "Failed to reverse the payload transform (decrypt/decompress) for an incoming " +
-                "message. This usually indicates a mismatch between the publisher's and this " +
-                "consumer's PayloadTransformOptions (EnableCompression/EnableEncryption values " +
-                "must match).",
-                ex);
+            throw new PayloadTransformMismatchException(MassTransitErrors.PayloadTransformMismatch(), ex);
         }
     }
 }

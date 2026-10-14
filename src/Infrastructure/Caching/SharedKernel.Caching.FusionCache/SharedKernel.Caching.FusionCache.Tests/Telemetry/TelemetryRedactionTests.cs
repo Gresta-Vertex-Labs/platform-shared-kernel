@@ -2,9 +2,11 @@ using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Diagnostics;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.FusionCache.Implementations;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Testing.Telemetry;
 using Xunit;
 
 namespace SharedKernel.Caching.FusionCache.Tests.Telemetry;
@@ -101,8 +103,8 @@ public sealed class TelemetryRedactionTests
         var otherKey = CacheKeyFormat.BuildTenantKey("svc", Tenant, "orders", EntityId + "-b");
         var tagged = CachePolicy.Default.WithTags("open").ForTenant(Tenant);
 
-        using var metrics = new MetricRecorder();
-        using var spans = new ActivityRecorder();
+        using var metrics = MetricRecorder.StartRecording(CachingTelemetry.MeterName);
+        using var spans = ActivityRecorder.StartRecording(CachingTelemetry.SourceName);
 
         await cache.TryGetAsync<string>(key);                                          // miss
         await cache.SetAsync(key, "v", tagged);                                         // set
@@ -118,13 +120,13 @@ public sealed class TelemetryRedactionTests
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await cache.GetOrSetAsync<string>(key + ":boom", _ => throw new InvalidOperationException($"{TenantText} {EntityId}"), tagged));
 
-        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", "svc:orders", "l1") >= 2));
+        Assert.True(await Eventually.HoldsAsync(() => metrics.Sum(CachingTelemetry.HitsInstrument, new KeyValuePair<string, object?>(CachingTagKeys.KeyPrefix, "svc:orders"), new KeyValuePair<string, object?>(CachingTagKeys.Level, CachingTagValues.LevelMemory)) >= 2));
 
         // Our own log category: present, and redacted.
         var ownLogs = logs.Logs.Where(l => l.Category == typeof(FusionCacheService).FullName).ToList();
         Assert.Contains(ownLogs, l => l.Message.Contains("svc:orders", StringComparison.Ordinal));
         Assert.Contains(ownLogs, l => l.Message.Contains("@tenant:open", StringComparison.Ordinal));
-        Assert.Contains(ownLogs, l => l.Message == "Cache entries removed for tag @tenant");
+        Assert.Contains(ownLogs, l => l.Message == "Cache entries removed for tag '@tenant'.");
         foreach (var log in ownLogs)
         {
             AssertRedacted(log.Message);
@@ -139,8 +141,8 @@ public sealed class TelemetryRedactionTests
                 AssertRedacted(value?.ToString());
         }
 
-        Assert.NotEmpty(spans.Activities);
-        foreach (Activity span in spans.Activities)
+        Assert.NotEmpty(spans.RecordedActivities);
+        foreach (Activity span in spans.RecordedActivities)
         {
             AssertRedacted(span.DisplayName);
             AssertRedacted(span.StatusDescription);
@@ -150,7 +152,7 @@ public sealed class TelemetryRedactionTests
     }
 
     [Fact]
-    public async Task FactoryFailure_SpanStatusDescription_IsTheExceptionTypeName_NotTheMessage()
+    public async Task FactoryFailure_SpanStatusDescription_IsTheExceptionFullName_NotTheMessage()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -159,15 +161,16 @@ public sealed class TelemetryRedactionTests
         var cache = provider.GetRequiredService<ICacheService>();
         var key = CacheKeyFormat.BuildKey("svc", "status-" + Guid.NewGuid().ToString("N"), EntityId);
 
-        using var spans = new ActivityRecorder();
+        using var spans = ActivityRecorder.StartRecording(CachingTelemetry.SourceName);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await cache.GetOrSetAsync<string>(key, _ => throw new InvalidOperationException("secret message"), CachePolicy.Default));
 
-        var span = Assert.Single(spans.Activities, a =>
-            a.OperationName == "cache.get_or_set" && (string?)a.GetTagItem("cache.key_prefix") == FusionCacheService.ExtractKeyPrefix(key));
-        Assert.Equal(ActivityStatusCode.Error, span.Status);
-        Assert.Equal(nameof(InvalidOperationException), span.StatusDescription);
+        var span = Assert.Single(spans.RecordedActivities, a =>
+            a.OperationName == "caching get_or_set"
+            && (string?)a.GetTagItem(CachingTagKeys.KeyPrefix) == FusionCacheService.ExtractKeyPrefix(key));
+        span.ShouldBeRecordedException(typeof(InvalidOperationException));
+        Assert.DoesNotContain("secret message", span.StatusDescription, StringComparison.Ordinal);
     }
 
     private static void AssertRedacted(string? text)

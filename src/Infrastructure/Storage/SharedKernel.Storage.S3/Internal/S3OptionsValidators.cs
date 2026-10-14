@@ -68,7 +68,7 @@ internal sealed class S3StoreOptionsValidator : IValidateOptions<S3StoreOptions>
         if (!IsValidBucketName(options.Bucket))
         {
             failures.Add(
-                $"{store}: {nameof(S3StoreOptions.Bucket)} '{options.Bucket}' must be 3 to 63 lower-case letters, digits, '.' and '-', starting and ending with a letter or digit (configure {S3StoreOptions.SectionFor(name ?? string.Empty)}:Bucket).");
+                $"{store}: {nameof(S3StoreOptions.Bucket)} must be 3 to 63 lower-case letters, digits, '.' and '-', starting and ending with a letter or digit; set '{S3StoreOptions.SectionFor(name ?? string.Empty)}:Bucket'.");
         }
 
         if (options.KeyPrefix is { Length: > 0 } prefix

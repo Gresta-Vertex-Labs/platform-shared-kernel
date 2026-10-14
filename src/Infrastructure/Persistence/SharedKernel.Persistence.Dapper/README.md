@@ -182,12 +182,26 @@ Connection strings, TLS, replica and cross-tenant settings belong to the data so
 Always-registered handlers: `TenantId`/`TenantId?` ↔ `uuid` (an unset `default(TenantId)` is sent as `NULL`), and
 pgvector `Vector`, `HalfVector`, `SparseVector` (with `UseVector: true` on the data source).
 
+### Errors
+
+`RequireTenantId()` on a session whose caller has no tenant throws `ForbiddenException` carrying the shared
+`persistence.tenant_required` error (`ErrorType.Forbidden`), the same value the audit services and the EF Core write
+guard raise. PostgreSQL errors map through `PostgresErrorMapping` (see the Npgsql README); a `statement_timeout` expiry
+is `ErrorType.Timeout`.
+
 ### Logging
+
+Sub-block 6400-6499 (`DapperLoggingEventIds`, `DapperLog`). No statement text, parameter or tenant reaches a log.
 
 | Event id | Level | Event |
 | --- | --- | --- |
 | 6400 | Warning | Rolling back an uncommitted session failed (never masks the original error) |
 | 6401 | Information | Session opened on the cross-tenant role for an active cross-tenant scope |
+
+### Telemetry
+
+This package emits no span or instrument of its own: Npgsql traces the commands (its `Npgsql` source, subscribed by
+`WithPersistenceTelemetry()`), and the persistence telemetry is named `SharedKernel.Persistence` (see the EF Core README).
 
 ## Testing
 

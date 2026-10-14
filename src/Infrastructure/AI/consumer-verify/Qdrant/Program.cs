@@ -24,7 +24,7 @@
 // src/Infrastructure/AI/state-map.md's ## Blocked) — there is no assembly, no namespace, and no third
 // consumer-verify project to build that compilation closure against. Recorded here, not fabricated.
 //
-// Six surfaces:
+// Seven surfaces (the seventh: IntelligenceStreamException is a SharedKernelException):
 //   1. AddSharedKernelQdrant(...).AddCollection<TRecord>(...).Build() resolves
 //      IVectorCollection<ProductRecord>, IVectorCollectionProvisioner and IVectorProviderDescriptor
 //      through a real IHost.StartAsync(), zero DI exceptions (P-04)
@@ -47,6 +47,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using SharedKernel.AI.Abstractions.Errors;
+using SharedKernel.AI.Abstractions.Exceptions;
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Primitives.Errors;
 using Microsoft.Extensions.Options;
 using Qdrant.Client;
 using SharedKernel.AI.Abstractions.Abstractions;
@@ -65,6 +69,7 @@ await Surface3_RawClientAccessorNotResolvableByDefault();
 await Surface4_RawClientAccessorResolvableWhenAllowed();
 await Surface5_QdrantExclusiveContractsResolve();
 await Surface6_MissingConfigFailsAtHostStartAsync();
+await Surface7_StreamExceptionIsASharedKernelException();
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify.Qdrant PASSED");
@@ -208,6 +213,37 @@ static IHost BuildHost(Action<QdrantBuilder>? configureBuilder)
     qdrantBuilder.Build();
 
     return hostBuilder.Build();
+}
+
+// ── Surface 7: IntelligenceStreamException is a SharedKernelException — WO-087 ─
+// Compiles `catch (SharedKernelException e) when (e is IntelligenceStreamException)` against the referenced
+// packages: the stream exception maps at the HTTP/gRPC/SignalR edges by its Error, not as a bare 500.
+static async Task Surface7_StreamExceptionIsASharedKernelException()
+{
+    var error = IntelligenceErrors.Unavailable(IntelligenceWellKnown.QdrantProviderName);
+    SharedKernelException? caught = null;
+    try
+    {
+        throw new IntelligenceStreamException(error, new InvalidOperationException("provider detail stays in the inner exception"));
+    }
+    catch (SharedKernelException e) when (e is IntelligenceStreamException)
+    {
+        caught = e;
+    }
+
+    Verify(caught is IntelligenceStreamException, "catch (SharedKernelException) when (e is IntelligenceStreamException) compiles and catches it");
+    Verify(caught is IHasError { Error.Type: ErrorType.Unavailable }, "the stream exception carries its Error (Unavailable) for the edge mappers");
+    Verify(caught!.Message == error.Message, "the exception message is the error's kernel-authored message");
+    Verify(error.Code == IntelligenceErrorCodes.Unavailable, "IntelligenceErrorCodes.Unavailable is the public code of the outage error");
+    Verify(IntelligenceErrors.EngineUnauthorized(IntelligenceWellKnown.QdrantProviderName, IntelligenceOperations.Query).Type == ErrorType.Unexpected, "the provider rejecting the kernel key is Unexpected");
+    Verify(IntelligenceTagKeys.Provider == "ai.provider" && IntelligenceTagKeys.Operation == "ai.operation", "IntelligenceTagKeys carries the public span and metric tag keys");
+
+    using var host = BuildHost(configureBuilder: null);
+    await host.StartAsync();
+    Verify(host.Services.GetService<System.Diagnostics.Metrics.IMeterFactory>() is not null, "an IMeterFactory is registered for the sharedkernel.ai.* instruments");
+    await host.StopAsync();
+
+    Console.WriteLine("Surface 7 PASS: IntelligenceStreamException is a SharedKernelException and IHasError");
 }
 
 static void Verify(bool condition, string label)

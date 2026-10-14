@@ -429,6 +429,22 @@ public sealed class InMemoryVectorCollectionTests
     }
 
     [Fact]
+    public async Task ScrollAsync_TenantScopeMissing_ThrowsASharedKernelException_CarryingTheSameError()
+    {
+        var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
+
+        var exception = await Assert.ThrowsAsync<IntelligenceStreamException>(async () =>
+        {
+            await foreach (var _ in collection.ScrollAsync(null, TenantScope.Global, batchSize: 10, CancellationToken.None))
+            {
+            }
+        });
+
+        Assert.IsAssignableFrom<SharedKernel.Core.Exceptions.SharedKernelException>(exception);
+        Assert.Equal(IntelligenceErrors.TenantScopeMissing(collection.CollectionName), exception.Error);
+    }
+
+    [Fact]
     public async Task ScrollAsync_YieldsFullFilteredTenantScopedCorpus()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());

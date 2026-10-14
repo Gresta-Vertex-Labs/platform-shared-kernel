@@ -101,7 +101,7 @@ internal sealed class EncryptionModelConvention : IModelFinalizingConvention
             {
                 throw new InvalidOperationException(
                     $"'{displayName}' is encrypted but lives in the complex collection '{complexProperty.Name}'. " +
-                    "Complex collections are stored as JSON and cannot be encrypted per property; model the items as an " +
+                    "Complex collections are stored as JSON and are not encrypted per property; model the items as an " +
                     "entity type, or encrypt a property of the owning entity instead.");
             }
 
@@ -192,7 +192,7 @@ internal sealed class EncryptionModelConvention : IModelFinalizingConvention
         {
             throw new InvalidOperationException(
                 $"'{entityType.ShortName()}' has an encrypted property but its primary key '{keyProperty.Name}' is a " +
-                "shadow property (as every same-table owned type's is), so it cannot be read from a materialized " +
+                "shadow property (as every same-table owned type's is), so it is not read from a materialized " +
                 "instance. Encrypt the property on the owning entity, or map it as a complex type.");
         }
 

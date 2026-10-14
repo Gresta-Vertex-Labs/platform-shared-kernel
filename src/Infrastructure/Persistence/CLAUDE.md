@@ -53,7 +53,9 @@ README. The canonical composition is compiled by
   `CreateAuditLedgerTable(runtimeRole, sealerRole)`, `CreateTenantEncryptionKeyTable`.
 - **Abstractions** — `IReadRepository`/`IRepository` (incl. `ListPagedAsync`, `ListKeysetAsync`, `StreamAsync`),
   `IBulkMutationRepository` (`ExecuteUpdateAsync`, `ExecuteDeleteAsync`, `ExecutePurgeAsync`),
-  `ICrossTenantScope.Enter("reason")`.
+  `ICrossTenantScope.Enter("reason")`; `PersistenceSharedErrors.TenantRequired()` (the one "no tenant" `Error`); `PersistenceErrorCodes`
+  (the registry of every code, grouped `Tenancy`, `Concurrency`, `Postgresql`, `Audit`, `Encryption`, `BulkMutation`);
+  `PersistenceTelemetry.Name` (the name of the one source and meter).
 - **Npgsql** — `services.AddSharedKernelNpgsql(configuration, "orders")` for Dapper-only services;
   `PostgresErrorMapping.TryAsync` for raw ADO/Dapper. Do not name a connection `Encryption`, `Auditing`, `Dapper`,
   `Npgsql` or `ServiceName` (those `SharedKernel:Persistence:*` keys are taken). The canonical role script
@@ -64,7 +66,7 @@ README. The canonical composition is compiled by
   `IAuditLedgerMaintenance`.
 - **Encryption** — `.UseFieldEncryption(k => …)` (`SharedKernel:Persistence:Encryption`); `.Encrypt("purpose")
   .WithBlindIndex(…)` in entity configuration; `WhereEncryptedEquals`; `IEncryptionRotationJob`,
-  `ITenantEncryptionKeyManager.ShredTenantAsync`.
+  `ITenantEncryptionKeyManager.ShredTenantAsync`; `FieldEncryptionException` (malformed payload, failed decryption, invalid or unwrappable data key).
 
 ## Rules & Invariants
 
@@ -80,7 +82,8 @@ README. The canonical composition is compiled by
    changes under a retrying strategy is refused. `OnBeforeCommit` callbacks run after the last save, before commit,
    and are discarded with a retried attempt.
 5. **Nested calls join; a joined failure marks the transaction rollback-only** (the outer call throws
-   `TransactionRolledBackException`). **An ambiguous commit is never replayed** (`CommitOutcomeUnknownException`); a
+   `TransactionRolledBackException`, a `SharedKernelException` with `execution.transaction_rolled_back`; no code
+   treats it as an `InvalidOperationException`). **An ambiguous commit is never replayed** (`CommitOutcomeUnknownException`); a
    server-rejected one may be. Restore the previous `IAmbientDbTransaction` value, never clear it.
 6. **Tenant binding is transaction-local only** (`set_config('app.tenant_id', …, true)`). Never session-level, never a
    connection-open interceptor, never a second setting or an escape token in policy text. Cross-tenant work runs on a
@@ -107,9 +110,10 @@ README. The canonical composition is compiled by
 13. **A request thread does not call an asynchronous key provider.** `EntityVersionKeyWarmUp` loads the version key
     before traffic (blocking load only as fallback); the warm-up is never fatal and never a readiness condition.
 14. **Error mapping:** 23505 → Conflict; 23503 → Validation or Conflict (decided by the FK and tracked changes);
-    23502/23514/23P01/22001 → Validation; 40001/40P01/55P03/57014 → transient Conflict (not wrapped while retry is on);
-    42501 (incl. RLS `WITH CHECK`) → Forbidden. A proven cross-tenant write answers the **same** Conflict as a stale
-    version (no existence oracle).
+    23502/23514/23P01/22001 → Validation; 40001/40P01/55P03 → transient Conflict (not wrapped while retry is on);
+    57014 (query canceled, `statement_timeout`) → `Timeout` (a `DomainException` from a save; Npgsql's retry strategy does not replay it;
+    55P03 stays Conflict because it also covers `NOWAIT`/`SKIP LOCKED` contention); 42501 (incl. RLS `WITH CHECK`) →
+    Forbidden. A proven cross-tenant write answers the **same** Conflict as a stale version (no existence oracle).
 15. **Audit request path takes no lock and assigns no sequence**; `Succeeded` is written only inside the business
     transaction (via `OnBeforeCommit`) — never in a standalone transaction. An unauthenticated caller is never audited
     as `System`. The ledger stays outside EF Core models and RLS; its tables are insert-only (triggers + grants +
@@ -130,6 +134,25 @@ README. The canonical composition is compiled by
     materialization setters, Dapper's mapping).
 21. **Everything that can be wrong is validated at start without echoing a connection string**; types only sibling
     packages need are `internal` + IVT.
+
+22. **No tenant, actor, key or host value reaches a log or an exception message** (`{ActorId}`, `{ActorTenantId}`,
+    `{ChainTenant}`, `{IdempotencyKey}`, `{ExceptionType}`, `{MasterKeyId}`, provider text are banned; a reflection test
+    in each logging package's test project enforces the placeholder list). **"No tenant resolved" is one behaviour**:
+    `ForbiddenException` carrying the identical `Error` `PersistenceSharedErrors.TenantRequired()`
+    (`persistence.tenant_required`; Dapper, the audit services and the EF Core write guard). Not-found of an audit
+    record is one `NotFoundException` (`persistence.audit_record_not_found`) for a missing and a foreign record
+    (`IAuditQueryService.VerifyRecordAsync` keeps answering `null` for both). A raw `KeyNotFoundException` or
+    `CryptographicException` never leaves a shipped package (a source gate in `EfCore.Tests` enforces it): decrypt and
+    data-key faults are `FieldEncryptionException`.
+23. **One telemetry identity and one code registry.** Every `ActivitySource` and `Meter` of the six packages is
+    named `SharedKernel.Persistence` (`PersistenceTelemetry.Name`); instruments are `sharedkernel.persistence.*` with a unit,
+    durations in seconds, tags only from the `PersistenceTagKeys` constants; spans are `persistence {operation}` and failures are
+    recorded through the shared Primitives recorder (`RecordException`/`RecordResult`; a cancellation is never an error).
+    Every error code is declared once in `PersistenceErrorCodes` (lowercase `persistence.{reason}` or
+    `persistence.{area}.{reason}`), never inline; each package has an internal `{Package}Errors` factory over it. Each package
+    owns one 100-wide EventId sub-block, one `{Package}LoggingEventIds` and one `{Package}Log` (internal, static, plain
+    methods taking the `ILogger` first and the exception last, one-sentence templates, closed-set placeholders). Loggers are
+    required constructor dependencies; categories are kernel types (`SharedKernelDbContext`), never a consumer type.
 
 AOT is not a design constraint here (EF Core, Npgsql and Dapper are reflection-based), but expression trees are built
 once and cached, and canonical encodings (AUDITv3, AAD, key canonicalization, advisory-lock hashing) are pure
@@ -152,6 +175,18 @@ once and cached, and canonical encodings (AUDITv3, AAD, key canonicalization, ad
 | Tenant data keys + tombstones for crypto-shredding | Erases a tenant without rewriting every row; shredded values are refused on read |
 | No outbox here | `07.Messaging` owns it through MassTransit's EF Core outbox |
 | `18.Idempotency.EfCore` runs with retry off | Single atomic statements; fail-open must be fast |
+| The shared no-tenant `Error` is public in Abstractions | Dapper, EfCore and Auditing must build the identical value; internals are sibling-only (rule 21) and Abstractions has no `InternalsVisibleTo`, so a public accessor beats new IVT and exact pins |
+| Audit not-found is an exception, not a `Result` | The audit services return plain values and report every other failure by exception; two `Result` members would split the contract. One error for missing and foreign records keeps the no-oracle rule; `VerifyRecordAsync` keeps its documented `null` answer for both |
+| 57014 is `Timeout`; 55P03 stays `Conflict` | Statement timeout is a timeout (C3); 55P03 also covers `NOWAIT`/`SKIP LOCKED` contention, which a retry resolves |
+| One `FieldEncryptionException` with a code per fault | Callers catch one classified type; the client-safe `Error.Message` is fixed, provider text and master-key ids never enter it |
+| One static `Meter` named `SharedKernel.Persistence`, not `IMeterFactory` (recorded deviation from T1) | The save pipeline records from the static write guard and from pooled contexts built outside the container, neither of which can be handed a factory; EfCore, Auditing and Encryption share one `Meter` object through `InternalsVisibleTo`, Abstractions creates a second one of the same name, and the name is the contract |
+| Codes live in Abstractions' `PersistenceErrorCodes`; factories stay per package | One registry and one C1 test; a shared internal factory would need new IVT and exact-version pins |
+| Repository and audit spans stay `Internal` | The `Client` span for the database call is the one Npgsql emits; the repository span is in-process work |
+| The cross-tenant scope entry log (6150) carries the actor kind only | The reason is caller text and cannot be a closed set; the audit ledger records who acted and the call site names why |
+| `PersistenceContextDependencies.Create(...)` keeps an optional `loggerFactory` | A context built outside the container (a test, a tool, the design-time factory) has none; null becomes `NullLoggerFactory`. Every DI-built type takes a required `ILogger<T>` and the EF Core registration calls `AddLogging()` so it resolves |
+| Recorded C3 exceptions: `persistence.postgresql.lock_timeout` and `persistence.audit_chain_not_intact` stay `Conflict` | 55P03 also covers `NOWAIT`/`SKIP LOCKED` contention; a broken chain is a state conflict, not an outage |
+| One suppression of SK0020, in `NpgsqlCommandLogLevel` | The decorator re-levels Npgsql's own `Command` entries and has to call `ILogger.Log` on the wrapped logger; it authors no log statement |
+| The tenant data key id keeps the compact `skt:{32 hex}` form, built with `TryFormat("N")` | It is stored inside encrypted payloads (a wire format); SK0011 protects audit column values, which this is not |
 
 ## Logging
 
@@ -159,19 +194,28 @@ EventId block **6000–6999** (`LoggingEventIdRanges.Persistence`), written as `
 
 | Sub-block | Package | In use |
 | --- | --- | --- |
-| 6000–6099 | EfCore | 6000–6006, 6008, 6010, 6013–6018, 6020–6021; 6022–6026 entity versions |
-| 6100–6199 | Abstractions | 6150 cross-tenant scope entered |
+| 6000–6099 | EfCore | 6000–6006, 6008, 6010, 6013–6018, 6020–6029 (6027–6028 the row-level security logs, formerly 6350–6351; every log that passes an exception passes it last) |
+| 6100–6199 | Abstractions | 6150 cross-tenant scope entered (actor kind only, never the actor, its tenant or the reason) |
 | 6200–6299 | reserved | — |
-| 6300–6349 | Npgsql | 6300–6306 |
-| 6350–6399 | EfCore RLS (`RowLevelSecurityLog`) | 6350–6351 |
+| 6300–6399 | Npgsql | 6300–6306 |
 | 6400–6499 | Dapper | 6400–6401 (a rollback failure never masks the original error) |
-| 6500–6699 | Encryption | 6500–6504, 6510–6513, 6520–6522 |
-| 6700–6899 | Auditing | 6700–6713 |
+| 6500–6599 | Encryption | 6500–6504, 6510–6513, 6520–6522 (6520 names no master key) |
+| 6600–6699 | reserved | — |
+| 6700–6799 | Auditing | 6700–6713 (a chain is named by its resource type only; 6700 carries no idempotency key) |
+| 6800–6899 | reserved | — |
 
-Telemetry: `ActivitySource`/`Meter` `"SharedKernel.Persistence"` and `"SharedKernel.Persistence.EfCore.Auditing"`,
-`Meter` `"SharedKernel.Persistence.EfCore.Encryption"`, plus Npgsql's `"Npgsql"`; wired by `13.ServiceDefaults`'
-`WithPersistenceTelemetry()`. Every repository call is traced and every query `TagWith`'d with the specification type.
-Dapper emits no spans (Npgsql traces commands). Npgsql's per-command Information log is lowered to Debug.
+Each package has one `{Package}LoggingEventIds` (const arithmetic over `LoggingEventIdRanges`) and one internal
+`{Package}Log` under `Diagnostics/`. 6200–6299, 6600–6699 and 6800–6899 stay reserved; ids never move between packages
+again (the RLS logs left 6350–6351 for 6027–6028 once). Levels: per-operation success Debug, lifecycle Information, expected
+failure Warning, unexpected exception Error; the cross-tenant entries (6027, 6150) stay Information as security-relevant
+lifecycle events.
+
+Telemetry: one `ActivitySource` and one `Meter` named `SharedKernel.Persistence` (`PersistenceTelemetry.Name`, also the only name
+of Auditing and Encryption), instruments `sharedkernel.persistence.*` with a unit and durations in seconds, spans
+`persistence {operation}` (`persistence audit.seal|verify|checkpoint` for the ledger), plus Npgsql's `"Npgsql"`;
+`WithPersistenceTelemetry()` of `13.ServiceDefaults` keeps only Npgsql, the rest rides the `SharedKernel.*` wildcard. Every
+repository call is traced and every query `TagWith`'d with the specification type. Dapper emits no spans (Npgsql traces
+commands). Npgsql's per-command Information log is lowered to Debug.
 
 ## Cross-Domain Couplings
 
@@ -187,10 +231,10 @@ Dapper emits no spans (Npgsql traces commands). Npgsql's per-command Information
 - **05.Application:** `Application.Pipeline`'s transaction behavior calls `IUnitOfWork.ExecuteInTransactionAsync`; its
   auditing behavior queues `Succeeded` with `OnBeforeCommit`. No reference in either direction beyond `Execution`.
 - **07.Messaging:** `Messaging.MassTransit.EfCore` adds the outbox to a service's context.
-- **13.ServiceDefaults:** `ServiceDefaults.Persistence` (`AddDatabaseReadinessCheck<T>`,
+- **13.ServiceDefaults:** `WithPersistenceTelemetry()` subscribes to `Npgsql` only; `AddServiceDefaults`' `SharedKernel.*` wildcard exports the persistence source and meter, and neither it nor `PersistenceReadmeSampleTests` may name a removed meter, source or code. `ServiceDefaults.Persistence` (`AddDatabaseReadinessCheck<T>`,
   `AddDapperDatabaseReadinessCheck`, `AddPersistenceStartupReadinessCheck`); `AddSharedKernelReadiness()` maps the
   `field-encryption` and `audit-sealing` probes; `ServiceDefaults.Security` supplies the HTTP `IRequestContext`.
-- **14.Presentation:** `IfMatch<EntityVersion>` binds through `IParsable`; a version conflict is 412 on a conditional
+- **14.Presentation:** a `statement_timeout` expiry answers `Timeout` (504), audit not-found 404, no tenant 403 (`persistence.tenant_required`); it maps by `Error.Type`. `IfMatch<EntityVersion>` binds through `IParsable`; a version conflict is 412 on a conditional
   request (the 412 rule in `14.Presentation`), 409 otherwise; the default precondition-failed codes are pinned by
   `PresentationPreconditionCodesTests`.
 - **18.Idempotency:** `Idempotency.EfCore` builds on `Persistence.EfCore` (declared edge).
@@ -211,7 +255,9 @@ Dapper emits no spans (Npgsql traces commands). Npgsql's per-command Information
   `PostgresException`s, a transaction that commits late), never by a sequential stand-in.
 - `EntityVersionCodecTests` holds the known-answer test locking version format `0x01`; `AuditFormatVectorTests` parses
   the packed `AUDIT-FORMAT.md`; README samples are compiled by `ReadmeSampleTests`/`PersistenceReadmeSampleTests`.
-- Fakes: `SharedKernel.Persistence.Testing` — catalogue in `src/Testing/CLAUDE.md`.
+- Every logging package carries `LoggingConformanceTests` over its `[LoggerMessage]` methods (the rules of `SharedTestSupport/LoggingConformance.cs`, a folder linked into the six test projects: class and sub-block ownership, ids pinned by literal, one-sentence templates, banned and unquoted placeholders, exception last, no optional logger in a constructor); `Abstractions.Tests` also holds the `PersistenceErrorCodes` pins (shape, uniqueness, literals). `EfCore.Tests` holds the source gates: no raw `KeyNotFoundException`/`CryptographicException`, every shipped message ends in a period without a dash, "cannot" or an inner `.Message`, and no error code is declared outside `PersistenceErrorCodes`.
+- Telemetry is asserted through `ActivityRecorder`/`MetricRecorder` (name, kind, tags, status, `error.code`/`error.type`, exception event, outcome, instrument unit), never by string search; a repository test isolates its spans under a local root activity because the source is process-wide. `ConsumerVerify` proves, on the packed packages, that every source and meter is named `SharedKernel.Persistence` and that a wildcard subscription exports repository, audit and encryption measurements.
+- Fakes: `SharedKernel.Persistence.Testing` — catalogue in `src/Testing/CLAUDE.md`; `FakeRepository.UpdateAsync` of a missing aggregate throws the real save's `ConflictException` (`persistence.concurrency_conflict`).
 - Container suites that fail under whole-solution load are re-run in isolation before being treated as real.
 
 ## Known Limitations

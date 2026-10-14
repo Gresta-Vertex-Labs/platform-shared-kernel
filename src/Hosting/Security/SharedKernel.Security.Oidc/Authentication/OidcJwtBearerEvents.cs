@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using SharedKernel.Security.Oidc.Logging;
+using SharedKernel.Security.Oidc.Diagnostics;
 
 namespace SharedKernel.Security.Oidc.Authentication;
 
@@ -40,7 +40,7 @@ internal sealed class OidcJwtBearerEvents(JwtBearerEvents inner, bool dpopEnable
             && context.Options.TokenValidationParameters.ValidAlgorithms is { } allowed
             && !allowed.Contains(algorithm, StringComparer.Ordinal))
         {
-            OidcLog.SigningAlgorithmRejected(logger, algorithm);
+            OidcLog.SigningAlgorithmRejected(logger, AlgorithmText.Bound(algorithm));
         }
 
         return inner.AuthenticationFailed(context);

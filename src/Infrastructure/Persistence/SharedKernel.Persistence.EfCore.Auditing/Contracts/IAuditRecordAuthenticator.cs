@@ -36,7 +36,7 @@ public interface IAuditRecordAuthenticator
     /// <param name="keyId">The key id.</param>
     /// <param name="message">The AUDITv3 link message.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <exception cref="KeyNotFoundException"><paramref name="keyId"/> is unknown.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="keyId"/> is unknown.</exception>
     ValueTask<byte[]> ComputeMacAsync(string keyId, ReadOnlyMemory<byte> message, CancellationToken cancellationToken = default);
 
     /// <summary>Verifies <paramref name="mac"/> over <paramref name="message"/> under <paramref name="keyId"/> in constant time.</summary>
@@ -44,7 +44,7 @@ public interface IAuditRecordAuthenticator
     /// <param name="message">The AUDITv3 link message.</param>
     /// <param name="mac">The stored MAC.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <exception cref="KeyNotFoundException"><paramref name="keyId"/> is unknown.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="keyId"/> is unknown.</exception>
     ValueTask<bool> VerifyMacAsync(string keyId, ReadOnlyMemory<byte> message, ReadOnlyMemory<byte> mac, CancellationToken cancellationToken = default);
 }
 

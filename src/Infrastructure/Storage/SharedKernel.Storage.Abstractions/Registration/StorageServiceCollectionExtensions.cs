@@ -81,7 +81,8 @@ public static class StorageServiceCollectionExtensions
             && string.Equals(existing.Name, registration.Name, StringComparison.OrdinalIgnoreCase));
         if (duplicate)
         {
-            throw new InvalidOperationException($"A storage store named '{registration.Name}' is already registered.");
+            throw new InvalidOperationException(
+                $"A storage store named '{registration.Name}' is already registered. Store names are unique ignoring case, so choose another name.");
         }
 
         services.AddSingleton(registration);

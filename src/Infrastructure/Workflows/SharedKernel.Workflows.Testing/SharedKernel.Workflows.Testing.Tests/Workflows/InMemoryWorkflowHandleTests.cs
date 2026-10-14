@@ -52,12 +52,12 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task SignalAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result result = await handle.SignalAsync("advance", "x");
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -68,8 +68,10 @@ public sealed class InMemoryWorkflowHandleTests
         handle.SimulateFailure = true;
 
         Result result = await handle.SignalAsync("advance", "x");
-
         Assert.True(result.IsFailure);
+        Assert.Equal(ErrorType.Unavailable, result.Error.Type);
+        Assert.Equal(WorkflowErrors.ServiceUnavailable(), result.Error);
+        Assert.DoesNotContain(handle.WorkflowId, result.Error.Message, StringComparison.Ordinal);
         handle.ShouldNotHaveSignalled("advance");
     }
 
@@ -126,12 +128,12 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task QueryAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result<string> result = await handle.QueryAsync<string>("status");
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -202,12 +204,12 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task CancelAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result result = await handle.CancelAsync();
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -309,12 +311,12 @@ public sealed class InMemoryWorkflowHandleTests
     public async Task TerminateAsync_NoBackingExecution_ReturnsNotFound()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result result = await handle.TerminateAsync("reason");
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -336,7 +338,7 @@ public sealed class InMemoryWorkflowHandleTests
     public void Status_NoBackingExecution_IsNull()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        var handle = (InMemoryWorkflowHandle)dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        var handle = (InMemoryWorkflowHandle)dispatcher.GetHandle(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Assert.Null(handle.Status);
     }

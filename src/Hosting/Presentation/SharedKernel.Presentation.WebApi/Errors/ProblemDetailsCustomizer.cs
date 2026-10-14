@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,11 +15,6 @@ namespace SharedKernel.Presentation.WebApi;
 /// </remarks>
 internal static class ProblemDetailsCustomizer
 {
-    // The framework's defaults give these statuses a title but no type; RFC 6585 defines both.
-    private const string PreconditionRequiredType = "https://tools.ietf.org/html/rfc6585#section-3";
-
-    private const string TooManyRequestsType = "https://tools.ietf.org/html/rfc6585#section-4";
-
     /// <summary>
     /// The <see cref="ProblemDetailsOptions.CustomizeProblemDetails"/> entry point: completes the problem and, since it
     /// is about to be written, marks the response <c>Cache-Control: no-store</c>.
@@ -58,17 +52,9 @@ internal static class ProblemDetailsCustomizer
             extensions.TryAdd(ProblemDetailsExtensionNames.CorrelationId, correlationId);
         }
 
-        extensions.TryAdd(ProblemDetailsExtensionNames.TraceId, Activity.Current?.Id ?? httpContext.TraceIdentifier);
+        extensions.TryAdd(ProblemDetailsExtensionNames.TraceId, RequestFacts.GetTraceId(httpContext));
 
-        if (string.IsNullOrEmpty(problem.Type))
-        {
-            problem.Type = status switch
-            {
-                StatusCodes.Status428PreconditionRequired => PreconditionRequiredType,
-                StatusCodes.Status429TooManyRequests => TooManyRequestsType,
-                _ => problem.Type,
-            };
-        }
+        ProblemDefaults.FillMissingType(problem, status);
 
         // A type already under the base URI was set from the real code; keep it. MVC's writer rebuilds a problem from
         // its title, type and detail before copying the extension members back, so this runs once without the code.

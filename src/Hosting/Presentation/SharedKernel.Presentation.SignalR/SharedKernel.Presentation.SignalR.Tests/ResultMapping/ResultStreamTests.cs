@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.SignalR.Filters;
 using SharedKernel.Presentation.SignalR.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Testing.Logging;
 using Xunit;
 
@@ -54,6 +55,7 @@ public sealed class ResultStreamTests
         connection.State.Should().Be(HubConnectionState.Connected);
         (await connection.InvokeAsync<string>(nameof(StreamsHub.Ping))).Should().Be("pong");
         loggerFactory.GetLogger(MappingCategory).Records.ShouldHaveLogged(new EventId(14107), LogLevel.Error);
+        loggerFactory.GetLogger(MappingCategory).Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 1);
         app.Services.GetRequiredService<InvocationCounter>().Count.Should().Be(0, "a refused stream is never read");
     }
 

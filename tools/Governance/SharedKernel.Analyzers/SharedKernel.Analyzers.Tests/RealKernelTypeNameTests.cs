@@ -968,6 +968,133 @@ public class RealKernelTypeNameTests
     }
 
     // ---------------------------------------------------------------------------
+    // SK0043 — SharedKernelException (SharedKernel.Core.Exceptions), Error, IHasError (SharedKernel.Primitives.Errors)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// An exception exposing the real <c>Error</c> or implementing the real <c>IHasError</c> without deriving the real
+    /// <c>SharedKernelException</c> fires; one deriving it, and the base class itself, do not.
+    /// </summary>
+    [Fact]
+    public async Task Sk0043_RealErrorAndSharedKernelException_FiresOnlyOnNonDerivingExceptions()
+    {
+        Assert.Equal("SharedKernel.Primitives.Errors.Error", typeof(SharedKernel.Primitives.Errors.Error).FullName);
+        Assert.Equal("SharedKernel.Primitives.Errors.IHasError", typeof(SharedKernel.Primitives.Errors.IHasError).FullName);
+        Assert.Equal("SharedKernel.Core.Exceptions.SharedKernelException", typeof(SharedKernel.Core.Exceptions.SharedKernelException).FullName);
+        Assert.True(typeof(SharedKernel.Primitives.Errors.IHasError).IsAssignableFrom(typeof(SharedKernel.Core.Exceptions.SharedKernelException)));
+
+        var diagnostics = await AnalyzeAsync(
+            new ExceptionExposingErrorMustDeriveSharedKernelExceptionAnalyzer(),
+            """
+            using System;
+            using SharedKernel.Core.Exceptions;
+            using SharedKernel.Primitives.Errors;
+
+            namespace Fixture
+            {
+                public sealed class StorageFailure : Exception
+                {
+                    public StorageFailure(Error error) { Error = error; }
+                    public Error Error { get; }
+                }
+
+                public sealed class TokenFailure : Exception, IHasError
+                {
+                    private readonly Error _error;
+                    public TokenFailure(Error error) { _error = error; }
+                    Error IHasError.Error => _error;
+                }
+
+                public sealed class PaymentDeclined : SharedKernelException
+                {
+                    public PaymentDeclined(Error error) : base(error) { }
+                }
+
+                public sealed class Plain : Exception { }
+            }
+            """
+        );
+
+        AssertFlagged(diagnostics, "SK0043", "StorageFailure", "TokenFailure");
+    }
+
+    // ---------------------------------------------------------------------------
+    // SK0044 — Microsoft.Extensions.Logging.LoggerMessageAttribute (opt-in rule: enabled explicitly)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// A bare literal id on the real <c>LoggerMessageAttribute</c> fires once the rule is enabled; an id built from the
+    /// real <c>LoggingEventIdRanges</c> constants does not.
+    /// </summary>
+    [Fact]
+    public async Task Sk0044_RealLoggerMessageAttribute_FiresOnBareLiteralOnly()
+    {
+        Assert.Equal("Microsoft.Extensions.Logging.LoggerMessageAttribute", typeof(Microsoft.Extensions.Logging.LoggerMessageAttribute).FullName);
+
+        var diagnostics = await AnalyzeAsync(
+            new LoggerMessageEventIdBareLiteralAnalyzer(),
+            """
+            using Microsoft.Extensions.Logging;
+            using SharedKernel.Primitives.Logging;
+
+            namespace Fixture
+            {
+                internal static class FixtureLoggingEventIds
+                {
+                    public const int Done = LoggingEventIdRanges.Storage + 100;
+                }
+
+                internal static class Log
+                {
+                    [LoggerMessage(FixtureLoggingEventIds.Done, LogLevel.Information, "Done.")]
+                    public static void Done(ILogger logger) { }
+
+                    [LoggerMessage(8101, LogLevel.Warning, "Failed.")]
+                    public static void Failed(ILogger logger) { }
+                }
+            }
+            """,
+            enabledIds: ["SK0044"]
+        );
+
+        AssertFlagged(diagnostics, "SK0044", "8101");
+    }
+
+    // ---------------------------------------------------------------------------
+    // SK0022 shape 5 — the real tag-key and outcome constants pass as named constants
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// <c>WellKnownTagKeys.Outcome</c> and <c>WellKnownOutcomes</c> are named constants, so they pass at a tag call site
+    /// while a literal key beside them fires.
+    /// </summary>
+    [Fact]
+    public async Task Sk0022_RealWellKnownTagKeys_PassWhileALiteralKeyFires()
+    {
+        var diagnostics = await AnalyzeAsync(
+            new CrossCuttingMagicStringLiteralAnalyzer(),
+            """
+            using System.Diagnostics;
+            using SharedKernel.Primitives.Propagation;
+
+            namespace Fixture
+            {
+                public static class Tags
+                {
+                    public static TagList Named() =>
+                        new TagList { { WellKnownTagKeys.Outcome, WellKnownOutcomes.Success } };
+
+                    public static TagList Literal() =>
+                        new TagList { { "outcome", WellKnownOutcomes.Failure } };
+                }
+            }
+            """
+        );
+
+        AssertFlagged(diagnostics, "SK0022", "\"outcome\"");
+    }
+
+    // ---------------------------------------------------------------------------
     // SK0201 — TenantedDbContext (SharedKernel.Persistence.EfCore.Context)
     // ---------------------------------------------------------------------------
 
@@ -1130,7 +1257,11 @@ public class RealKernelTypeNameTests
     // Harness
     // ---------------------------------------------------------------------------
 
-    private static async Task<ImmutableArray<Diagnostic>> AnalyzeAsync(DiagnosticAnalyzer analyzer, string source)
+    private static async Task<ImmutableArray<Diagnostic>> AnalyzeAsync(
+        DiagnosticAnalyzer analyzer,
+        string source,
+        string[]? enabledIds = null
+    )
     {
         var compilation = CSharpCompilation.Create(
             assemblyName: "RealKernelTypeNames",
@@ -1139,6 +1270,8 @@ public class RealKernelTypeNameTests
             options: new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable
+            ).WithSpecificDiagnosticOptions(
+                (enabledIds ?? []).ToDictionary(id => id, _ => ReportDiagnostic.Warn)
             )
         );
 

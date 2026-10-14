@@ -11,6 +11,7 @@ public sealed class HealthCheckTagTests
     public void AddDatabaseReadinessCheck_RegistersWithReadyDbTags_NeverLive()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
 
         services.AddHealthChecks()
             .AddDatabaseReadinessCheck<DatabaseReadinessHealthCheckTests.TestDbContext>();
@@ -27,6 +28,7 @@ public sealed class HealthCheckTagTests
     public void AddDapperDatabaseReadinessCheck_RegistersWithReadyDbTags_NeverLive()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton(Substitute.For<SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory>());
 
         services.AddHealthChecks().AddDapperDatabaseReadinessCheck();

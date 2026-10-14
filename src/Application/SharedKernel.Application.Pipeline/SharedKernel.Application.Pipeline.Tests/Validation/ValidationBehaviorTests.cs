@@ -216,14 +216,14 @@ public sealed class ValidationBehaviorTests
     }
 
     [Fact]
-    public async Task Handle_BuiltInValidatorWithoutCustomCode_UsesFluentValidationDefaultCodeAndPlaceholders()
+    public async Task Handle_BuiltInValidatorWithoutCustomCode_MapsToTheKernelCodeAndKeepsPlaceholders()
     {
         var behavior = Behavior<TestRequest, Result>([new DefaultCodeValidator()]);
 
         var result = await behavior.Handle(new TestRequest("abcdef"), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
         var error = result.Error.Details.Should().ContainSingle().Subject;
-        error.Code.Should().Be("MaximumLengthValidator");
+        error.Code.Should().Be(ErrorCodes.Validation.MaxLength);
         error.MessageArguments.Should().ContainKey("MaxLength");
         error.MessageArguments[ErrorArgumentNames.PropertyPath].Should().Be("Name");
         error.MessageArguments.Should().NotContainKey("PropertyValue");

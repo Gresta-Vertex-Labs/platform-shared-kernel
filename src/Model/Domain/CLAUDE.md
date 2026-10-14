@@ -32,9 +32,10 @@ static factory. Members and examples: `SharedKernel.Domain/README.md`.
 | `Specifications` | `ISpecification<T>`, `Specification<T>` (+ `Specification<T>.Create(criteria)`), `Spec.For<T>()` → `SpecificationBuilder<T>` / `IncludableSpecificationBuilder<T, TProperty>` (typed `ThenInclude`; `.Select` → projection), `ProjectionSpecification<T, TResult>`/`IProjectionSpecification<T, TResult>`, `AllSpecification<T>`, `EmptySpecification<T>`, `AndSpecification<T>`/`OrSpecification<T>`/`NotSpecification<T>`, `SpecificationExtensions` |
 | `Policies` | `IPolicy<in T>` (`Explain`), `AndPolicy<T>`/`OrPolicy<T>`/`NotPolicy<T>`, `PolicyExtensions` (`And`, `Or`, `Not`, `ToRule`) |
 | `DomainServices` | `DomainService` |
+| (root `SharedKernel.Domain`) | `DomainErrorCodes` (groups `Currency`, `Money`; constants only) |
 | `Monetary` | `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `CurrencyMismatchRule`, `IExchangeRateProvider`, `MoneyExtensions` (`ConvertAsync`) |
 | `Exceptions` | `BusinessRuleViolationException`, `DomainNotFoundException` |
-| `Internal` (internal) | `DomainInvariants` (the only `CheckRule`/`TryCreate`/`NotNull` implementation), `SoftDeletion` |
+| `Internal` (internal) | `DomainInvariants` (the only `CheckRule`/`TryCreate`/`NotNull` implementation), `DomainErrors` (factory for the owned error codes), `SoftDeletion` |
 
 Base-class matrix (closed — do not add combinations; a consumer needing another extends `AggregateRoot<TId>` and
 implements the interfaces, which is all persistence reads):
@@ -128,11 +129,23 @@ implements the interfaces, which is all persistence reads):
     `IFormattable`.
 30. Arithmetic uses banker's rounding; `Multiply`/`Divide` take a `RoundingPolicy` (`BankersRounding`, `AwayFromZero`,
     `ToZero`, `Ceiling`, `Floor` — never `Up`/`Down`).
-31. Cross-currency `+ - < > <= >= Min Max Sum` throw `BusinessRuleViolationException` with `money.currency_mismatch`.
+31. Cross-currency `+ - < > <= >= Min Max Sum` throw `BusinessRuleViolationException` with `DomainErrorCodes.Money.CurrencyMismatch` (`money.currency_mismatch`; `CurrencyMismatchRule.ErrorCode` aliases it).
 32. `Allocate` uses largest remainder; leftover minor units go to the later indexes; parts always sum to the original.
 33. `Sum()` throws `InvalidOperationException` on an empty sequence; `Sum(currency)` returns zero.
 34. `CurrencyCatalog` is frozen, compiled in, and carries `RegistryAsOf`; update only against ISO 4217 amendments.
     `IExchangeRateProvider` is a port; `ConvertAsync` builds the result through the internal `Money.FromTrusted`.
+
+**Error codes**
+
+35. Every error code the package owns is a constant in the public `SharedKernel.Domain.DomainErrorCodes` (groups
+    `Currency`, `Money`) and is built by the internal `Internal.DomainErrors` factory — no inline code literal. Codes
+    are lowercase `{domain}.{snake_reason}` (C1). `not_found.default` and `validation.required` stay
+    `ErrorCodes` from Primitives. The package never reads or spells `domain.rule.violated`/`domain.rule_violated`
+    (`BusinessRuleViolationException` carries the rule's own `Code`).
+36. ErrorType follows the condition (C3): a broken caller rule (`money.currency_mismatch`) is `BusinessRule`; invalid
+    input (`currency.code.*`) is `Validation`; a persisted `Money` amount with excess decimals
+    (`money.stored_precision_exceeded`) is corrupt data, thrown as `DomainException` with `Unexpected`, not through
+    `CheckRule`.
 
 ## Decisions
 
@@ -148,12 +161,15 @@ implements the interfaces, which is all persistence reads):
 | Paging and tracking are repository concerns, not specification concerns | One place validates page input; the same spec serves tracked and untracked reads |
 | `IAggregateFactory`, `IPolicy<T>` and the full audit/soft-delete/tenant base matrix are kept | Owner ruling: consumers get every combination without hand-wiring; `AggregateFactoriesMustCreateValidationResults` enforces the factory shape |
 | AOT/trimming is not a constraint here | The JSON factory uses `MakeGenericType` + a compiled constructor delegate; `DomainEventVersionHelper` uses cached attribute lookup. Choose the best consumer API |
+| `BusinessRuleViolationException`/`DomainNotFoundException` keep domain-shaped constructors, with no `(Error)`/`(Error, Exception)` overload (E1 exemption) | They derive `SharedKernelException` through `DomainException`; accepting an arbitrary `Error` would bypass `IBusinessRule.Code` |
 | Domain-event dispatch contract here, implementation in 05.Application | The domain declares `IDomainEventDispatcher`; `AddSharedKernelApplication` registers the native dispatcher |
 
 ## Logging
 
 EventId block **3000–3999** (`LoggingEventIdRanges.Domain`) is reserved but unused: `SharedKernel.Domain` is
 logging-free by rule (Model tier; `ILogger` is never injected into a domain type). Do not add `[LoggerMessage]` here.
+The package is also telemetry-free: no `ActivitySource`, `Meter` or `Activity` use. Error codes (rules 35-36) are its only
+observability surface; failures are recorded by the application and host tiers from the `Error` the exception carries.
 
 ## Cross-Domain Couplings
 
@@ -179,6 +195,7 @@ Inbound references: every Application/Infrastructure package that touches aggreg
 
 - `SharedKernel.Domain/SharedKernel.Domain.Tests` — Unit lane only, no fixtures. Every behaviour fix adds a case to
   `DomainHardeningTests` or `MoneyHardeningTests` that fails when the fix is reverted.
+- `DomainErrorCodesTests` pins every `DomainErrorCodes` constant by literal and C1 format (a reflection sweep fails on an unpinned new code) and guards that the assembly spells no `domain.rule.violated`/`domain.rule_violated` literal.
 - Test rules use their own `Code` (`"test.rule"` where the code is irrelevant); value-object fixtures call `EnsureValid()`.
 - Code snippets in the package README compile and their shown outputs come from running them.
 - `SharedKernel.Domain.ConsumerVerify` consumes the packed package; update it with every public API change.

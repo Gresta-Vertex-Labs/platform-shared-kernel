@@ -318,24 +318,24 @@ Both require `AddRedisConnection` first and are idempotent.
 | `InvalidOperationException` | Registration | `AddRedisConnection` has not been called |
 | `ArgumentException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The resource is null or whitespace |
 | `ArgumentOutOfRangeException` | `TryAcquireLeaseAsync`, `DistributedLockOptions` | A duration is out of range |
-| `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The Redis call failed (`RedisException`, `TimeoutException`, or a transport error) |
+| `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The Redis call failed (`RedisException`, `TimeoutException`, or a transport error); `Error.Code` is `caching.lock_unavailable`, `Error.Type` is `Unavailable` |
 | `OperationCanceledException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The token was cancelled before an attempt or during a wait |
 
 ### Logging
 
-Category `SharedKernel.Caching.Redis.DistributedLocking.Implementations.RedisDistributedLockService`. Events carry the
+Category `RedisDistributedLockService`. `{Resource}` is the caller-chosen resource name: never put a tenant id or personal data in it. Events carry the
 resource name and fencing token, never owner ids or connection details.
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 2300 | Debug | Lock acquired on `{Resource}` (`{FencingToken}`) |
-| 2301 | Debug | Lock on `{Resource}` held by another owner (after the whole wait time) |
-| 2302 | Debug | Lease acquired on `{Resource}` for `{Duration}` (`{FencingToken}`) |
-| 2303 | Debug | Lease on `{Resource}` held by another owner |
-| 2304 | Debug | Lock on `{Resource}` released |
-| 2305 | Warning | Lock on `{Resource}` could not be released; it expires on its own |
-| 2306 | Warning | Lock on `{Resource}` could not be extended; retrying until it would expire |
-| 2307 | Error | Lock on `{Resource}` (`{FencingToken}`) lost: `{Reason}` |
+| 2300 | Debug | Lock acquired on `{Resource}` with fencing token `{FencingToken}` |
+| 2301 | Debug | Lock on `{Resource}` is held by another owner (after the whole wait time) |
+| 2302 | Debug | Lease acquired on `{Resource}` for `{Duration}` with fencing token `{FencingToken}` |
+| 2303 | Debug | Lease on `{Resource}` is held by another owner |
+| 2304 | Debug | Lock on `{Resource}` was released |
+| 2305 | Warning | Lock on `{Resource}` could not be released and expires on its own (exception attached) |
+| 2306 | Warning | Lock on `{Resource}` could not be extended; extension is retried until it would expire (exception attached) |
+| 2307 | Error | Lock on `{Resource}` with fencing token `{FencingToken}` was lost (`{LossCause}`) |
 
 Alert on 2307: work that relied on the lock was told to stop.
 

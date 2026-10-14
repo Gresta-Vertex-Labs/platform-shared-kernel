@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.IO.Pipelines;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting.Internal;
 using SharedKernel.Storage;
@@ -23,14 +25,25 @@ public sealed class ReportingDependencies
 {
     private readonly IFileStorageFactory? _storageFactory;
     private readonly ILogger _logger;
+    private readonly ReportingTelemetry _telemetry;
 
     /// <summary>Creates the dependencies.</summary>
-    /// <param name="loggerFactory">The logger factory; no logging when <see langword="null"/>.</param>
+    /// <param name="logger">The logger.</param>
     /// <param name="storageFactory">The storage factory; exporting to a store throws when <see langword="null"/>.</param>
-    public ReportingDependencies(ILoggerFactory? loggerFactory = null, IFileStorageFactory? storageFactory = null)
+    /// <param name="meterFactory">
+    /// The meter factory the instruments are created from; a directly created meter is used when <see langword="null"/>
+    /// (a host built with the Host builders registers one).
+    /// </param>
+    public ReportingDependencies(
+        ILogger<ReportingDependencies> logger,
+        IFileStorageFactory? storageFactory = null,
+        IMeterFactory? meterFactory = null)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _logger = logger;
         _storageFactory = storageFactory;
-        _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger(ReportingLog.CategoryName);
+        _telemetry = new ReportingTelemetry(meterFactory);
     }
 
     /// <summary>Runs <paramref name="write"/> into a pipe while uploading its other end to the destination store.</summary>
@@ -127,7 +140,7 @@ public sealed class ReportingDependencies
             if (written.IsFailure)
             {
                 // Faulting the pipe aborts the upload, so a report that failed half-way is never stored.
-                await writer.CompleteAsync(new ReportAbortedException(written.Error.Code)).ConfigureAwait(false);
+                await writer.CompleteAsync(new ReportAbortedException(written.Error)).ConfigureAwait(false);
                 return written;
             }
 
@@ -147,8 +160,8 @@ public sealed class ReportingDependencies
         if (_storageFactory is null)
         {
             throw new InvalidOperationException(
-                "Exporting to a store needs SharedKernel storage: register it with services.AddSharedKernelStorage() and add the store. "
-                + "To write to a stream instead, call ExportToStreamAsync / ConvertToStreamAsync.");
+                "No file storage is registered for exporting to a store. Call AddSharedKernelStorage() and add the store, "
+                + "or write to a stream with ExportToStreamAsync or ConvertToStreamAsync.");
         }
 
         return _storageFactory.Open(new FileReference
@@ -233,20 +246,20 @@ public sealed class ReportingDependencies
     {
         long startTimestamp = Stopwatch.GetTimestamp();
         using Activity? activity = ReportingTelemetry.Start(operation, format, store);
-        ReportingLog.Started(_logger, operation, format.Name, store ?? "(stream)");
+        ReportingLog.Started(_logger, operation, format.Name);
 
         try
         {
             Result<T> result = await body().ConfigureAwait(false);
             if (result.IsFailure)
             {
-                ReportingTelemetry.Failed(activity, operation, format, startTimestamp, result.Error.Code);
-                ReportingLog.Failed(_logger, operation, format.Name, result.Error.Code);
+                string errorType = _telemetry.Failed(activity, operation, format, startTimestamp, result.Error);
+                ReportingLog.Failed(_logger, operation, format.Name, result.Error.Code, errorType);
                 return result;
             }
 
             (long rowCount, long sizeBytes) = measure(result.Value);
-            ReportingTelemetry.Succeeded(activity, operation, format, startTimestamp, countsRows ? rowCount : null, sizeBytes);
+            _telemetry.Succeeded(activity, operation, format, startTimestamp, countsRows ? rowCount : null, sizeBytes);
 
             double durationMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
             if (countsRows)
@@ -260,15 +273,15 @@ public sealed class ReportingDependencies
 
             return result;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException canceled) when (cancellationToken.IsCancellationRequested)
         {
-            ReportingTelemetry.Cancelled(activity, operation, format, startTimestamp);
+            _telemetry.Faulted(activity, operation, format, startTimestamp, canceled);
             ReportingLog.Cancelled(_logger, operation, format.Name);
             throw;
         }
         catch (Exception exception)
         {
-            ReportingTelemetry.Failed(activity, operation, format, startTimestamp, exception.GetType().FullName ?? exception.GetType().Name);
+            _telemetry.Faulted(activity, operation, format, startTimestamp, exception);
             ReportingLog.Faulted(_logger, exception, operation, format.Name);
             throw;
         }
@@ -282,5 +295,19 @@ internal readonly record struct StoredContent(FileReference StoredFile, Presigne
 internal readonly record struct WrittenContent(long RowCount, long SizeBytes);
 
 /// <summary>Faults the upload pipe when a writer returned a failure, so the partial report is never stored.</summary>
-internal sealed class ReportAbortedException(string errorCode)
-    : Exception($"The report was not completed: {errorCode}.");
+/// <remarks>
+/// Carries the writer's own <see cref="Error"/> unchanged, so a storage span or an edge that sees it classifies the real
+/// cause (for example <c>reporting.row_limit_exceeded</c>, <see cref="ErrorType.Validation"/>) rather than a defect.
+/// </remarks>
+internal sealed class ReportAbortedException : SharedKernelException
+{
+    public ReportAbortedException(Error error)
+        : base(error)
+    {
+    }
+
+    public ReportAbortedException(Error error, Exception innerException)
+        : base(error, innerException)
+    {
+    }
+}

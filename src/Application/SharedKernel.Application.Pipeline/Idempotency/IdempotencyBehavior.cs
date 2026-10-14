@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -5,10 +6,13 @@ using SharedKernel.Application.Commands;
 using SharedKernel.Application.Idempotency;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Pipeline.Commands;
+using SharedKernel.Application.Pipeline.Diagnostics;
 using SharedKernel.Application.Pipeline.Shared;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Application.Pipeline.Idempotency;
 
@@ -74,9 +78,18 @@ namespace SharedKernel.Application.Pipeline.Idempotency;
 /// <see cref="LogLevel.Warning"/>. A <see langword="false"/> result from <see cref="IIdempotencyStore.ReleaseAsync"/>
 /// needs no log: the reservation being gone already is exactly what a release wants.
 /// </para>
+/// <para>
+/// <b>The store call is the fault boundary.</b> An exception from <see cref="IIdempotencyStore.TryBeginAsync"/> fails
+/// closed: a failed <c>Result</c> of <c>Error.Unavailable(</c><see cref="ErrorCodes.Idempotency.StoreUnavailable"/><c>, ...)</c>
+/// and the handler does not run; a <see cref="SharedKernelException"/> from the store passes its own <c>Error</c>
+/// through; the caller's own cancellation propagates. A fault in <see cref="IIdempotencyStore.CompleteAsync"/> or
+/// <see cref="IIdempotencyStore.ReleaseAsync"/> is logged and swallowed and never replaces the handler's outcome or
+/// exception — the reservation expires on its lease. This behavior never catches around <c>next()</c> except to release
+/// the reservation before rethrowing.
+/// </para>
 /// <para>The idempotency key itself is never echoed in any error message returned to the caller.</para>
 /// </remarks>
-internal sealed partial class IdempotencyBehavior<TRequest, TResponse>(
+internal sealed class IdempotencyBehavior<TRequest, TResponse>(
     [FromKeyedServices(IdempotencyPurpose.Request)] IIdempotencyStore store,
     IRequestContext requestContext,
     ICommandScope commandScope,
@@ -96,8 +109,7 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse>(
 
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
-            return FailureResponse.Create<TResponse>(
-                Error.Validation(ErrorCodes.Idempotency.KeyRequired, "An idempotency key is required."));
+            return FailureResponse.Create<TResponse>(ApplicationErrors.IdempotencyKeyRequired());
         }
 
         var key = IdempotencyKeyScope.Create(requestContext, request.IdempotencyKey);
@@ -106,9 +118,33 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse>(
             : request.Fingerprint.Trim();
         var settings = options.Value;
 
-        var reservation = await store
-            .TryBeginAsync(IdempotencyPurpose.Request, key, fingerprint, settings.LeaseDuration, cancellationToken)
-            .ConfigureAwait(false);
+        IdempotencyReservation reservation;
+        try
+        {
+            reservation = await store
+                .TryBeginAsync(IdempotencyPurpose.Request, key, fingerprint, settings.LeaseDuration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller's own cancellation is not a store fault.
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // The store call is the fault boundary: this package cannot reference a provider to classify its
+            // exceptions, and IIdempotencyStore documents that an unreachable store throws. Fail closed: the handler
+            // does not run. A classified provider exception keeps its own Error.
+            var classified = exception as SharedKernelException;
+            PipelineLog.IdempotencyStoreUnavailable(
+                logger,
+                classified is null ? LogLevel.Error : LogLevel.Warning,
+                typeof(TRequest).FullName ?? typeof(TRequest).Name,
+                exception);
+            Activity.Current.AddExceptionEvents(exception);
+
+            return FailureResponse.Create<TResponse>(classified?.Error ?? ApplicationErrors.IdempotencyStoreUnavailable());
+        }
 
         switch (reservation.Status)
         {
@@ -116,31 +152,29 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse>(
                 return IdempotencyResponseSerializer.Deserialize<TResponse>(
                     reservation.StoredResponse
                     ?? throw new InvalidOperationException(
-                        $"{store.GetType().Name} reported a completed request reservation without a stored response."));
+                        $"The idempotency store '{store.GetType().Name}' reported a completed request reservation without a stored response."));
 
             case IdempotencyReservationStatus.InProgress:
-                return FailureResponse.Create<TResponse>(
-                    Error.Conflict(
-                        ErrorCodes.Idempotency.InProgress,
-                        "A request with this idempotency key is still being processed."));
+                return FailureResponse.Create<TResponse>(ApplicationErrors.IdempotencyInProgress());
 
             case IdempotencyReservationStatus.FingerprintMismatch:
-                return FailureResponse.Create<TResponse>(
-                    Error.Conflict(
-                        ErrorCodes.Idempotency.KeyReused,
-                        "The idempotency key was already used for a different request."));
+                return FailureResponse.Create<TResponse>(ApplicationErrors.IdempotencyKeyReused());
 
             case IdempotencyReservationStatus.Started:
-            default:
                 return await RunAndRecordAsync(
                         next,
                         key,
                         reservation.Token
                         ?? throw new InvalidOperationException(
-                            $"{store.GetType().Name} returned a started reservation without a token."),
+                            $"The idempotency store '{store.GetType().Name}' returned a started reservation without a token."),
                         settings.RetentionWindow,
                         cancellationToken)
                     .ConfigureAwait(false);
+
+            default:
+                // Fail closed: an undefined status must never run the handler, because the store's answer is unknown.
+                throw new UnreachableException(
+                    $"The idempotency store '{store.GetType().Name}' returned the undefined reservation status '{reservation.Status}'.");
         }
     }
 
@@ -158,35 +192,53 @@ internal sealed partial class IdempotencyBehavior<TRequest, TResponse>(
         }
         catch
         {
-            await store.ReleaseAsync(IdempotencyPurpose.Request, key, token, cancellationToken).ConfigureAwait(false);
+            // The handler's exception must propagate, so a fault while releasing never replaces it.
+            await ReleaseQuietlyAsync(key, token, cancellationToken).ConfigureAwait(false);
             throw;
         }
 
         if (ResponseOutcome.IsSuccess(response))
         {
             var serialized = IdempotencyResponseSerializer.Serialize(response);
-            var completed = await store
-                .CompleteAsync(IdempotencyPurpose.Request, key, token, serialized, retention, cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                var completed = await store
+                    .CompleteAsync(IdempotencyPurpose.Request, key, token, serialized, retention, cancellationToken)
+                    .ConfigureAwait(false);
 
-            if (!completed)
-                LogCompleteReservationLost(logger, typeof(TRequest).FullName ?? typeof(TRequest).Name);
+                if (!completed)
+                    PipelineLog.IdempotencyReservationLost(logger, typeof(TRequest).FullName ?? typeof(TRequest).Name);
+            }
+            catch (Exception exception) when (
+                exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                // Documented catch-all (rule 27): the work already committed, so the handler's response is returned and
+                // the reservation expires on its lease. The caller's own cancellation is not caught.
+                PipelineLog.IdempotencyCompleteFailed(logger, typeof(TRequest).FullName ?? typeof(TRequest).Name, exception);
+                Activity.Current.AddExceptionEvents(exception);
+            }
         }
         else
         {
-            await store.ReleaseAsync(IdempotencyPurpose.Request, key, token, cancellationToken).ConfigureAwait(false);
+            await ReleaseQuietlyAsync(key, token, cancellationToken).ConfigureAwait(false);
         }
 
         return response;
     }
 
-    /// <summary>
-    /// The reservation was lost before <c>CompleteAsync</c> could confirm it — the handler already
-    /// ran successfully, so the response is returned to the caller regardless (Warning).
-    /// </summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogCompleteReservationLost,
-        Level = LogLevel.Warning,
-        Message = "Completed handling {RequestType} but its idempotency reservation was lost before CompleteAsync could confirm it; returning the response anyway")]
-    private static partial void LogCompleteReservationLost(ILogger logger, string requestType);
+    private async Task ReleaseQuietlyAsync(string key, string token, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await store.ReleaseAsync(IdempotencyPurpose.Request, key, token, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // Documented catch-all (rule 27): never replaces the handler's outcome or exception; the reservation
+            // expires on its lease. The caller's own cancellation is not caught.
+            PipelineLog.IdempotencyReleaseFailed(logger, typeof(TRequest).FullName ?? typeof(TRequest).Name, exception);
+            Activity.Current.AddExceptionEvents(exception);
+        }
+    }
 }

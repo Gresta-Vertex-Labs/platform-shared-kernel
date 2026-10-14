@@ -46,7 +46,7 @@ public sealed class WebhookUrlValidationDispatchTests
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().BeNull();
         result.Attempts.Should().Be(0);
-        result.Error.Should().NotBeNullOrEmpty();
+        result.Error!.Code.Should().Be(WebhookErrorCodes.TargetRejected);
         handler.CallCount.Should().Be(0);
 
         observer.AttemptCalls.Should().Be(1);

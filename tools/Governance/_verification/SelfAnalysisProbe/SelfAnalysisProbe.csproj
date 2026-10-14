@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Proof harness for tools/Governance/SelfAnalysis: a project with one deliberate violation per self-analysed rule.
+         Not in the solution and never shipped; run tools/Governance/SelfAnalysis/verify-self-analysis.sh. -->
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <!-- The probe sits outside src/ and declares no tier, so it forces the self-analysis on. -->
+    <SharedKernelSelfAnalysisForce>true</SharedKernelSelfAnalysisForce>
+    <!-- The findings are errors regardless of TreatWarningsAsErrors (kernel.globalconfig); it stays on to prove the two compose. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+  <!-- The same single line the root Directory.Build.targets will carry. -->
+  <Import Project="..\..\SelfAnalysis\SharedKernel.SelfAnalysis.props" />
+</Project>

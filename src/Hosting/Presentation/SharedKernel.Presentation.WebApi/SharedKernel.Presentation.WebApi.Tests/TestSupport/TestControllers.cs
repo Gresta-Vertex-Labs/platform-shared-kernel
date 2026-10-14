@@ -10,7 +10,7 @@ namespace SharedKernel.Presentation.WebApi.Tests.TestSupport;
 /// <summary>Errors shared by the test endpoints.</summary>
 public static class TestErrors
 {
-    /// <summary>The code 06.Persistence gives every stale row version (<c>ConcurrencyVersion.ConflictErrorCode</c>).</summary>
+    /// <summary>The code 06.Persistence gives every stale row version (<c>PersistenceErrorCodes.Concurrency.Conflict</c>).</summary>
     public const string ConcurrencyConflictCode = "persistence.concurrency_conflict";
 
     public static readonly Error OrderNotFound = Error.NotFound("order.not_found", "Order 42 was not found.");
@@ -22,7 +22,7 @@ public static class TestErrors
     public static readonly Error StaleVersion = Error.Conflict(ConcurrencyConflictCode, "Order 42 was changed by someone else.");
 
     public static readonly Error SearchUnreachable =
-        Error.Unavailable("search.unreachable", "Search engine at http://search.internal:7700 did not answer.");
+        Error.Unavailable("search.unavailable", "Search engine at http://search.internal:7700 did not answer.");
 }
 
 /// <summary>An API controller (<c>[ApiController]</c>) returning the same typed results as minimal APIs.</summary>

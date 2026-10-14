@@ -75,11 +75,11 @@ public sealed class FakeAsymmetricSignatureServiceTests
     }
 
     [Fact]
-    public async Task SignAsync_UnknownKey_WithCreateKeysOnDemandDisabled_ThrowsKeyNotFound()
+    public async Task SignAsync_UnknownKey_WithCreateKeysOnDemandDisabled_ThrowsInvalidOperation()
     {
         var service = new FakeAsymmetricSignatureService(new FakeSigningKeyProvider { CreateKeysOnDemand = false });
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await service.SignAsync(Data, "missing"));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.SignAsync(Data, "missing"));
         Assert.False(await service.VerifyAsync(Data, new byte[64], "missing"));
     }
 

@@ -1,0 +1,142 @@
+#nullable enable
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.<Clone>$() -> SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.Equals(SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult? other) -> bool
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.Error.get -> SharedKernel.Primitives.Errors.Error?
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.IsSuccess.get -> bool
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.NotificationDeliveryId.get -> System.Guid
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.NotificationDeliveryResult(System.Guid notificationDeliveryId, bool isSuccess, string? providerMessageId, SharedKernel.Primitives.Errors.Error? error) -> void
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.ProviderMessageId.get -> string?
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrorCodes
+SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrors
+SharedKernel.Integration.Notifications.Abstractions.Extensions.ServiceCollectionExtensions
+SharedKernel.Integration.Notifications.Abstractions.Notifications.INotificationSender
+SharedKernel.Integration.Notifications.Abstractions.Notifications.INotificationSender.SendAsync<TTemplateModel>(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!>!
+SharedKernel.Integration.Notifications.Abstractions.Notifications.INotificationSender.SupportedChannel.get -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.<Clone>$() -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment!
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.ContentType.get -> string?
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.ContentType.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.Equals(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment? other) -> bool
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.FileName.get -> string!
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.FileName.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.FileReference.get -> SharedKernel.Storage.FileReference!
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.FileReference.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.NotificationAttachment() -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel.Email = 0 -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel.Sms = 1 -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.<Clone>$() -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>!
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Attachments.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment!>?
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Attachments.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Channel.get -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Channel.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Equals(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>? other) -> bool
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Locale.get -> string?
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Locale.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.NotificationDeliveryId.get -> System.Guid
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.NotificationDeliveryId.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.NotificationMessage() -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Recipient.get -> string!
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Recipient.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.ReplyTo.get -> string?
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.ReplyTo.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.TemplateId.get -> string!
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.TemplateId.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.TemplateModel.get -> TTemplateModel
+SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.TemplateModel.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationDeliveryObserver
+SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationDeliveryObserver.OnAttemptAsync(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext! context, int attemptNumber, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationDeliveryObserver.OnCompletedAsync(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext! context, SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult! result, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationSenderIdentityResolver
+SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationSenderIdentityResolver.ResolveAsync(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel channel, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity!>!
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.<Clone>$() -> SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext!
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.Channel.get -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.Channel.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.Deconstruct(out System.Guid NotificationDeliveryId, out SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel Channel, out string! Recipient, out string! TemplateId) -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.Equals(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext? other) -> bool
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.NotificationDeliveryContext(System.Guid NotificationDeliveryId, SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel Channel, string! Recipient, string! TemplateId) -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.NotificationDeliveryId.get -> System.Guid
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.NotificationDeliveryId.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.Recipient.get -> string!
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.Recipient.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.TemplateId.get -> string!
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.TemplateId.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.<Clone>$() -> SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity!
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.Deconstruct(out string! FromAddress, out string? DisplayName, out string? ReplyTo) -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.DisplayName.get -> string?
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.DisplayName.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.Equals(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity? other) -> bool
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.FromAddress.get -> string!
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.FromAddress.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.NotificationSenderIdentity(string! FromAddress, string? DisplayName = null, string? ReplyTo = null) -> void
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.ReplyTo.get -> string?
+SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.ReplyTo.init -> void
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.BaseBackoffDelay.get -> System.TimeSpan
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.BaseBackoffDelay.set -> void
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.MaxAttempts.get -> int
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.MaxAttempts.set -> void
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.MaxBackoffDelay.get -> System.TimeSpan
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.MaxBackoffDelay.set -> void
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.MaxConcurrentSends.get -> int
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.MaxConcurrentSends.set -> void
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.NotificationDeliveryOptions() -> void
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.RequestTimeout.get -> System.TimeSpan
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.RequestTimeout.set -> void
+SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationIntegrationActivitySource
+SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics
+SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics.NotificationMetrics(System.Diagnostics.Metrics.IMeterFactory! meterFactory) -> void
+SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics.RecordSend(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel channel, string! outcome, long startTimestamp) -> void
+SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationTagKeys
+const SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrorCodes.AttachmentUnresolvable = "integration.notification.attachment_unresolvable" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrorCodes.ProviderRejected = "integration.notification.provider_rejected" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrorCodes.ProviderTimeout = "integration.notification.provider_timeout" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrorCodes.ProviderUnavailable = "integration.notification.provider_unavailable" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationIntegrationActivitySource.Name = "SharedKernel.Integration" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics.MeterName = "SharedKernel.Integration" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics.SendDurationInstrumentName = "sharedkernel.integration.notification.send.duration" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationMetrics.SendsInstrumentName = "sharedkernel.integration.notification.sends" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationTagKeys.AttemptCount = "notification.attempt_count" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationTagKeys.Channel = "notification.channel" -> string!
+const SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationTagKeys.DeliveryId = "notification.delivery_id" -> string!
+override SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.Equals(object? obj) -> bool
+override SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.GetHashCode() -> int
+override SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.ToString() -> string!
+override SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.Equals(object? obj) -> bool
+override SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.GetHashCode() -> int
+override SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.ToString() -> string!
+override SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.Equals(object? obj) -> bool
+override SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.GetHashCode() -> int
+override SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.ToString() -> string!
+override SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.Equals(object? obj) -> bool
+override SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.GetHashCode() -> int
+override SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.ToString() -> string!
+override SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.Equals(object? obj) -> bool
+override SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.GetHashCode() -> int
+override SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.ToString() -> string!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.Failed(System.Guid notificationDeliveryId, SharedKernel.Primitives.Errors.Error! error) -> SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.Succeeded(System.Guid notificationDeliveryId, string? providerMessageId = null) -> SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.operator !=(SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult? left, SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult.operator ==(SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult? left, SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrors.AttachmentUnresolvable() -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrors.ForStatusCode(int statusCode) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrors.ProviderRejected(int statusCode) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrors.ProviderTimeout() -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrors.ProviderUnavailable() -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationErrors.ProviderUnavailable(int statusCode) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Integration.Notifications.Abstractions.Extensions.ServiceCollectionExtensions.AddSharedKernelNotifications(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Integration.Notifications.Abstractions.Options.NotificationDeliveryOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Integration.Notifications.Abstractions.Extensions.ServiceCollectionExtensions.WithNotificationDeliveryObserver<TObserver>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.operator !=(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment? left, SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment.operator ==(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment? left, SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationAttachment? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.operator !=(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>? left, SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>.operator ==(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>? left, SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.operator !=(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext? left, SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext.operator ==(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext? left, SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.operator !=(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity? left, SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity.operator ==(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity? left, SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationSenderIdentity? right) -> bool
+static SharedKernel.Integration.Notifications.Abstractions.Tracing.NotificationIntegrationActivitySource.StartSend(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel channel, System.Guid notificationDeliveryId) -> System.Diagnostics.Activity?

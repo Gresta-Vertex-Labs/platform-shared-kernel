@@ -139,3 +139,10 @@ static SharedKernel.Execution.Context.RequestContextExtensions.WithTenant(this S
 static SharedKernel.Execution.Context.RequestContextPropagation.ParseActorKind(string? value) -> SharedKernel.Execution.Context.ActorKind
 static SharedKernel.Execution.Context.RequestContextPropagation.ReadHeaders<TCarrier>(TCarrier carrier, System.Func<TCarrier, string!, string?>! getHeader, bool createCorrelationId = true) -> SharedKernel.Execution.Context.PropagatedRequestContext!
 static SharedKernel.Execution.Context.RequestContextPropagation.WriteHeaders<TCarrier>(SharedKernel.Execution.Context.IRequestContext? context, TCarrier carrier, System.Action<TCarrier, string!, string!>! setHeader, string? correlationId = null) -> void
+const SharedKernel.Execution.ExecutionErrorCodes.CommitOutcomeUnknown = "execution.commit_outcome_unknown" -> string!
+const SharedKernel.Execution.ExecutionErrorCodes.TransactionRolledBack = "execution.transaction_rolled_back" -> string!
+SharedKernel.Execution.ExecutionErrorCodes
+SharedKernel.Execution.Transactions.CommitOutcomeUnknownException.CommitOutcomeUnknownException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Execution.Transactions.CommitOutcomeUnknownException.CommitOutcomeUnknownException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
+SharedKernel.Execution.Transactions.TransactionRolledBackException.TransactionRolledBackException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Execution.Transactions.TransactionRolledBackException.TransactionRolledBackException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void

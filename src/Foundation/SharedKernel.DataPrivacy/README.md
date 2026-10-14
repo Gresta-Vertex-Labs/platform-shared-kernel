@@ -182,7 +182,7 @@ job you compose) sends every request to every service.
 | The same `RequestId` arrives again | The first outcome, without doing the work again |
 | Some data must be kept (tax law, a legal hold) | Erase the rest and list what was kept in `Retained` with its legal basis; `IsComplete` is then `false` |
 | The `RequestId` was used for another subject | `Error.Conflict(DataPrivacyErrorCodes.RequestIdConflict, …)` |
-| It cannot be done right now | `Error.Unexpected(DataPrivacyErrorCodes.TemporarilyUnavailable, …)`; the orchestrator retries |
+| It cannot be done right now | `Error.Unavailable(DataPrivacyErrorCodes.Unavailable, …)`; the orchestrator retries |
 
 `DataSubjectExport.WriteTo(Utf8JsonWriter)` writes the export as one JSON document (Article 20's machine-readable format):
 
@@ -320,7 +320,7 @@ There is no `IServiceCollection` extension; the host calls Microsoft's `AddRedac
 | Code | Type | When |
 | --- | --- | --- |
 | `data_privacy.request_id_conflict` (`DataPrivacyErrorCodes.RequestIdConflict`) | Conflict | A `RequestId` reused for another subject |
-| `data_privacy.temporarily_unavailable` (`DataPrivacyErrorCodes.TemporarilyUnavailable`) | Unexpected | The handler cannot act right now; retry |
+| `data_privacy.unavailable` (`DataPrivacyErrorCodes.Unavailable`) | Unavailable | The handler cannot act right now; retry |
 
 ### Logging
 

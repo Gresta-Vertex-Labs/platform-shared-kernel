@@ -48,7 +48,7 @@ You rarely reference it directly: every package that needs the caller or the tra
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Foundation — reference it from **any** project |
-| Depends on | `SharedKernel.Primitives` only |
+| Depends on | `SharedKernel.Primitives` and `SharedKernel.Core` |
 | Namespaces | `SharedKernel.Execution.Context`, `SharedKernel.Execution.Tenancy`, `SharedKernel.Execution.Transactions`, `SharedKernel.Execution.Auditing` |
 
 ## Quick start
@@ -162,6 +162,16 @@ to `Activity.Id` or `TraceId`.
   (or check the idempotency key) before retrying.
 - `OnBeforeCommit(callback)` queues work inside the transaction after the last save; `IsTransactionActive` reports one.
 
+Both exceptions derive `SharedKernelException` (`SharedKernel.Core`), so an edge maps them through their `Error`. The
+original failure is kept as `InnerException` and never appears in the message:
+
+| Exception | Code | `ErrorType` | Edge mapping |
+| --- | --- | --- | --- |
+| `CommitOutcomeUnknownException` | `execution.commit_outcome_unknown` | `Timeout` | 504 / `DeadlineExceeded` (the outcome is unknown, not "not processed") |
+| `TransactionRolledBackException` | `execution.transaction_rolled_back` | `Unexpected` | 500 / `Internal` (a composition defect) |
+
+Both keep their existing constructors and add `(Error)` and `(Error, Exception)`.
+
 ### The audit writer
 
 `AuditEntry` carries only what the caller knows (action, resource type and id, snapshots, outcome, error code, approval
@@ -270,7 +280,8 @@ None in this package. `IRequestContext` is registered by the host (`AddSharedKer
 | `TenantId` | `.Tenancy` | Non-empty `Guid`; `Parse`, `TryParse`, `FromNullable`, `IsDefault`, explicit `Guid` conversions, `TenantIdJsonConverter` (string form) |
 | `TenantScope` | `.Tenancy` | `For(tenant)`, `Global`, `FromNullable`; `Tenant`, `IsGlobal` |
 | `IUnitOfWork` | `.Transactions` | `ExecuteInTransactionAsync` (4 overloads, optional `IsolationLevel`), `SaveChangesAsync`, `IsTransactionActive`, `OnBeforeCommit` |
-| `CommitOutcomeUnknownException`, `TransactionRolledBackException` | `.Transactions` | The two transaction outcomes a caller must handle |
+| `CommitOutcomeUnknownException`, `TransactionRolledBackException` | `.Transactions` | The two transaction outcomes a caller must handle; both are `SharedKernelException`s (see "Exceptions" below) |
+| `ExecutionErrorCodes` | root | The error codes those two exceptions carry |
 | `IAuditTrailWriter`, `AuditEntry`, `AuditOutcome` | `.Auditing` | `RecordAsync(entry)`; `Succeeded`/`Failed` |
 
 ### Logging

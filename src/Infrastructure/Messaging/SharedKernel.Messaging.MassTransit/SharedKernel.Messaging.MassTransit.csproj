@@ -34,6 +34,8 @@
     <ProjectReference Include="..\..\..\Model\Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Compression\SharedKernel.Compression.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <!-- SharedKernelException: the base of ConcurrentMessageDeliveryException and PayloadTransformMismatchException. Explicit, not left to arrive transitively through SharedKernel.Execution. -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
     <!--
       SharedKernel.Configuration — AddValidatedOptions, the platform's only sanctioned options
       registration (P-561). Deliberately referenced here and NOT from

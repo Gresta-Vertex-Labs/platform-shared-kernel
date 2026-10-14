@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Idempotency.Redis.Diagnostics;
 using SharedKernel.Idempotency.Redis.Options;
 using SharedKernel.Idempotency.Redis.Store;
 
@@ -34,6 +35,10 @@ public static class RedisIdempotencyServiceCollectionExtensions
     /// Registers <see cref="IRequestContextAccessor"/> unless one is already registered: every key is scoped by the
     /// tenant of the ambient request context, which the service's inbound adapters set.
     /// </para>
+    /// <para>
+    /// Also calls <c>AddMetrics()</c> and registers the singleton instruments of the <c>SharedKernel.Idempotency</c>
+    /// meter, so a host that never configured metrics still resolves the store.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddRedisIdempotency(
         this IServiceCollection services,
@@ -53,6 +58,8 @@ public static class RedisIdempotencyServiceCollectionExtensions
         foreach (var purpose in selected)
             services.AddIdempotencyStore<RedisIdempotencyStore>(purpose);
 
+        services.AddMetrics();
+        services.TryAddSingleton<RedisIdempotencyMetrics>();
         services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 
         return services;

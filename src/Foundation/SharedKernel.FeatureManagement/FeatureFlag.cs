@@ -124,9 +124,9 @@ public abstract class FeatureFlag
         ArgumentNullException.ThrowIfNull(typeInfo);
         return new(key, FeatureFlagKind.Object, defaultValue, description,
             (client, flag, context, ct) => EvaluateObjectAsync(client, flag, typeInfo, context, ct),
-            configuration => TypedValueConverter.TryConvert(ConfigurationValues.ToValue(configuration), typeInfo, out _, out string? error)
+            configuration => TypedValueConverter.TryConvert(ConfigurationValues.ToValue(configuration), typeInfo, out _, out ConversionFailure failure)
                 ? null
-                : error);
+                : failure.Reason());
     }
 
     /// <summary>
@@ -151,7 +151,7 @@ public abstract class FeatureFlag
                 flag.Key, flag.DefaultValue, details.ErrorType, details.Reason, details.Variant, details.ErrorMessage, details.FlagMetadata);
         }
 
-        if (TypedValueConverter.TryConvert(details.Value, typeInfo, out T? value, out string? error))
+        if (TypedValueConverter.TryConvert(details.Value, typeInfo, out T? value, out ConversionFailure failure))
         {
             return new FlagEvaluationDetails<T>(
                 flag.Key, value!, ErrorType.None, details.Reason, details.Variant, null, details.FlagMetadata);
@@ -163,7 +163,7 @@ public abstract class FeatureFlag
             ErrorType.ParseError,
             Reason.Error,
             details.Variant,
-            string.Create(CultureInfo.InvariantCulture, $"Variant '{details.Variant}' does not fit {typeof(T).Name}: {error}"),
+            string.Create(CultureInfo.InvariantCulture, $"Variant '{details.Variant}' does not fit {typeof(T).Name}: {failure.Reason()}."),
             details.FlagMetadata);
     }
 }

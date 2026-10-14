@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Google.Protobuf.Collections;
@@ -60,7 +61,7 @@ internal static class QdrantRecordMapper
         VectorValueKind.Double => value.AsDouble,
         VectorValueKind.Boolean => value.AsBoolean,
         VectorValueKind.DateTimeOffset => value.AsDateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
-        _ => throw new InvalidOperationException($"Unknown VectorValueKind '{value.Kind}'."),
+        _ => throw new UnreachableException($"Unknown VectorValueKind '{value.Kind}'."),
     };
 
     /// <summary>

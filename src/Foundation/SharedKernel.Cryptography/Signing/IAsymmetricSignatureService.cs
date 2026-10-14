@@ -8,7 +8,7 @@ namespace SharedKernel.Cryptography.Signing;
 /// receives the data.
 /// </para>
 /// <para>
-/// Signing with an unknown key id throws <see cref="KeyNotFoundException"/>: the caller chose the id. Verifying with
+/// Signing with an unknown key id throws <see cref="InvalidOperationException"/>, a configuration defect: the caller chose the id. Verifying with
 /// an unknown key id, or a malformed signature, returns <see langword="false"/>: both usually come from input.
 /// </para>
 /// </remarks>
@@ -19,7 +19,7 @@ public interface IAsymmetricSignatureService
     /// <param name="keyId">The id of the signing key.</param>
     /// <param name="cancellationToken">A token to cancel the key lookup or remote signing.</param>
     /// <returns>The signature.</returns>
-    /// <exception cref="KeyNotFoundException">No key has <paramref name="keyId"/>.</exception>
+    /// <exception cref="InvalidOperationException">No key has <paramref name="keyId"/>.</exception>
     ValueTask<byte[]> SignAsync(ReadOnlyMemory<byte> data, string keyId, CancellationToken cancellationToken = default);
 
     /// <summary>Signs the contents of a stream, reading it to the end without buffering it.</summary>
@@ -27,7 +27,7 @@ public interface IAsymmetricSignatureService
     /// <param name="keyId">The id of the signing key.</param>
     /// <param name="cancellationToken">A token to cancel reading, the key lookup or remote signing.</param>
     /// <returns>The signature.</returns>
-    /// <exception cref="KeyNotFoundException">No key has <paramref name="keyId"/>.</exception>
+    /// <exception cref="InvalidOperationException">No key has <paramref name="keyId"/>.</exception>
     ValueTask<byte[]> SignAsync(Stream data, string keyId, CancellationToken cancellationToken = default);
 
     /// <summary>Verifies a signature over <paramref name="data"/>.</summary>
@@ -58,6 +58,6 @@ public interface IAsymmetricSignatureService
     /// <param name="keyId">The key id.</param>
     /// <param name="cancellationToken">A token to cancel the key lookup.</param>
     /// <returns>The algorithm.</returns>
-    /// <exception cref="KeyNotFoundException">No key has <paramref name="keyId"/>.</exception>
+    /// <exception cref="InvalidOperationException">No key has <paramref name="keyId"/>.</exception>
     ValueTask<SignatureAlgorithm> GetAlgorithmAsync(string keyId, CancellationToken cancellationToken = default);
 }

@@ -121,7 +121,7 @@ public abstract class PostgresDesignTimeDbContextFactory<TContext> : IDesignTime
             provider.GetServices<IPersistenceModelConventionFactory>(),
             provider.GetServices<IPersistenceModelConfigurator>(),
             optionsExtensions: null,
-            exceptionClassifiers: [new PostgresDbUpdateExceptionClassifier()],
+            exceptionClassifiers: [new PostgresDbUpdateExceptionClassifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgresDbUpdateExceptionClassifier>.Instance)],
             keyGenerator: null,
             loggerFactory: null);
     }

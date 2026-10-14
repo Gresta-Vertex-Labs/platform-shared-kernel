@@ -10,7 +10,7 @@
 
 | Package | Tier | Status | Notes |
 | --- | --- | --- | --- |
-| `SharedKernel.Primitives` | Foundation | ● | `Result<T>`, `Error`, `IClock`, `IIdGenerator`, SmartEnums, `LoggingEventIdRanges`, `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys`, `SharedKernel.Primitives.Health` (`IReadinessProbe`). |
+| `SharedKernel.Primitives` | Foundation | ● | `Result<T>`, `Error`, `IClock`, `IIdGenerator`, SmartEnums, `LoggingEventIdRanges`, `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys`/`WellKnownOutcomes`, `IHasError`, `SharedKernel.Primitives.Health` (`IReadinessProbe`), `SharedKernel.Primitives.Telemetry` (`TelemetryVersion`, `ActivityFailureExtensions`). |
 | `SharedKernel.Execution` | Foundation | ● | The one execution context: `IRequestContext`, `ActorKind`, `IRequestContextAccessor` + `RequestContextScope`, `RequestContextPropagation`, `CorrelationIds`, `TenantId`/`TenantScope`, `IUnitOfWork`, `IAuditTrailWriter` (WO-086). |
 | `SharedKernel.Core` | Foundation | ● | Railway extensions, `ResultTry`/`ResultCombine`, base exceptions, guard clauses (absorbed `SharedKernel.Guards`, P-505). |
 | `SharedKernel.Configuration` | Foundation | ● | `AddValidatedOptions`, `ISectionBoundOptions`, strictness options. |
@@ -26,15 +26,18 @@
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
-None — every phase in this domain is complete. The first public release ships with root P-577 (release train).
+None — every phase in this domain is complete.
 
 ## Blocked
 
-None. (The two `⚑` rows once recorded for P-495 S-25 and P-496 P-42 — `.slnx` registration and a `Directory.Packages.props` pin — were resolved by the coordinator on 2026-09-08.)
+None.
 
 ## Cross-Domain Dependencies
 

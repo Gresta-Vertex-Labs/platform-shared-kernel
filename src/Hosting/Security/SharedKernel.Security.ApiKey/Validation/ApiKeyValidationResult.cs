@@ -1,3 +1,4 @@
+using SharedKernel.Security.ApiKey.Diagnostics;
 using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Security.ApiKey.Validation;
@@ -41,7 +42,11 @@ public sealed class ApiKeyValidationResult
     /// <summary>Gets the non-secret key id, for audit logs, or <see langword="null"/>.</summary>
     public string? KeyId { get; }
 
-    /// <summary>Gets a short, non-secret reason for a failure, for logs only. <see langword="null"/> on success.</summary>
+    /// <summary>
+    /// Gets a stable, non-secret reason code for a failure, for logs only. <see langword="null"/> on success. The value is
+    /// logged: use a short code of letters, digits, <c>_</c>, <c>.</c> or <c>-</c> (at most 64 characters), never an
+    /// identifier, subject or claim value; anything else is logged as <c>Rejected</c>.
+    /// </summary>
     public string? FailureReason { get; }
 
     /// <summary>Creates a successful result.</summary>
@@ -62,7 +67,7 @@ public sealed class ApiKeyValidationResult
         ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
         if (tenantId is { IsDefault: true })
         {
-            throw new ArgumentException("A tenant id must not be default(TenantId); pass null for no tenant.", nameof(tenantId));
+            throw new ArgumentException("The tenant id must not be default(TenantId). Pass null for no tenant.", nameof(tenantId));
         }
 
         return new ApiKeyValidationResult(true, clientId, tenantId, roles ?? [], permissions ?? [], keyId, null);
@@ -72,7 +77,7 @@ public sealed class ApiKeyValidationResult
     /// <param name="reason">A short, non-secret reason for logs, such as <c>Expired</c>. Never included in the response.</param>
     /// <param name="keyId">The non-secret key id, when known.</param>
     /// <returns>The result.</returns>
-    public static ApiKeyValidationResult Failure(string reason = "Rejected", string? keyId = null)
+    public static ApiKeyValidationResult Failure(string reason = ApiKeyRejectionReasons.Rejected, string? keyId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         return new ApiKeyValidationResult(false, null, null, [], [], keyId, reason);

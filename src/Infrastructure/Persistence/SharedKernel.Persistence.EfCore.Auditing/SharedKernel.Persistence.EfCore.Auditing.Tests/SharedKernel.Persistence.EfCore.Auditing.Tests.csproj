@@ -32,4 +32,7 @@
     <!-- The byte-level spec is verified against the vectors it publishes. -->
     <None Include="..\AUDIT-FORMAT.md" Link="AUDIT-FORMAT.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\SharedTestSupport\LoggingConformance.cs" Link="SharedTestSupport\LoggingConformance.cs" />
+  </ItemGroup>
 </Project>

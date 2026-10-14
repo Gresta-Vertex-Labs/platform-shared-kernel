@@ -19,7 +19,7 @@ namespace SharedKernel.Communication;
 /// <remarks>
 /// <para>
 /// A non-2xx response is the <see cref="Error"/> the service returned (see <see cref="HttpResponseMessageResultExtensions"/>).
-/// A call that got no response is an error too: <see cref="CommunicationErrorCodes.Unreachable"/>,
+/// A call that got no response is an error too: <see cref="CommunicationErrorCodes.Unavailable"/>,
 /// <see cref="CommunicationErrorCodes.Timeout"/>, <see cref="CommunicationErrorCodes.CircuitOpen"/> or
 /// <see cref="CommunicationErrorCodes.AccessTokenUnavailable"/>. Only the caller's own cancellation throws.
 /// </para>

@@ -84,8 +84,8 @@ public sealed class WebhookPingDeliveryTests
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
-                if (Equals(activity.GetTagItem(WebhookActivityTags.SubscriptionId), subscription.SubscriptionId))
-                    eventTypeTags.Add(activity.GetTagItem(WebhookActivityTags.EventType));
+                if (Equals(activity.GetTagItem(WebhookTagKeys.SubscriptionId), subscription.SubscriptionId))
+                    eventTypeTags.Add(activity.GetTagItem(WebhookTagKeys.EventType));
             },
         };
         ActivitySource.AddActivityListener(listener);

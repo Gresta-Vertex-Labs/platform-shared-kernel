@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using SharedKernel.Cryptography.Internal;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -56,7 +57,7 @@ public sealed class EnvelopeEncryptionService : IEnvelopeEncryptionService
 
         if (unwrapped.IsFailure)
         {
-            return Error.Validation(CryptographyErrorCodes.DataKeyUnwrapFailed, "The payload's data key could not be unwrapped.");
+            return CryptographyErrors.DataKeyUnwrapFailed();
         }
 
         byte[] dataKey = unwrapped.Value;
@@ -64,7 +65,7 @@ public sealed class EnvelopeEncryptionService : IEnvelopeEncryptionService
         {
             if (dataKey.Length != AesGcmCipher.KeySize)
             {
-                return Error.Validation(CryptographyErrorCodes.DataKeyUnwrapFailed, "The payload's data key has the wrong length.");
+                return CryptographyErrors.DataKeyWrongLength();
             }
 
             byte[] aad = BuildAssociatedData(payload.MasterKeyId, payload.WrappedKey, associatedData.Span);
@@ -99,8 +100,8 @@ public sealed class EnvelopeEncryptionService : IEnvelopeEncryptionService
     {
         if (length != AesGcmCipher.KeySize)
         {
-            throw new CryptographicException(
-                $"The envelope provider generated a {length}-byte data key; AES-256-GCM requires {AesGcmCipher.KeySize} bytes.");
+            throw new InvalidOperationException(
+                $"The envelope provider generated a {length}-byte data key. AES-256-GCM requires {AesGcmCipher.KeySize} bytes, so fix the provider.");
         }
     }
 }

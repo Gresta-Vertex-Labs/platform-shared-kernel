@@ -144,7 +144,8 @@ flowchart LR
 - **Transactions.** `IUnitOfWork.ExecuteInTransactionAsync` runs the whole delegate inside the retrying execution
   strategy (6 retries by default), so a transient failure replays it from scratch — load inside the delegate. Every
   context of the scope on the same database joins; nested calls join; a failed nested call makes the transaction
-  rollback-only (`TransactionRolledBackException`); a `COMMIT` with an unknown outcome throws
+  rollback-only (`TransactionRolledBackException`, a `SharedKernelException` with code
+  `execution.transaction_rolled_back`); a `COMMIT` with an unknown outcome throws
   `CommitOutcomeUnknownException` and is never replayed. `OnBeforeCommit` queues work inside the transaction.
 - **Tenancy.** In a `TenantedDbContext` every entity type implements `IHasTenant` (children included) or is
   `[TenantShared]` / `IsTenantShared()`; anything else fails the model build. Each tenant type gets a named query
@@ -152,9 +153,11 @@ flowchart LR
   `rowLevelSecurity: true`, `app.tenant_id` is bound transaction-locally (PgBouncer-safe) and the runtime role's
   privileges and every tenant table's policy coverage are checked at startup.
 - **Errors.** Every PostgreSQL error from a save is classified: unique → Conflict; foreign key → Validation or
-  Conflict; RLS or privilege → Forbidden; serialization failures and timeouts → transient Conflict. Every concurrency
-  conflict is `ConflictException` with `persistence.concurrency_conflict` — also for another tenant's row, so the
-  answer never reveals that it exists.
+  Conflict; RLS or privilege → Forbidden; serialization failures and a lock that is not available → transient
+  Conflict; a `statement_timeout` expiry → `ErrorType.Timeout` (a `DomainException`; the retrying strategy does not replay it, so
+  retry on or off). Every concurrency conflict is `ConflictException` with `persistence.concurrency_conflict` — also for another
+  tenant's row, so the answer never reveals that it exists. A write with no tenant is `ForbiddenException` with
+  `persistence.tenant_required`, the same error the Dapper sessions and the audit services raise.
 - **Tracing.** Every query is `TagWith`'d with its specification type and every repository call is traced.
 
 ## Recipes
@@ -333,7 +336,7 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
 | `IHostApplicationBuilder.AddSharedKernelPostgres<TContext>(name, configure)` | The registration; also on `IServiceCollection` with `(configuration, name, configure)`. Registering a context twice throws |
 | `EfCorePersistenceBuilder<TContext>` | `ConfigureProvider`, `ConfigureDataSource`, `UseDataSource`, `ConfigureDbContext`, `UseDbContextPooling`, `UseServiceName`, `UseUuidV7Keys`, `MigrateOnStartup(lockTimeout?)`, `AddSeeder<T>`, `AddInterceptor<T>`, `UseMultiTenancy(...)` |
 | `SharedKernelDbContext`, `TenantedDbContext` | Context bases, constructor `(DbContextOptions<T>, PersistenceContextDependencies)` |
-| `ConcurrencyVersion` | `Get(db, entity)`, `SetExpected(db, entity, version)`, `TryGetCurrentVersion(exception, out version)`, `ConflictErrorCode` |
+| `ConcurrencyVersion` | `Get(db, entity)`, `SetExpected(db, entity, version)`, `TryGetCurrentVersion(exception, out version)` |
 | `ICallerDbContextFactory<TContext>` | `CreateDbContextAsync(caller, ct)` for background work |
 | `IPersistenceStartup` | `IsCompleted`, `WaitAsync()` — migrations and seeders done |
 | `PostgresDesignTimeDbContextFactory<TContext>` | `dotnet ef` factory; override `Create`, `ConfigurePersistence`, `ConfigureProvider` |
@@ -343,33 +346,64 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
 
 ### Errors
 
-`persistence.concurrency_conflict` (`ConflictException`) for stale versions and cross-tenant writes; PostgreSQL errors
-use the `persistence.postgresql.*` codes of `PostgresClassifiedErrorCodes` (see the Npgsql README).
+Every code is declared once in `PersistenceErrorCodes` (`SharedKernel.Persistence.Abstractions`).
+
+| Code | Type | Raised when |
+| --- | --- | --- |
+| `persistence.tenant_required` (`PersistenceErrorCodes.Tenancy.TenantRequired`) | Forbidden (`ForbiddenException`) | A write with no tenant |
+| `persistence.tenant_isolation_violation` (`...Tenancy.TenantIsolationViolation`) | Forbidden (`ForbiddenException`) | A row of another tenant, or a changed `TenantId` |
+| `persistence.concurrency_conflict` (`...Concurrency.Conflict`) | Conflict (`ConflictException`) | A stale, foreign or unknown-key version, and a cross-tenant write (the same answer, so ids cannot be probed) |
+| `persistence.bulk_mutation.specification_not_supported` (`...BulkMutation.SpecificationNotSupported`) | Validation | A bulk statement given includes, ordering, paging, no criteria, or a protected column |
+| `persistence.postgresql.*` (`...Postgresql`) | per SQLSTATE | A failed save, see the Npgsql README |
 
 ### Logging
+
+Sub-block 6000-6099, `EfCoreLoggingEventIds` and `EfCoreLog`. The cross-tenant connection and the coverage check moved here from
+6350-6351 (now 6027 and 6028).
 
 | Event id | Level | Event |
 | --- | --- | --- |
 | 6000 | Warning | Concurrency conflict detected |
-| 6001 / 6002 / 6003 | Information | Migration and seed started / seeder applied / completed |
-| 6004 | Warning | Migration and seed failed (the host reports the exception) |
-| 6005 / 6006 | Information | Migration advisory lock acquired / released |
+| 6001 / 6003 | Information | Migration and seed started / completed |
+| 6002 | Debug | Seeder applied |
+| 6004 | Error | Migration and seed failed (the host reports the exception) |
+| 6005 / 6006 | Debug | Migration advisory lock acquired / released |
 | 6008 | Warning | Transient-fault retry exhausted |
-| 6010 | Information | Database error classified |
-| 6013 | Error | No `IMigrationLock` registered — cross-replica coordination not guaranteed |
+| 6010 | Warning | Database error classified (SQLSTATE, code, constraint and table) |
+| 6013 | Error | No `IMigrationLock` registered, so cross-replica coordination is not guaranteed |
 | 6014 | Warning | Domain events discarded: no `IDomainEventDispatcher` |
 | 6015 | Warning | A write to another tenant's row was rejected |
 | 6016 | Warning | No `IDomainEventDispatcher` registered for a context |
-| 6017 / 6018 | Debug | Current row unreadable after a conflict / model validated at startup |
-| 6020 | Debug | A context cannot join the scope's transaction |
+| 6017 | Debug | Current row unreadable after a conflict |
+| 6018 | Information | Model validated at startup |
+| 6020 | Debug | A context does not join the scope's transaction (cause: own transaction, other database or role, open connection) |
 | 6021 | Warning | Transaction rolled back after a joined failure |
-| 6022 | Debug | An expected version was treated as stale |
+| 6022 | Warning | An expected version was treated as stale (open result: unknown key, not this aggregate) |
 | 6023 / 6024 | Warning | Version key refresh failed / current version could not be sealed |
 | 6025 / 6026 | Warning | Version key not loaded at startup / not loaded within the timeout |
-| 6350 | Information | Context switched to the cross-tenant role |
-| 6351 | Warning | A tenant table lacks row-level security coverage |
+| 6027 | Information | Context switched to the cross-tenant role |
+| 6028 | Warning | A tenant table lacks row-level security coverage (gap: missing, disabled, not forced, no tenant policy) |
+| 6029 | Error | The model failed validation at startup |
 
-Telemetry: `ActivitySource` and `Meter` `SharedKernel.Persistence`, wired with Npgsql's by `WithPersistenceTelemetry()`.
+A log never carries a tenant, an actor, a key, a connection string or a row value; causes are closed sets.
+
+### Telemetry
+
+One `ActivitySource` and one `Meter`, both named `SharedKernel.Persistence` (`PersistenceTelemetry.Name`), shared with the
+auditing and encryption packages. `AddServiceDefaults` subscribes to `SharedKernel.*`; a host built without it adds
+`AddSource` and `AddMeter` with that name (and Npgsql's own `Npgsql` source for the database calls).
+
+| Span | Kind | Tags |
+| --- | --- | --- |
+| `persistence {operation}` (`persistence get_by_id`, `persistence list`, `persistence add`, `persistence stream`, ...) | Internal | `persistence.aggregate_type`, `persistence.operation`, `db.collection.name`, `db.operation.name`, `outcome` |
+
+A failure sets status Error, `error.type` (the exception's full name), `error.code` (for a classified exception) and the
+exception event; a cancellation is never an error (`outcome` is `canceled`). No tag carries a tenant, a user or a value.
+
+| Instrument | Unit | Tags |
+| --- | --- | --- |
+| `sharedkernel.persistence.concurrency_conflicts` | `{conflict}` | `persistence.aggregate_type` |
+| `sharedkernel.persistence.tenant_isolation_violations` | `{violation}` | `persistence.aggregate_type` |
 
 ## Testing
 

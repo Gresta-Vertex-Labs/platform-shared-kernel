@@ -90,7 +90,7 @@ public sealed class FakeRemoteEncryptionKeyProviderTests
 
     [Fact]
     public void SetCurrentKey_UnknownKeyId_Throws() =>
-        Assert.Throws<KeyNotFoundException>(() => new FakeRemoteEncryptionKeyProvider().SetCurrentKey("never-added"));
+        Assert.Throws<ArgumentException>(() => new FakeRemoteEncryptionKeyProvider().SetCurrentKey("never-added"));
 
     [Fact]
     public async Task Lookups_WithACancelledToken_ThrowOperationCanceled()

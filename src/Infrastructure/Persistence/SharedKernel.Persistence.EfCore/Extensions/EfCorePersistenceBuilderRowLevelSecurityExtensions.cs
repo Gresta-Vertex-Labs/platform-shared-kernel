@@ -51,7 +51,7 @@ internal static class EfCorePersistenceBuilderRowLevelSecurityExtensions
 
         builder.Services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp =>
             new RowLevelSecurityCoverageCheck<TContext>(
-                sp, coverageCheck, sp.GetService<Microsoft.Extensions.Logging.ILogger<RowLevelSecurityCoverageCheck<TContext>>>()));
+                sp, coverageCheck, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RowLevelSecurityCoverageCheck<TContext>>>()));
 
         builder.Services.TryAddSingleton<RowLevelSecurityCommandInterceptor>();
         builder.Services.TryAddSingleton<RowLevelSecurityTransactionInterceptor>();

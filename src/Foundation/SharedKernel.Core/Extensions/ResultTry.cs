@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Core.Extensions;
 
@@ -20,8 +21,14 @@ namespace SharedKernel.Core.Extensions;
 /// fixed message <see cref="DefaultUnexpectedMessage"/>. The exception's type and message are never copied into
 /// the error, because they can contain connection strings, user names, or host names, and an error message can
 /// reach an HTTP response. The exception is recorded on <see cref="Activity.Current"/> instead (one event per
-/// inner exception of an <see cref="AggregateException"/>), so it appears in distributed traces. When no
-/// activity is current it is recorded nowhere; supply a mapper to capture or log it yourself.
+/// inner exception of an <see cref="AggregateException"/>, through <c>AddExceptionEvents</c> of
+/// <c>SharedKernel.Primitives.Telemetry</c>), so it appears in distributed traces. When no activity is current, or
+/// it is stopped or not sampled, it is recorded nowhere; supply a mapper to capture or log it yourself.
+/// </para>
+/// <para>
+/// <b>The span status is not changed.</b> <see cref="Activity.Current"/> is usually a span the caller owns, and the
+/// failure is a value the owner of that span records with <c>RecordResult</c>; setting <c>Error</c> here would mark
+/// a span failed that the caller may go on to handle. A custom mapper records nothing.
 /// </para>
 /// <para>
 /// <b>Custom mapping.</b> An <c>onException</c> mapper receives the exception unchanged, including an unflattened
@@ -36,7 +43,7 @@ namespace SharedKernel.Core.Extensions;
 /// </remarks>
 /// <example>
 /// <code>
-/// // Default mapping: unexpected.exception with a safe message; the exception goes to the trace.
+/// // Default mapping: unexpected.default with a safe message; the exception goes to the trace.
 /// Result&lt;Invoice&gt; invoice = await ResultTry.TryAsync(
 ///     ct =&gt; billingClient.GetInvoiceAsync(invoiceId, ct),
 ///     cancellationToken);
@@ -273,15 +280,7 @@ public static class ResultTry
 
     private static Error MapException(Exception exception)
     {
-        if (exception is AggregateException aggregate)
-        {
-            foreach (var inner in aggregate.Flatten().InnerExceptions)
-                Activity.Current?.AddException(inner);
-        }
-        else
-        {
-            Activity.Current?.AddException(exception);
-        }
+        Activity.Current.AddExceptionEvents(exception);
 
         return Error.Unexpected(ErrorCodes.Unexpected.Default, DefaultUnexpectedMessage);
     }

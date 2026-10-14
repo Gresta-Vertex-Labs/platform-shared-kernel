@@ -140,7 +140,8 @@ public sealed class ElasticSearchBulkSerializationTests
             writeAlias: definition.Name,
             new ElasticSearchOptions(),
             new FakeClock(),
-            NullLogger<ElasticSearchIndex<BulkTestDocument>>.Instance);
+            NullLogger<ElasticSearchIndex<BulkTestDocument>>.Instance,
+            SharedKernel.Search.ElasticSearch.Tests.Support.EsTelemetry.Create());
 
         // The factory delegate above always runs synchronously during ElasticsearchClient construction
         // — serializer is never null by the time control returns here.

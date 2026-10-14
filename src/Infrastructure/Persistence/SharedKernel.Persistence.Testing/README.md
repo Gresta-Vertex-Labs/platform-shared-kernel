@@ -108,7 +108,7 @@ public sealed class PlaceOrderHandlerTests
 Simplified, by design:
 
 - Writes apply immediately (no change tracker); tracked and untracked reads return the same instances.
-- `AddAsync` throws on a duplicate key and `UpdateAsync` (`KeyNotFoundException`) on a missing one, to surface
+- `AddAsync` throws on a duplicate key and `UpdateAsync` (`ConflictException`, code `persistence.concurrency_conflict`, as the real save) on a missing one, to surface
   test-authoring bugs; `DeleteAsync` always removes, soft-deletable or not, and ignores a missing key.
 - The `expectedVersion` overloads ignore the version: a real `EntityVersion` is an opaque token only the real
   repository issues. Pass `EntityVersion.None` and test concurrency and ETags against PostgreSQL.
@@ -117,7 +117,8 @@ Simplified, by design:
 
 **`FakeUnitOfWork`** runs the operation, calls `SaveChangesAsync`, runs every `OnBeforeCommit` callback, commits. An
 exception or a failed `Result` rolls back; a nested call joins, and a failure there marks the transaction
-rollback-only, so the outer call then throws `TransactionRolledBackException`. `TransientFailures = n` rolls back and
+rollback-only, so the outer call then throws `TransactionRolledBackException` (a `SharedKernelException`, code
+`execution.transaction_rolled_back`). `TransientFailures = n` rolls back and
 replays the operation n times after the save. `IsolationLevel` is ignored. `SaveChangesAsync` is a counter; with
 `SimulateFailure` it throws.
 

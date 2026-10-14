@@ -21,10 +21,8 @@ using Shop.Reports.Api.Sales;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.WithApplicationTelemetry();
 builder.WithPersistenceTelemetry();
 builder.WithMessagingTelemetry();
-builder.WithReportingTelemetry();
 
 // Merchants with a Keycloak token; the tenant from the signed claim.
 builder.Services.AddOidcAuthentication(builder.Configuration);

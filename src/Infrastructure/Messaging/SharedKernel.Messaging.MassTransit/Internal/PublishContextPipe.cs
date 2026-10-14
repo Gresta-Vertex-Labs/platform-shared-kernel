@@ -64,13 +64,16 @@ internal static class PublishContextPipe
         if (transportCorrelationId.HasValue)
             pipe.CorrelationId = transportCorrelationId.Value;
 
-        if (correlationId is not null)
-            pipe.Headers.Set(WellKnownHeaders.CorrelationId, correlationId);
-
-        // 01.Core's WellKnownHeaders — the same name 11.Communication, 13.ServiceDefaults and
-        // 14.Presentation propagate a tenant under, so a message and an HTTP call agree.
-        if (context.TenantId.HasValue)
-            pipe.Headers.Set(WellKnownHeaders.TenantId, context.TenantId.Value.ToString());
+        // Correlation and tenant go through the one platform mapping, so a message and an HTTP call agree on header
+        // names and formats. The carrier is the tenant alone: no actor id or client id is stamped here (the caller's
+        // identity arrives through RequestContextHeaderPropagator when WithInboundRequestContext() is on), so the
+        // actor kind is written as Anonymous, which readers treat the same as an absent header. A caller-supplied
+        // header below overwrites it.
+        RequestContextPropagation.WriteHeaders(
+            new PropagatedRequestContext(context.TenantId, userId: null, ActorKind.Anonymous, clientId: null, correlationId),
+            pipe,
+            static (carrier, name, value) => carrier.Headers.Set(name, value),
+            correlationId);
 
         // Caller-supplied headers last, so an explicit header always wins over a derived one — except the
         // correlation header, which was resolved above from that same explicit value.

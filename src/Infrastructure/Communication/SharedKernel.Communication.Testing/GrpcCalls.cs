@@ -39,7 +39,10 @@ public static class GrpcCalls
     /// <param name="detail">The status detail.</param>
     /// <returns>The call.</returns>
     public static GrpcCore.AsyncUnaryCall<TResponse> Failure<TResponse>(GrpcCore.StatusCode statusCode, string detail = "") =>
+        // SK0036: this double plays a service outside the platform, whose bare status no platform interceptor enriched.
+#pragma warning disable SK0036
         Failed<TResponse>(new GrpcCore.RpcException(new GrpcCore.Status(statusCode, detail)));
+#pragma warning restore SK0036
 
     /// <summary>
     /// A call that fails the way a platform service answers <paramref name="error"/>: the status of its

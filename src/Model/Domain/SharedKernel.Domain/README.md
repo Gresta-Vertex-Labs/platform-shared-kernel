@@ -418,15 +418,28 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 
 ### Error codes
 
-| Code | Raised by |
-| --- | --- |
-| The rule's own `Code` | `BusinessRuleViolationException` from `CheckRule` |
-| `money.currency_mismatch` | Money operations across currencies |
-| `money.stored_precision_exceeded` | Materializing a stored amount with more decimals than the currency's minor unit |
-| `currency.code.invalid_format` | `Currency.Create` with input that is not three letters |
-| `currency.code.unknown` | `Currency.Create` with a code outside the catalog |
-| `validation.required` | A null strongly-typed identifier or single value, and guard violations |
-| `not_found.default` | `DomainNotFoundException` |
+| Code | Constant | ErrorType | Raised by |
+| --- | --- | --- | --- |
+| The rule's own `Code` | — | `BusinessRule` | `BusinessRuleViolationException` from `CheckRule` |
+| `money.currency_mismatch` | `DomainErrorCodes.Money.CurrencyMismatch` | `BusinessRule` | Money operations across currencies (`BusinessRuleViolationException`) |
+| `money.stored_precision_exceeded` | `DomainErrorCodes.Money.StoredPrecisionExceeded` | `Unexpected` | Materializing a stored amount with more decimals than the currency's minor unit (`DomainException`: corrupt data, not a caller error) |
+| `currency.code.invalid_format` | `DomainErrorCodes.Currency.InvalidFormat` | `Validation` | `Currency.Create` with input that is not three letters |
+| `currency.code.unknown` | `DomainErrorCodes.Currency.Unknown` | `Validation` | `Currency.Create` with a code outside the catalog |
+| `validation.required` | `ErrorCodes.Validation.Required` (Primitives) | `Validation` | A null strongly-typed identifier or single value, and guard violations |
+| `not_found.default` | `ErrorCodes.NotFound.Default` (Primitives) | `NotFound` | `DomainNotFoundException` |
+
+Branch on the constant, not on a string:
+
+```csharp
+try
+{
+    var total = usd + eur;
+}
+catch (BusinessRuleViolationException ex) when (ex.Error.Code == DomainErrorCodes.Money.CurrencyMismatch)
+{
+    Console.WriteLine(ex.Error.Message); // "Expected an amount in USD but got EUR."
+}
+```
 
 ### Logging and analyzers
 

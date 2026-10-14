@@ -1,53 +1,48 @@
 using System.Diagnostics.Metrics;
+using SharedKernel.Persistence.Abstractions.Diagnostics;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Persistence.EfCore.Diagnostics;
 
 /// <summary>
-/// The shared <see cref="Meter"/> and instrument-name constants for
-/// <c>SharedKernel.Persistence.EfCore</c> metrics.
+/// The one <see cref="Meter"/> of the EF Core, auditing and field-encryption packages, named
+/// <see cref="PersistenceTelemetry.Name"/>, and the instruments of the save pipeline.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Mirrors <see cref="PersistenceActivitySource"/>'s "one shared, well-known name" precedent for
-/// metrics. BCL <see cref="System.Diagnostics.Metrics.Meter"/> — zero new NuGet dependency, AOT-safe.
+/// The meter is created statically rather than through <c>IMeterFactory</c>: the instruments are recorded from the
+/// static write guard and from pooled contexts built outside the container, neither of which can be handed a factory.
+/// <c>AddServiceDefaults</c> subscribes to <c>SharedKernel.*</c> by name, so a host needs no registration.
 /// </para>
-/// <para>
-/// <strong>THIS EXACT NAME IS THE COORDINATION POINT for <c>13.ServiceDefaults</c>'s
-/// <c>WithPersistenceTelemetry</c></strong> — do not rename without updating that consumer, which
-/// calls <c>AddMeter(PersistenceMeter.Name)</c> (or the equivalent literal, kept in sync) to enable
-/// OpenTelemetry export for this Meter. The individual instrument-name constants below let that
-/// consumer (or any other) reference an instrument by name without re-declaring the string.
-/// </para>
+/// <para>Instruments are named <c>sharedkernel.persistence.*</c> and carry a unit.</para>
 /// </remarks>
 internal static class PersistenceMeter
 {
-    /// <summary>The shared <see cref="Meter"/> name for this domain.</summary>
-    public const string Name = "SharedKernel.Persistence";
+    /// <summary>The meter and source name, <see cref="PersistenceTelemetry.Name"/>, declared once more in this assembly.</summary>
+    /// <remarks>
+    /// The name-ownership check of the platform report looks for a <c>public const</c> of the name in the assembly that
+    /// creates the meter; the type stays internal.
+    /// </remarks>
+    public const string Name = PersistenceTelemetry.Name;
 
-    /// <summary>
-    /// Counter name: the number of <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>
-    /// occurrences the save pipeline translated into a typed
-    /// <see cref="SharedKernel.Core.Exceptions.ConflictException"/>. Tagged with
-    /// <see cref="PersistenceTagKeys.AggregateType"/>.
-    /// </summary>
-    public const string ConcurrencyConflictsTotal = "persistence.concurrency_conflicts";
+    /// <summary>Counter name: concurrency conflicts the save pipeline translated into a <c>ConflictException</c>.</summary>
+    public const string ConcurrencyConflictsInstrument = "sharedkernel.persistence.concurrency_conflicts";
 
-    /// <summary>
-    /// Counter name: the number of writes the tenant write guard rejected (or the database proved) for crossing
-    /// tenant isolation. Tagged with <see cref="PersistenceTagKeys.AggregateType"/>.
-    /// </summary>
-    public const string TenantIsolationViolationsTotal = "persistence.tenant_isolation_violations";
+    /// <summary>Counter name: writes the tenant write guard rejected, or the database proved, for crossing tenant isolation.</summary>
+    public const string TenantIsolationViolationsInstrument = "sharedkernel.persistence.tenant_isolation_violations";
 
-    /// <summary>The shared <see cref="Meter"/> instance every instrument below is created from.</summary>
-    internal static readonly Meter Instance = new(Name, "1.0");
+    /// <summary>The shared <see cref="Meter"/> every instrument of the three packages is created from.</summary>
+    internal static readonly Meter Instance = new(
+        PersistenceTelemetry.Name,
+        TelemetryVersion.Of(typeof(PersistenceMeter).Assembly));
 
-    /// <summary>See <see cref="ConcurrencyConflictsTotal"/>.</summary>
+    /// <summary>See <see cref="ConcurrencyConflictsInstrument"/>. Tagged with <see cref="PersistenceTagKeys.AggregateType"/>.</summary>
     internal static readonly Counter<long> ConcurrencyConflicts =
-        Instance.CreateCounter<long>(ConcurrencyConflictsTotal, unit: "{conflict}",
+        Instance.CreateCounter<long>(ConcurrencyConflictsInstrument, unit: "{conflict}",
             description: "Concurrency conflicts translated into ConflictException.");
 
-    /// <summary>See <see cref="TenantIsolationViolationsTotal"/>.</summary>
+    /// <summary>See <see cref="TenantIsolationViolationsInstrument"/>. Tagged with <see cref="PersistenceTagKeys.AggregateType"/>.</summary>
     internal static readonly Counter<long> TenantIsolationViolations =
-        Instance.CreateCounter<long>(TenantIsolationViolationsTotal, unit: "{violation}",
+        Instance.CreateCounter<long>(TenantIsolationViolationsInstrument, unit: "{violation}",
             description: "Writes rejected for crossing tenant isolation.");
 }

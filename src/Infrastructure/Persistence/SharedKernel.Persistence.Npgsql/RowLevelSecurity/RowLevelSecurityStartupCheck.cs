@@ -2,7 +2,6 @@ using global::Npgsql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Persistence.Npgsql.Connections;
 using SharedKernel.Persistence.Npgsql.Diagnostics;
@@ -22,9 +21,9 @@ namespace SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 internal sealed class RowLevelSecurityStartupCheck(
     IServiceProvider serviceProvider,
     IOptionsMonitor<NpgsqlPersistenceOptions> options,
-    ILogger<RowLevelSecurityStartupCheck>? logger = null) : IHostedService
+    ILogger<RowLevelSecurityStartupCheck> logger) : IHostedService
 {
-    private readonly ILogger _logger = logger ?? NullLogger<RowLevelSecurityStartupCheck>.Instance;
+    private readonly ILogger _logger = logger;
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -63,20 +62,19 @@ internal sealed class RowLevelSecurityStartupCheck(
         }
         catch (NpgsqlException exception) when (exception is not PostgresException)
         {
-            _logger.RowLevelSecurityPrivilegeCheckSkipped(dataSourceName, exception);
+            NpgsqlLog.RowLevelSecurityPrivilegeCheckSkipped(_logger, dataSourceName, exception);
             return;
         }
 
         if (report.IsSubjectToRowLevelSecurity)
         {
-            _logger.RowLevelSecurityPrivilegeCheckPassed(dataSourceName, report.RoleName);
+            NpgsqlLog.RowLevelSecurityPrivilegeCheckPassed(_logger, dataSourceName, report.RoleName);
             return;
         }
 
-        foreach (var problem in report.Problems)
-        {
-            _logger.RowLevelSecurityPrivilegeProblem(dataSourceName, problem);
-            problems.Add(problem);
-        }
+        foreach (var cause in report.Causes)
+            NpgsqlLog.RowLevelSecurityPrivilegeProblem(_logger, dataSourceName, cause);
+
+        problems.AddRange(report.Problems);
     }
 }

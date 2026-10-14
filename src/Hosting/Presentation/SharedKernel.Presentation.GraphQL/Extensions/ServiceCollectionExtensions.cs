@@ -1,6 +1,8 @@
 using HotChocolate.Execution.Configuration;
 using HotChocolate.Types.Pagination;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Presentation.GraphQL.Conventions;
 using SharedKernel.Presentation.GraphQL.Errors;
@@ -27,7 +29,9 @@ public static class ServiceCollectionExtensions
     /// Registers platform-standard HotChocolate GraphQL conventions:
     /// snake_case operation naming, <c>SharedKernelFilterConvention</c>,
     /// offset and cursor pagination with <c>MaxPageSize</c> cap,
-    /// <c>SharedKernelErrorFilter</c>, and the <c>AllowIntrospection</c> gate.
+    /// <c>SharedKernelErrorFilter</c> (ProblemDetails-shaped errors: status from the shared table, client message,
+    /// <c>errorCode</c>, trace and correlation ids; exception text only in Development), and the
+    /// <c>AllowIntrospection</c> gate. Registers <c>IHttpContextAccessor</c> and logging when the host has not.
     /// </summary>
     /// <remarks>
     /// Must be called <b>before</b> any service-specific <c>AddGraphQLServer()</c> / <c>AddTypes()</c>
@@ -88,10 +92,26 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IValidateOptions<GraphQLOptions>, GraphQLOptionsValidator>();
 
+        // The error filter reads the current request (environment, culture, correlation id) and logs: both are
+        // registered once, whoever registered them first.
+        services.AddHttpContextAccessor();
+        services.AddLogging();
+
         // Build the IRequestExecutorBuilder with platform conventions.
         var builder = services
             .AddGraphQLServer()
-            .AddErrorFilter<SharedKernelErrorFilter>();
+            .AddErrorFilter(schemaServices =>
+            {
+                // The factory gets the schema services; the request and the logger are the host's.
+                var hostServices = schemaServices.GetRootServiceProvider();
+                var accessor = hostServices.GetRequiredService<IHttpContextAccessor>();
+                return new SharedKernelErrorFilter(
+                    () => accessor.HttpContext,
+                    hostServices.GetRequiredService<ILogger<SharedKernelErrorFilter>>());
+            })
+            // Outermost, ahead of the default pipeline: shapes the errors of a request rejected before it ran.
+            .UseRequest(next => RequestErrorMiddleware.Create(next))
+            .UseDefaultPipeline();
 
         // Register SharedKernelFilterConvention as IFilterConvention.
         if (options.EnableFiltering)

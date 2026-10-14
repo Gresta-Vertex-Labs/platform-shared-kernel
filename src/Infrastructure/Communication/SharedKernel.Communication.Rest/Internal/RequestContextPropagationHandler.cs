@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Communication.Rest.Internal;
@@ -17,13 +18,18 @@ namespace SharedKernel.Communication.Rest.Internal;
 /// The correlation id is the caller's (<see cref="CorrelationIds.Current"/>), never <c>Activity.Id</c>; a call that
 /// starts a new operation gets a new one. A header the request already has is kept, and a propagation failure never
 /// fails the call. Registered outside the resilience handler, so it runs once per call and every retry re-sends the
-/// same values.
+/// same values. A failure is logged (11200) with its exception; the request is still sent.
 /// </para>
 /// </remarks>
-internal sealed class RequestContextPropagationHandler(IRequestContextAccessor accessor) : DelegatingHandler
+internal sealed class RequestContextPropagationHandler(
+    IRequestContextAccessor accessor,
+    ILogger<RequestContextPropagationHandler> logger) : DelegatingHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Once per call, outside the retries: the Result verbs reach this client's logger through the request.
+        RestLogger.Attach(request, logger);
+
         try
         {
             var context = accessor.Current;
@@ -39,9 +45,10 @@ internal sealed class RequestContextPropagationHandler(IRequestContextAccessor a
                 },
                 CorrelationIds.Current(context) ?? CorrelationIds.New());
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            // Best effort: a header that cannot be written must not fail the call.
+            // Best effort: a header that cannot be written must not fail the call, but it is never silent.
+            CommunicationRestLog.PropagationFailed(logger, exception);
         }
 
         return base.SendAsync(request, cancellationToken);

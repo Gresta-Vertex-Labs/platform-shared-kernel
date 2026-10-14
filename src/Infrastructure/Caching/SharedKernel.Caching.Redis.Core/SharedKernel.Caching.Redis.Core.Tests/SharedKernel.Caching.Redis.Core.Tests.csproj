@@ -16,6 +16,8 @@
     <!-- ConfigurationBuilder/AddInMemoryCollection for SharedKernel:Caching:Redis binding tests -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="StackExchange.Redis" />
+    <!-- A multiplexer that is connected but whose PING fails, for the probe's caught-exception log -->
+    <PackageReference Include="NSubstitute" />
     <!-- A real Redis for the connection probe tests -->
     <PackageReference Include="Testcontainers.Redis" />
   </ItemGroup>

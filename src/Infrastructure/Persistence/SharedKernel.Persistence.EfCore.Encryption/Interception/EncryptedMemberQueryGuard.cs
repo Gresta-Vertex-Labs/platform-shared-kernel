@@ -130,7 +130,7 @@ internal sealed class EncryptedMemberQueryGuard : IQueryExpressionInterceptor
             var where = _operators.Count > 0 ? $" (in '{_operators.Peek()}')" : string.Empty;
             return new InvalidOperationException(
                 $"This query uses an encrypted property{where}: {description}. Encrypted columns hold ciphertext, so the " +
-                "database cannot filter, sort, group, project or update them by value. To find rows by an encrypted " +
+                "database does not filter, sort, group, project or update them by value. To find rows by an encrypted " +
                 "value, add '.WithBlindIndex()' to the property and use 'WhereEncryptedEquals(x => x.Property, value)'. " +
                 "To read the value, select the whole entity; to change it, load the entity, assign the property and save.");
         }

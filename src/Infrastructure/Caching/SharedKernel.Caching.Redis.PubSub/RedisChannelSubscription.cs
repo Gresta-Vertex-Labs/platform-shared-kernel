@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Caching.Redis.PubSub.Diagnostics;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.PubSub;
@@ -7,7 +7,7 @@ namespace SharedKernel.Caching.Redis.PubSub;
 /// <summary>
 /// One subscription: reads its queue and calls the handler for each message, one at a time, until disposed.
 /// </summary>
-internal sealed partial class RedisChannelSubscription : IAsyncDisposable
+internal sealed class RedisChannelSubscription : IAsyncDisposable
 {
     private readonly string _channel;
     private readonly ChannelMessageQueue _queue;
@@ -60,7 +60,7 @@ internal sealed partial class RedisChannelSubscription : IAsyncDisposable
         catch (Exception ex) when (ex is RedisException or TimeoutException or InvalidOperationException or IOException)
         {
             // The server forgets the subscription when the connection drops; nothing is left to clean up.
-            Log.UnsubscribeFailed(_logger, _channel, ex);
+            PubSubLog.UnsubscribeFailed(_logger, _channel, ex);
         }
 
         try
@@ -95,7 +95,7 @@ internal sealed partial class RedisChannelSubscription : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    Log.HandlerFailed(_logger, _channel, ex);
+                    PubSubLog.HandlerFailed(_logger, _channel, ex);
                 }
                 finally
                 {
@@ -111,20 +111,5 @@ internal sealed partial class RedisChannelSubscription : IAsyncDisposable
         {
             _stopping.Dispose();
         }
-    }
-
-    internal static partial class Log
-    {
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 500, Level = LogLevel.Error,
-            Message = "Handler for Redis channel '{Channel}' failed; the subscription continues with the next message")]
-        internal static partial void HandlerFailed(ILogger logger, string channel, Exception exception);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 501, Level = LogLevel.Warning,
-            Message = "Message on Redis channel '{Channel}' is not a valid {MessageType}; it was skipped")]
-        internal static partial void MessageNotDeserialized(ILogger logger, string channel, string messageType, Exception exception);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 502, Level = LogLevel.Warning,
-            Message = "Unsubscribing from Redis channel '{Channel}' failed")]
-        internal static partial void UnsubscribeFailed(ILogger logger, string channel, Exception exception);
     }
 }

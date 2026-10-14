@@ -19,7 +19,8 @@ when entries must live in PostgreSQL, or when Redis runs under an eviction polic
 | One Lua script per operation | No `WATCH`/`MULTI` loop and no check-then-act window |
 | Keys under `sk:idempotency:{tenantScope}:…` | A key can never collide across tenants or between requests and messages |
 | Self-expiring entries (`ttl`, then `retention`) | A crashed caller cannot wedge a key and no cleanup job is needed |
-| Fail closed, with one explicit fail-open switch | An outage never silently turns into duplicate execution |
+| Fail closed, with one explicit fail-open switch | An outage never silently turns into duplicate execution; it surfaces as `IdempotencyStoreUnavailableException` |
+| Spans and metrics under `SharedKernel.Idempotency` | A fail-open outage is counted and alertable, not only logged |
 | The shared `IConnectionMultiplexer` | TLS, timeouts and the `redis` readiness probe are configured once |
 
 ## Contents
@@ -47,7 +48,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
-| Namespaces | `SharedKernel.Idempotency.Redis.Extensions`, `.Options`, `.Store` |
+| Namespaces | `SharedKernel.Idempotency.Redis.Extensions`, `.Options`, `.Store`, `.Diagnostics` |
 
 ## Quick start
 
@@ -115,7 +116,7 @@ Options are set through the `configure` delegate; the registration does not bind
 
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable` | `bool` | `false` | On a Redis connectivity or timeout failure, `TryBeginAsync` returns `Started` and `CompleteAsync`/`ReleaseAsync` return `false`, instead of throwing. Applies to every purpose of the registration |
+| `RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable` | `bool` | `false` | On a Redis connectivity or timeout failure, `TryBeginAsync` returns `Started` and `CompleteAsync`/`ReleaseAsync` return `false`, instead of throwing, and a Warning is logged. **Duplicate-execution risk while Redis is down.** Applies to every purpose of the registration |
 
 ```csharp
 using SharedKernel.Idempotency.Redis.Extensions;
@@ -134,18 +135,60 @@ The connection itself is configured by `SharedKernel.Caching.Redis.Core` under `
 | `AddRedisIdempotency(Action<IdempotencyPurposeSelection> purposes, Action<RedisIdempotencyOptions>? configure = null)` | `RedisIdempotencyStore` as the keyed `IIdempotencyStore` for each selected purpose (scoped); `IRequestContextAccessor` unless one exists |
 
 It throws `InvalidOperationException` when `AddRedisConnection` has not been called, when no purpose is selected, or
-when a store is already registered for a selected purpose.
+when a store is already registered for a selected purpose. It also calls `AddMetrics()` and registers the singleton
+`RedisIdempotencyMetrics` that holds the instruments.
 
 ### Failure classification
 
-Only `RedisConnectionException`, `RedisTimeoutException`, `RedisServerException` and `TimeoutException` count as
-"store unavailable". Anything else propagates regardless of the option.
+`RedisConnectionException`, `RedisTimeoutException`, `TimeoutException` and a `RedisServerException` that reports a
+transient server state (a reply starting `LOADING`, `BUSY`, `READONLY`, `MASTERDOWN`, `CLUSTERDOWN`, `TRYAGAIN` or
+`OOM`) count as "store unavailable". Anything else propagates raw regardless of the option: a Lua or `ERR` reply, a
+wrong-type key, an undefined purpose or a blank argument is a defect, and treating it as an outage would hide it.
+Cancellation is never classified, wrapped or swallowed.
+
+With the default fail-closed behavior every member throws `IdempotencyStoreUnavailableException`
+(`Error.Unavailable`, code `idempotency.store_unavailable`); the Redis exception is its `InnerException`. A
+`TryBeginAsync` that timed out may have left an unconfirmed reservation; it expires after its `ttl`, so retrying the
+same key is safe.
+
+> **Fail-open means duplicate execution while Redis is down.** With `AllowExecutionOnStoreUnavailable` every call,
+> duplicates included, is treated as new. Watch `sharedkernel.idempotency.fail_open` and alert on it.
+
+### Telemetry
+
+One `ActivitySource` and one `Meter` named `SharedKernel.Idempotency` (a host subscribes through the `SharedKernel.*`
+wildcard). The instruments are created from the host's `IMeterFactory`; `AddRedisIdempotency` calls `AddMetrics()`.
+The `idempotency.provider` tag is `redis`, which separates this package from the EF Core provider in a host that
+registers both.
+
+| Telemetry | Name | Unit | Tags |
+| --- | --- | --- | --- |
+| Span (Client) | `idempotency begin`, `idempotency complete`, `idempotency release` | | `idempotency.operation`, `idempotency.purpose`, `idempotency.provider`, `idempotency.result`, `idempotency.fail_open` (only when set), `error.type`/`error.code` on failure |
+| Histogram | `sharedkernel.idempotency.operation.duration` | `s` | `idempotency.operation`, `idempotency.purpose`, `idempotency.provider`, `outcome`, `idempotency.result` |
+| Counter | `sharedkernel.idempotency.fail_open` | `{operation}` | `idempotency.operation`, `idempotency.purpose`, `idempotency.provider` |
+
+`idempotency.result` is `started`, `in_progress`, `completed` or `fingerprint_mismatch` for a begin, `applied` or
+`lost` for a complete or release, and `fail_open` for an outage that was let through. The key, fingerprint, token,
+tenant and stored response are never a tag, log value or span attribute, and the span records an outage without the
+Redis exception text (which names the command and key).
 
 ### Logging
 
-| Event id | Level | Event |
+| Event id | Level | Template |
 | --- | --- | --- |
-| 18000 | Warning | Redis idempotency store was unavailable during `{Operation}`; `AllowExecutionOnStoreUnavailable` is enabled, so the call proceeds as not-yet-processed |
+| 18000 | Warning | The idempotency store was unavailable during `'{Operation}'` for purpose `'{Purpose}'`, so the guarded call proceeds without duplicate protection. |
+
+The fail-closed path logs nothing; the caller that receives the exception logs the refusal.
+
+### Upgrading
+
+- A fail-closed outage now throws `IdempotencyStoreUnavailableException` instead of the raw `RedisConnectionException`,
+  `RedisTimeoutException`, `RedisServerException` or `TimeoutException`; catch the new type (the original is its
+  `InnerException`).
+- A Lua or `ERR` reply is no longer treated as an outage and no longer fails open.
+- The `RedisIdempotencyStore` constructor takes a `RedisIdempotencyMetrics`; resolve the store through DI.
+- The log message text changed (event id 18000 did not), and new reservation tokens are in the hyphenated "D" GUID
+  form; reservations already in Redis keep working.
 
 ### Health
 

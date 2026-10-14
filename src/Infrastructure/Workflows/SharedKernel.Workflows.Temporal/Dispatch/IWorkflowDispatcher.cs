@@ -71,8 +71,14 @@ public interface IWorkflowDispatcher
     /// <param name="workflowId">The full, already-composed workflow id.</param>
     /// <param name="runId">An optional specific run id. <see langword="null"/> targets the latest run.</param>
     /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
-    /// <exception cref="ArgumentException"><paramref name="workflowId"/> is null/whitespace, or <paramref name="tenantScope"/> is <see cref="TenantScope.Global"/>.</exception>
-    IWorkflowHandle GetHandle(string workflowId, string? runId, TenantScope tenantScope);
+    /// <returns>
+    /// The handle, or a failed result: <c>workflow.tenant_scope_missing</c> for <see cref="TenantScope.Global"/>,
+    /// <c>workflow.invalid_workflow_id</c> for a blank id, and <c>workflow.not_found</c> for an id whose tenant segment
+    /// is not the caller's. The last answer is identical to a missing execution, so it reveals nothing about another
+    /// tenant's ids. The check reads the id only; an id of the caller's own tenant that names no execution fails on
+    /// the first call through the handle.
+    /// </returns>
+    Result<IWorkflowHandle> GetHandle(string workflowId, string? runId, TenantScope tenantScope);
 
     /// <summary>
     /// Attaches to an already-running (or previously-started) workflow execution whose result type
@@ -82,10 +88,13 @@ public interface IWorkflowDispatcher
     /// <param name="workflowId">The full, already-composed workflow id.</param>
     /// <param name="runId">An optional specific run id. <see langword="null"/> targets the latest run.</param>
     /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
-    /// <exception cref="ArgumentException"><paramref name="workflowId"/> is null/whitespace, or <paramref name="tenantScope"/> is <see cref="TenantScope.Global"/>.</exception>
-    IWorkflowHandle<TResult> GetHandle<TResult>(string workflowId, string? runId, TenantScope tenantScope);
+    /// <returns>The handle, or the same failed results as <see cref="GetHandle(string, string?, TenantScope)"/>.</returns>
+    Result<IWorkflowHandle<TResult>> GetHandle<TResult>(string workflowId, string? runId, TenantScope tenantScope);
 
-    /// <summary>Describes a single workflow execution by id. The only read offered against arbitrary executions.</summary>
+    /// <summary>
+    /// Describes a single workflow execution by id. The only read offered against arbitrary executions. Fails with the
+    /// same guard results as <see cref="GetHandle(string, string?, TenantScope)"/> before any I/O.
+    /// </summary>
     /// <param name="workflowId">The full, already-composed workflow id.</param>
     /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
     /// <param name="cancellationToken">A token to cancel the dispatch call.</param>

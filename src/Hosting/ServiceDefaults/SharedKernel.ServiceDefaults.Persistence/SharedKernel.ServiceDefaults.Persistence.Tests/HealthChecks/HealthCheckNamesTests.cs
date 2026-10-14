@@ -11,6 +11,7 @@ public sealed class HealthCheckNamesTests
     public void AddDatabaseReadinessCheck_DefaultName_MatchesHealthCheckNamesDatabase()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
 
         services.AddHealthChecks().AddDatabaseReadinessCheck<DatabaseReadinessHealthCheckTests.TestDbContext>();
 
@@ -22,6 +23,7 @@ public sealed class HealthCheckNamesTests
     public void AddDapperDatabaseReadinessCheck_DefaultName_IsDistinctFromTheEfCoreCheck()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
 
         services.AddHealthChecks().AddDapperDatabaseReadinessCheck();
 

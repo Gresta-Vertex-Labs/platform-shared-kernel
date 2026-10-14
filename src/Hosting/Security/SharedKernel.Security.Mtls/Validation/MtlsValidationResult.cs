@@ -1,3 +1,4 @@
+using SharedKernel.Security.Mtls.Diagnostics;
 using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Security.Mtls.Validation;
@@ -36,7 +37,11 @@ public sealed class MtlsValidationResult
     /// <summary>Gets the permissions granted to the client.</summary>
     public IReadOnlyCollection<string> Permissions { get; }
 
-    /// <summary>Gets a short, non-secret reason for a failure, for logs only. <see langword="null"/> on success.</summary>
+    /// <summary>
+    /// Gets a stable, non-secret reason code for a failure, for logs only. <see langword="null"/> on success. The value is
+    /// logged: use a short code of letters, digits, <c>_</c>, <c>.</c> or <c>-</c> (at most 64 characters), never an
+    /// identifier, subject or claim value; anything else is logged as <c>Rejected</c>.
+    /// </summary>
     public string? FailureReason { get; }
 
     /// <summary>Creates a successful result.</summary>
@@ -55,7 +60,7 @@ public sealed class MtlsValidationResult
         ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
         if (tenantId is { IsDefault: true })
         {
-            throw new ArgumentException("A tenant id must not be default(TenantId); pass null for no tenant.", nameof(tenantId));
+            throw new ArgumentException("The tenant id must not be default(TenantId). Pass null for no tenant.", nameof(tenantId));
         }
 
         return new MtlsValidationResult(true, clientId, tenantId, roles ?? [], permissions ?? [], null);
@@ -64,7 +69,7 @@ public sealed class MtlsValidationResult
     /// <summary>Creates a failed result.</summary>
     /// <param name="reason">A short, non-secret reason for logs, such as <c>UnknownClient</c>.</param>
     /// <returns>The result.</returns>
-    public static MtlsValidationResult Failure(string reason = "Rejected")
+    public static MtlsValidationResult Failure(string reason = MtlsRejectionReasons.Rejected)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         return new MtlsValidationResult(false, null, null, [], [], reason);

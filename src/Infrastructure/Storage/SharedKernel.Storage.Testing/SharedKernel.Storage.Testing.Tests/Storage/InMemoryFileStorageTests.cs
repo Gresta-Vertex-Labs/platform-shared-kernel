@@ -337,6 +337,9 @@ public sealed class InMemoryFileStorageTests
         var exception = Assert.Throws<StorageException>(() => storage.ListAsync("/absolute"));
 
         Assert.Equal(StorageErrorCodes.InvalidKey, exception.Error.Code);
+        Assert.Equal(ErrorType.Validation, exception.Error.Type);
+        Assert.Equal(exception.Error.Message, exception.Message);
+        Assert.IsAssignableFrom<SharedKernel.Core.Exceptions.SharedKernelException>(exception);
     }
 
     [Fact]

@@ -11,11 +11,11 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Primitives` | Foundation | `Result`/`Result<T>`, `Error`/`ErrorType`/`ErrorCodes`, `ValidationResult<T>`, `IClock`, `IIdGenerator`, `SmartEnum`, `IReadinessProbe` (`.Health`), `LoggingEventIdRanges`, `WellKnown*` registries. Only NuGet dependency: `Microsoft.Extensions.DependencyInjection.Abstractions` |
-| `SharedKernel.Execution` | Foundation | `IRequestContext` and its implementations, `RequestContextScope`, `IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`, `TenantId`, `TenantScope`, `IUnitOfWork`, `IAuditTrailWriter`. References `Primitives` only |
+| `SharedKernel.Primitives` | Foundation | `Result`/`Result<T>`, `Error`/`ErrorType`/`ErrorCodes`, `ValidationResult<T>`, `IClock`, `IIdGenerator`, `SmartEnum`, `IReadinessProbe` (`.Health`), `LoggingEventIdRanges`, `WellKnown*` registries (incl. `WellKnownOutcomes`), `IHasError`, telemetry helpers (`.Telemetry`: `TelemetryVersion`, `ActivityFailureExtensions`). Only NuGet dependency: `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| `SharedKernel.Execution` | Foundation | `IRequestContext` and its implementations, `RequestContextScope`, `IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`, `TenantId`, `TenantScope`, `IUnitOfWork`, `IAuditTrailWriter`, the transaction exceptions (`CommitOutcomeUnknownException`, `TransactionRolledBackException`) with `ExecutionErrorCodes`. References `Primitives` and `Core` (for `SharedKernelException`) |
 | `SharedKernel.Core` | Foundation | Base exceptions (`error.ToException()`), railway extensions, `ResultTry`, `ResultCombine`, `Guard.Against.*`/`Guard.Throw.*` (namespace `SharedKernel.Guards`). References `Primitives` only |
 | `SharedKernel.Configuration` | Foundation | `AddValidatedOptions`, `ISectionBoundOptions`, `OptionsStrictness`; always `ValidateOnStart` |
-| `SharedKernel.FeatureManagement` | Foundation | OpenFeature `IFeatureClient` over `Microsoft.FeatureManagement`; typed `FeatureFlag<T>` |
+| `SharedKernel.FeatureManagement` | Foundation | OpenFeature `IFeatureClient` over `Microsoft.FeatureManagement`; typed `FeatureFlag<T>`; `FeatureFlagValidationException` (a `SharedKernelException`) with `FeatureManagementErrorCodes`. References `Primitives`, `Execution`, `Core` |
 | `SharedKernel.Cryptography` | Foundation | AES-256-GCM (async + sync), envelope encryption, signing, HMAC, PHC one-way hashing, content hashing, fixed-time comparison, secure random, HOTP/TOTP. BCL only; references `Primitives`, `Configuration` |
 | `SharedKernel.Compression` | Foundation | `IPayloadCompressor`: framed Brotli (default) and gzip, raw interop modes. BCL only; references `Primitives`, `Configuration` |
 | `SharedKernel.Validation` | Foundation | Validated identifiers (`Iban`, `Bic`, `CardNumber`, `VatNumber`, `NationalId`, …), `ValidationErrorCodes`/`ValidationMessages` (Turkish bundled). References `Primitives`, `Core`, `Localization` |
@@ -37,14 +37,24 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
   `services.AddReadinessProbe<TProbe>()` (mapped by `13.ServiceDefaults`' `AddSharedKernelReadiness()`); `Error(Code, Message, Type)`
   with `Details` and `MessageArguments`; `ErrorType` (`Validation`, `NotFound`, `Conflict`, `Unauthorized`, `Forbidden`,
   `BusinessRule`, `Unavailable`, `Timeout`, `Unexpected`, `None`).
+  Telemetry (`SharedKernel.Primitives.Telemetry`): `activity.RecordResult(result)` / `RecordFailure(error)` /
+  `RecordException(exception)` / `AddExceptionEvents(exception)` (extensions on `Activity?`, each returns a
+  `WellKnownOutcomes` value for the `WellKnownTagKeys.Outcome` tag); `TelemetryVersion.Of(assembly)` for
+  `ActivitySource`/`Meter`/`service.version`; `LoggingEventIdRanges.SubBlockStart`/`IsInSubBlock` for tests.
+  Fixed code values: `ErrorCodes.Unexpected.Default` = `unexpected.default`, `ErrorCodes.Domain.RuleViolated` = `domain.rule_violated`.
 - **Execution:** no registration — `RequestContextAccessor` is `TryAddSingleton`ed by each adapter, `IRequestContext` by the
   host (`AddSharedKernelRequestContext()`, `13.ServiceDefaults.Security`). `RequestContextScope.Begin`, `context.WithTenant`,
   `RequestContextPropagation.WriteHeaders`/`ReadHeaders`, `CorrelationIds`, `TenantScope.Global`/`For`/`FromNullable`.
+  `ExecutionErrorCodes.CommitOutcomeUnknown` (`execution.commit_outcome_unknown`, `Timeout`) and `.TransactionRolledBack`
+  (`execution.transaction_rolled_back`, `Unexpected`) are carried by the two transaction exceptions, each with the
+  `(Error)` / `(Error, Exception)` constructors.
 - **Core:** no DI. `Guard.Against.X` → `Error?`; `Guard.Throw.X` throws `DomainException`; `ResultTry.Try`/`TryAsync`, `ResultCombine.Combine`.
 - **Configuration:** `services.AddValidatedOptions<TOptions>(…)` / `AddValidatedOptions<TOptions, TValidator>(…)`; the
   `IConfiguration` overloads read `ISectionBoundOptions.SectionName` (a `static string` property, not a `const`).
 - **FeatureManagement:** `services.AddSharedKernelFeatureManagement(rootConfiguration, o => …)` — pass the **root**
   `IConfiguration`, call once (a second call throws); flags via `FeatureFlag.Boolean/String/Integer/Double/Object<T>(key, default)`.
+  A startup problem throws `FeatureFlagValidationException` (`FeatureManagementErrorCodes.InvalidFlagConfiguration`,
+  `Unexpected`).
 - **Cryptography:** `services.AddSharedKernelCryptography(configuration)` → `ICryptographyBuilder` with `.Add…()` opt-ins
   per capability; adapters add `.AddArgon2id(…)`, `.AddAzureKeyVaultEncryption(…)`, `.AddAzureKeyVaultSigning(…)`. The
   service registers its key providers and its `ITotpReplayGuard`.
@@ -53,7 +63,8 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
 - **Validation:** `services.AddSharedKernelValidation().AddNationalIdValidator<T>()`; `Iban.Create(value)` → `Result<Iban>`;
   FluentValidation `RuleFor(x => x.Iban).MustBeValidIban()`.
 - **DataPrivacy:** no extension of its own — `services.AddRedaction(r => r.SetPrivacyRedactors())` plus
-  `builder.Logging.EnableRedaction(...)` in the host; the service implements `IDataSubjectRequestHandler`.
+  `builder.Logging.EnableRedaction(...)` in the host; the service implements `IDataSubjectRequestHandler` and fails it with
+  `DataPrivacyErrorCodes.Unavailable` (`data_privacy.unavailable`, `Error.Unavailable`) or `.RequestIdConflict` (`Error.Conflict`).
 - **Localization:** `services.AddLocalizationCatalog(c => …)` or `AddStringLocalizerCatalog<TResource>()`; exactly one catalog.
 
 ## Rules & Invariants
@@ -84,13 +95,15 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
 11. `SmartEnum` lookups use a list built at type initialization (cctor forced once via `RuntimeHelpers.RunClassConstructor`).
     `TValue` is constrained to `IEquatable<TValue>` alone — widening it breaks `Guard.Against.InvalidSmartEnum`.
 12. JSON code uses `JsonTypeInfo<T>` overloads via `options.GetTypeInfo(Type)`; no `JsonConverterFactory`.
-    `[DebuggerDisplay]` members read backing fields, never throwing properties. `Execution`, `Primitives` and `Core` stay reflection-free.
+    `[DebuggerDisplay]` members read backing fields, never throwing properties. `Execution`, `Primitives` and `Core` stay
+    reflection-free: reading assembly-level attributes (`TelemetryVersion`) and `Type.FullName` are allowed, walking
+    members or types is not.
 
 **Registries**
 
 13. `LoggingEventIdRanges` fields are `const int` = domain number × 1000; add one per new domain, never renumber. It
     reserves only the 1000-wide block; sub-blocks are each domain's documentation.
-14. `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys` are `const string` wire formats; changing one is a
+14. `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys`/`WellKnownOutcomes` are `const string` wire formats; changing one is a
     breaking cross-domain change. `WellKnownBaggageKeys.TenantId` is `"TenantId"` on purpose (the log property emitted by
     `BaggageLogRecordProcessor`). A baggage key belongs here only if platform middleware writes and replaces it.
 
@@ -128,8 +141,9 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
     `IFeatureManager` family and OpenFeature's `Api.Instance`; the package uses an isolated `Api`).
 26. Pass `configuration` to `AddFeatureManagement` unmodified — never `GetSection("FeatureManagement")`.
 27. The provider never throws for a flag problem (returns the default with `FlagNotFound`/`TypeMismatch`/`ParseError`/
-    `General`, logged once at 1301). Messages never include exception text or configuration values; telemetry never
-    carries targeting key, user id or tenant id (Microsoft's own evaluation event stays suppressed).
+    `General`, logged once at 1301 at Error). Messages never include exception text or configuration values: a flag/variant
+    conversion problem is one of the closed internal `ConversionFailure` reasons (fixed sentences), proven by sentinel tests;
+    telemetry never carries targeting key, user id or tenant id (Microsoft's own evaluation event stays suppressed).
 
 **Cryptography**
 
@@ -178,6 +192,25 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
     its argument names at definition.
 46. The catalog is immutable, built and validated at registration; exactly one `ILocalizationCatalog` (a second registration throws).
 
+**Observability helpers**
+
+47. Span failures are recorded only through `Primitives`' `ActivityFailureExtensions`: status Error described by `Error.Code` or the exception full name (never a message), `error.code`, `error.type` (the `ErrorType` name for a `Result` failure, the exception `FullName` otherwise), the full exception event; `OperationCanceledException` is never an error; `Ok` is never set; a null, stopped or unsampled activity is a no-op. The `ErrorType` to `error.type` mapping is total and pinned by a test enumerating the enum.
+48. `outcome` values are `WellKnownOutcomes` (`success`, `failure`, `exception`, `canceled`), carried by `WellKnownTagKeys.Outcome`; a key joins `WellKnownTagKeys` only when two or more domains tag it. These are dashboard-visible wire names: never changed in place (rule 14).
+49. `TelemetryVersion.Of(assembly)` is the only source of `ActivitySource`/`Meter`/`service.version` versions; the helper holds no cache. Rule 12's "reflection-free" excludes assembly-level attribute reads and `Type.FullName`.
+50. A package's EventIds are `internal const` arithmetic over `LoggingEventIdRanges` (`Base = LoggingEventIdRanges.X + n * PackageSubBlockWidth`); the registry's `SubBlockStart`/`IsInSubBlock` exist for tests and governance, not for `[LoggerMessage]` (attributes need constants).
+51. `ResultTry` adds exception events through the shared `AddExceptionEvents` and never changes the ambient span's status. Exceptions that carry an `Error` expose it through `IHasError` (`SharedKernelException` implements it).
+
+**Failure text and exceptions**
+
+52. No Foundation package puts `Exception.Message`, an inner exception's text or a configuration value into an `Error`, an evaluation message, a startup line or a log. FeatureManagement reports a flag/variant conversion problem as a fixed reason (flag key, variant name, target type name and exception type name are the only variable parts). Wrappers keep the original exception as the same `InnerException` instance; no `throw ex;`.
+53. Every classified exception derives `SharedKernelException` (rule 18), including `CommitOutcomeUnknownException` (`Timeout`), `TransactionRolledBackException` (`Unexpected`) and `FeatureFlagValidationException` (`Unexpected`), with codes in `ExecutionErrorCodes` / `FeatureManagementErrorCodes`. `Execution` therefore references `Primitives` and `Core`; no other reference is added.
+
+**Conformance**
+
+54. Each logging package derives its EventIds from `LoggingEventIdRanges.Core` in an internal `{Package}LoggingEventIds` class and logs through one internal `{Package}Log` under `Diagnostics/` (static method taking the `ILogger`); the sub-block ownership table in `## Logging` is authoritative (adapters share their base package's slot, offsets 50-99). Foundation creates no `ActivitySource`/`Meter` (it adds events to the caller's ambient `Activity` through `Primitives`' recorder); a future one is named `SharedKernel.Core.*` with a public `const` in the emitting assembly.
+55. Error codes match `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$` (every public `*ErrorCodes` constant, pinned by a sweep test per package); a package that builds an `Error` has a public `{Capability}ErrorCodes` and one internal `{Capability}Errors` factory under `Internal/` (`Compression`, `Cryptography`, `Execution`, `FeatureManagement`; `Validation`, `DataPrivacy` and `Localization` build none). An Adapter keeps a tiny factory only for codes it owns and reuses the base's public codes. FluentValidation's built-in validator names map to `ErrorCodes.Validation.*` through one internal frozen table; a code already in the format passes through; anything else is `validation.failed`, and the PascalCase name is never kept.
+56. Programming and configuration errors throw BCL types (`ArgumentException`/`ThrowIf*`, `InvalidOperationException`), never `CryptographicException` or `KeyNotFoundException` (a wrong key length, an unregistered signing key id and an unsupported Key Vault key type are `InvalidOperationException`); `UnreachableException` for impossible arms; messages are sentences ending in a period that name the remedy ("must not", never "cannot"), never embed an inner `ex.Message`. Every classified exception is sealed except `DomainException`.
+
 ## Decisions
 
 | Decision | Why |
@@ -190,17 +223,35 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
 | Feature flags on OpenFeature over `Microsoft.FeatureManagement` | Vendor-neutral API, Microsoft's `feature_management` schema for targeting/variants |
 | Compression is one package with keyed algorithms, not `.Brotli`/`.GZip` siblings | Small, closed, BCL-only algorithm set |
 | No generic `Error` metadata bag | `Error` is a value-equal record; field details go in `Details`, placeholders in `MessageArguments` |
+| Observability helpers live in `Primitives`, not `Core` | They need only `Error`/`ErrorType` and BCL `System.Diagnostics`; `Execution` and every adapter reference `Primitives` and must not need `Core` to record a span |
+| Exception status description is the type name, the message stays out | Traces share the trust level of logs (full exception event is recorded), but a status description is shown in summaries and alert text |
+| `ResultTry` records the exception event but does not set span status | The ambient span belongs to the caller, and the failure is a value the owner records with `RecordResult` |
+| `Execution` references `Core` so its exceptions derive `SharedKernelException` | The three edge mappers switch on that type; moving the base into `Primitives` would put a `SharedKernel.Core` namespace in the wrong assembly, and mapping on `IHasError` would change three Host packages. `Core` is BCL plus `Primitives`, so the transitive cost is small and acyclic |
+| `CommitOutcomeUnknownException` is `Timeout` (504 / `DeadlineExceeded`), `TransactionRolledBackException` and `FeatureFlagValidationException` are `Unexpected` | "Outcome unknown" is the meaning of 504 and `DeadlineExceeded`, where 503 would promise "not applied"; the other two are defects, not outages |
+| `DomainException` stays unsealed; `GuardAsync` (FeatureManagement), the Key Vault readiness probe and `TelemetryVersion.Of` keep their catch-all | The first is the base consumers extend; the others must report or fall back, not throw (rule 27, readiness contract, telemetry metadata never fails startup). Cancellation still propagates, and each catch-all carries a comment saying so |
+| `cryptography.unknown_key_id` stays `Unexpected` | Rule 30: the key id comes from an untrusted payload and is never echoed; a recorded exception to C3's "missing is NotFound" (a retired key is a deployment defect, not a resource the caller can request) |
 
 ## Logging
 
 Block `1000`–`1999` (`LoggingEventIdRanges.Core`), split into 100-wide sub-blocks (`LoggingEventIdRanges.PackageSubBlockWidth`).
 
-| Sub-block | Package | Current EventIds |
-| --- | --- | --- |
-| `1300`–`1399` | `SharedKernel.FeatureManagement` | `1301` evaluation failed (`FeatureManagementEventIds.EvaluationFailed`, Warning, once per failure) |
+One sub-block per capability family. `Core`'s block has ten slots for thirteen packages, so the three Adapters share their base package's slot: the base uses offsets 1-49, the Adapters 50-99. A package owns only the slot it logs from; the rest stay reserved. Rule 50: a package's EventIds are const arithmetic over `LoggingEventIdRanges` in an internal `{Package}LoggingEventIds` class, and its messages live in one `{Package}Log` under `Diagnostics/` (rule 54).
 
-No other `01.Core` package logs. A package that starts logging takes the next free sub-block, declares it in an internal
-`…EventIds` class derived from `LoggingEventIdRanges.Core`, and records it here.
+| Sub-block | Owner | Status |
+| --- | --- | --- |
+| `1000`–`1099` | `SharedKernel.Primitives` | reserved, unused |
+| `1100`–`1199` | `SharedKernel.Core` | reserved, unused |
+| `1200`–`1299` | `SharedKernel.Configuration` | reserved, unused |
+| `1300`–`1399` | `SharedKernel.FeatureManagement` | in use: `1301` evaluation failed (`FeatureManagementLoggingEventIds.EvaluationFailed`, Error, once per failure, `FeatureManagementLog`) |
+| `1400`–`1499` | `SharedKernel.Execution` | reserved, unused |
+| `1500`–`1599` | `SharedKernel.Cryptography` (+ `.Argon2`, `.KeyVault.Azure` at 50-99) | reserved, unused |
+| `1600`–`1699` | `SharedKernel.Compression` | reserved, unused |
+| `1700`–`1799` | `SharedKernel.Validation` (+ `.FluentValidation` at 50-99) | reserved, unused |
+| `1800`–`1899` | `SharedKernel.DataPrivacy` | reserved, unused |
+| `1900`–`1999` | `SharedKernel.Localization` | reserved, unused |
+
+No other `01.Core` package logs. A package that starts logging takes its slot above, declares it in an internal
+`…LoggingEventIds` class derived from `LoggingEventIdRanges.Core`, and updates this table.
 
 ## Cross-Domain Couplings
 

@@ -5,6 +5,7 @@ using Elastic.Clients.Elasticsearch.Core.Bulk;
 using Elastic.Clients.Elasticsearch.Core.Search;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Elastic.Transport;
+using Elastic.Transport.Products.Elasticsearch;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
@@ -14,9 +15,9 @@ using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Exceptions;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Abstractions.Telemetry;
 using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Errors;
-using SharedKernel.Search.ElasticSearch.Logging;
 using SharedKernel.Search.ElasticSearch.Options;
 using SharedKernel.Search.ElasticSearch.Querying;
 // Elastic.Clients.Elasticsearch declares its own non-generic SearchRequest/Result types; alias ours
@@ -37,17 +38,6 @@ namespace SharedKernel.Search.ElasticSearch.Index;
 internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     where TDocument : class, ISearchDocument
 {
-    private const string OperationIndex = "index";
-    private const string OperationIndexMany = "index_many";
-    private const string OperationDelete = "delete";
-    private const string OperationDeleteMany = "delete_many";
-    private const string OperationDeleteByFilter = "delete_by_filter";
-    private const string OperationClear = "clear";
-    private const string OperationWaitUntilSearchable = "wait_until_searchable";
-    private const string OperationSearch = "search";
-    private const string OperationGet = "get";
-    private const string OperationCount = "count";
-    private const string OperationEnumerate = "enumerate";
 
     private readonly ElasticsearchClient _client;
     private readonly SearchIndexDefinition _definition;
@@ -55,6 +45,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     private readonly ElasticSearchOptions _options;
     private readonly IClock _clock;
     private readonly ILogger<ElasticSearchIndex<TDocument>> _logger;
+    private readonly SearchTelemetry _telemetry;
 
     /// <summary>Initializes a new <see cref="ElasticSearchIndex{TDocument}"/>.</summary>
     public ElasticSearchIndex(
@@ -63,7 +54,8 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         string writeAlias,
         ElasticSearchOptions options,
         IClock clock,
-        ILogger<ElasticSearchIndex<TDocument>> logger)
+        ILogger<ElasticSearchIndex<TDocument>> logger,
+        SearchTelemetry telemetry)
     {
         _client = client;
         _definition = definition;
@@ -71,6 +63,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         _options = options;
         _clock = clock;
         _logger = logger;
+        _telemetry = telemetry;
     }
 
     /// <inheritdoc />
@@ -80,7 +73,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     public Task<Result<SearchWriteReceipt>> IndexAsync(
         TDocument document, SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationIndex,
+            SearchOperations.Index,
             ct => IndexCoreAsync(document, consistency, ct),
             documentCount: 1,
             cancellationToken);
@@ -89,7 +82,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     public Task<Result<SearchWriteReceipt>> DeleteAsync(
         string documentId, SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationDelete,
+            SearchOperations.Delete,
             ct => DeleteCoreAsync(documentId, consistency, ct),
             documentCount: 1,
             cancellationToken);
@@ -101,7 +94,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         SearchWriteConsistency consistency,
         CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationDeleteByFilter,
+            SearchOperations.DeleteByFilter,
             ct => DeleteByFilterCoreAsync(filter, tenantScope, consistency, ct),
             documentCount: 0,
             cancellationToken);
@@ -111,7 +104,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
     {
         var result = await ExecuteAsync(
-                OperationClear,
+                SearchOperations.Clear,
                 async ct =>
                 {
                     var inner = await ClearCoreAsync(consistency, ct).ConfigureAwait(false);
@@ -129,7 +122,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         SearchWriteReceipt receipt, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         var result = await ExecuteAsync(
-                OperationWaitUntilSearchable,
+                SearchOperations.WaitUntilSearchable,
                 async ct =>
                 {
                     var inner = await WaitUntilSearchableCoreAsync(receipt, timeout, ct).ConfigureAwait(false);
@@ -146,7 +139,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     public Task<Result<SearchResults<TDocument>>> SearchAsync(
         SearchRequest request, TenantScope tenantScope, CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationSearch,
+            SearchOperations.Search,
             ct => SearchCoreAsync(request, tenantScope, ct),
             documentCount: 0,
             cancellationToken);
@@ -155,7 +148,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     public Task<Result<TDocument>> GetAsync(
         string documentId, TenantScope tenantScope, CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationGet,
+            SearchOperations.Get,
             ct => GetCoreAsync(documentId, tenantScope, ct),
             documentCount: 0,
             cancellationToken);
@@ -169,7 +162,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     public Task<Result<SearchCount>> CountAsync(
         SearchFilter? filter, TenantScope tenantScope, CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationCount,
+            SearchOperations.Count,
             ct => CountCoreAsync(filter, tenantScope, ct),
             documentCount: 0,
             cancellationToken);
@@ -189,11 +182,10 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
 
         if (!response.IsValidResponse)
         {
-            _logger.ElasticSearchEngineFault("IndexAsync", _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode);
-            return Result<SearchWriteReceipt>.Failure(ElasticSearchFaultMapper.MapWrite(response, _definition.Name, OperationIndex, DescribeEndpoint()));
+            return Result<SearchWriteReceipt>.Failure(Fault(response, SearchOperations.Index, cancellationToken, write: true));
         }
 
-        _logger.ElasticSearchDocumentsIndexed(_definition.Name, 1, refresh.ToString());
+        ElasticSearchLog.DocumentsIndexed(_logger, _definition.Name, 1, refresh.ToString());
 
         return Result<SearchWriteReceipt>.Success(new SearchWriteReceipt
         {
@@ -219,7 +211,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationIndexMany,
+            SearchOperations.IndexMany,
             ct => IndexManyCoreAsync(documents, consistency, bulkOptions, ct),
             documents.Count,
             cancellationToken);
@@ -256,7 +248,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
             if (!isFirstBatch && bulkOptions.MaxBatchesPerSecond is { } maxBatchesPerSecond)
             {
                 var delay = TimeSpan.FromSeconds(1.0 / maxBatchesPerSecond);
-                _logger.ElasticSearchBulkThrottled(_definition.Name, delay.TotalMilliseconds);
+                ElasticSearchLog.BulkThrottled(_logger, _definition.Name, delay.TotalMilliseconds);
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
 
@@ -268,10 +260,10 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
                     Elastic.Transport.HttpMethod.POST, path, PostData.Bytes(bulkBody), cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!response.IsValidResponse && response.Items.Count == 0)
+            if (!response.IsValidResponse && response.Items is not { Count: > 0 })
             {
                 return Result<SearchBulkReceipt>.Failure(
-                    ElasticSearchFaultMapper.MapWrite(response, _definition.Name, OperationIndexMany, DescribeEndpoint()));
+                    Fault(response, SearchOperations.IndexMany, cancellationToken, write: true));
             }
 
             var errorItems = response.ItemsWithErrors.ToList();
@@ -280,17 +272,17 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
                 failures.Add(new SearchItemFailure
                 {
                     DocumentId = item.Id ?? string.Empty,
-                    Error = SearchErrors.WriteRejected(_definition.Name, item.Error?.Reason ?? "unknown"),
+                    Error = SearchErrors.WriteRejected(_definition.Name, ElasticSearchFaultMapper.DescribeItemRejection(item.Error?.Type)),
                 });
             }
 
             succeededCount += response.Items.Count - errorItems.Count;
         }
 
-        _logger.ElasticSearchBulkCompleted(_definition.Name, documents.Count, (long)stopwatch.ElapsedMilliseconds);
+        ElasticSearchLog.BulkCompleted(_logger, _definition.Name, documents.Count, (long)stopwatch.ElapsedMilliseconds);
         if (failures.Count > 0)
         {
-            _logger.ElasticSearchBulkPartialFailure(_definition.Name, failures.Count, documents.Count);
+            ElasticSearchLog.BulkPartialFailure(_logger, _definition.Name, failures.Count, documents.Count);
         }
 
         return Result<SearchBulkReceipt>.Success(new SearchBulkReceipt
@@ -323,8 +315,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
 
         if (!response.IsValidResponse)
         {
-            _logger.ElasticSearchEngineFault("DeleteAsync", _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode);
-            return Result<SearchWriteReceipt>.Failure(ElasticSearchFaultMapper.MapWrite(response, _definition.Name, OperationDelete, DescribeEndpoint()));
+            return Result<SearchWriteReceipt>.Failure(Fault(response, SearchOperations.Delete, cancellationToken, write: true));
         }
 
         return Result<SearchWriteReceipt>.Success(new SearchWriteReceipt
@@ -351,7 +342,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default)
         => ExecuteAsync(
-            OperationDeleteMany,
+            SearchOperations.DeleteMany,
             ct => DeleteManyCoreAsync(documentIds, consistency, bulkOptions, ct),
             documentIds.Count,
             cancellationToken);
@@ -391,19 +382,24 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         var request = new BulkRequest(_writeAlias) { Operations = operations, Refresh = refresh };
         var response = await _client.BulkAsync(request, cancellationToken).ConfigureAwait(false);
 
+        if (!response.IsValidResponse && response.Items is not { Count: > 0 })
+        {
+            return Result<SearchBulkReceipt>.Failure(Fault(response, SearchOperations.DeleteMany, cancellationToken, write: true));
+        }
+
         var errorItems = response.ItemsWithErrors.ToList();
         var failures = errorItems
             .Select(item => new SearchItemFailure
             {
                 DocumentId = item.Id ?? string.Empty,
-                Error = SearchErrors.WriteRejected(_definition.Name, item.Error?.Reason ?? "unknown"),
+                Error = SearchErrors.WriteRejected(_definition.Name, ElasticSearchFaultMapper.DescribeItemRejection(item.Error?.Type)),
             })
             .ToList();
 
-        _logger.ElasticSearchBulkCompleted(_definition.Name, documentIds.Count, 0);
+        ElasticSearchLog.BulkCompleted(_logger, _definition.Name, documentIds.Count, 0);
         if (failures.Count > 0)
         {
-            _logger.ElasticSearchBulkPartialFailure(_definition.Name, failures.Count, documentIds.Count);
+            ElasticSearchLog.BulkPartialFailure(_logger, _definition.Name, failures.Count, documentIds.Count);
         }
 
         return Result<SearchBulkReceipt>.Success(new SearchBulkReceipt
@@ -431,7 +427,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
         if (filterResult.IsFailure)
         {
-            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            ElasticSearchLog.TenantScopeMissing(_logger, _definition.Name);
             return Result<SearchWriteReceipt>.Failure(filterResult.Error);
         }
 
@@ -444,7 +440,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         var response = await _client.DeleteByQueryAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsValidResponse)
         {
-            return Result<SearchWriteReceipt>.Failure(ElasticSearchFaultMapper.MapWrite(response, _definition.Name, OperationDeleteByFilter, DescribeEndpoint()));
+            return Result<SearchWriteReceipt>.Failure(Fault(response, SearchOperations.DeleteByFilter, cancellationToken, write: true));
         }
 
         return Result<SearchWriteReceipt>.Success(new SearchWriteReceipt
@@ -469,7 +465,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         var response = await _client.DeleteByQueryAsync(request, cancellationToken).ConfigureAwait(false);
         return response.IsValidResponse
             ? Result.Success()
-            : Result.Failure(ElasticSearchFaultMapper.MapWrite(response, _definition.Name, OperationClear, DescribeEndpoint()));
+            : Result.Failure(Fault(response, SearchOperations.Clear, cancellationToken, write: true));
     }
 
     /// <inheritdoc />
@@ -493,7 +489,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
 
             if (stopwatch.Elapsed >= timeout)
             {
-                _logger.ElasticSearchRefreshWaitTimedOut(_definition.Name, (long)stopwatch.ElapsedMilliseconds);
+                ElasticSearchLog.RefreshWaitTimedOut(_logger, _definition.Name, (long)stopwatch.ElapsedMilliseconds);
                 return Result.Failure(SearchErrors.WriteTimeout(_definition.Name, stopwatch.Elapsed));
             }
 
@@ -508,14 +504,14 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         var validation = ElasticSearchRequestValidator.Validate(_definition, request);
         if (validation.IsFailure)
         {
-            _logger.ElasticSearchRequestRejected(_definition.Name, validation.Error.Message);
+            ElasticSearchLog.RequestRejected(_logger, _definition.Name, validation.Error.Type.ToString(), validation.Error.Code);
             return Result<SearchResults<TDocument>>.Failure(validation.Error);
         }
 
         var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, request.Filter, tenantScope);
         if (filterResult.IsFailure)
         {
-            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            ElasticSearchLog.TenantScopeMissing(_logger, _definition.Name);
             return Result<SearchResults<TDocument>>.Failure(filterResult.Error);
         }
 
@@ -529,10 +525,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         // rejected credential and a malformed query into one indistinguishable failure.
         if (!response.IsValidResponse)
         {
-            _logger.ElasticSearchEngineFault(
-                OperationSearch, _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode);
-            return Result<SearchResults<TDocument>>.Failure(
-                ElasticSearchFaultMapper.Map(response, _definition.Name, OperationSearch, DescribeEndpoint()));
+            return Result<SearchResults<TDocument>>.Failure(Fault(response, SearchOperations.Search, cancellationToken));
         }
 
         var mapped = ElasticSearchResultMapper.Map(
@@ -546,12 +539,13 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
 
         if (mapped.IsSuccess)
         {
-            _logger.ElasticSearchSearchExecuted(
+            ElasticSearchLog.SearchExecuted(
+                _logger,
                 _definition.Name, mapped.Value.Hits.Count, mapped.Value.TotalHits, mapped.Value.Accuracy.ToString(), response.Took);
         }
         else
         {
-            _logger.ElasticSearchEngineFault("SearchAsync", _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode);
+            ElasticSearchLog.EngineFault(_logger, SearchOperations.Search, _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode, exception: null);
         }
 
         return mapped;
@@ -563,7 +557,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     {
         if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
-            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            ElasticSearchLog.TenantScopeMissing(_logger, _definition.Name);
             return Result<TDocument>.Failure(SearchErrors.TenantScopeMissing(_definition.Name));
         }
 
@@ -588,7 +582,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         if (!response.IsValidResponse)
         {
             return Result<TDocument>.Failure(
-                ElasticSearchFaultMapper.Map(response, _definition.Name, OperationGet, DescribeEndpoint()));
+                Fault(response, SearchOperations.Get, cancellationToken));
         }
 
         var hit = response.HitsMetadata.Hits.FirstOrDefault();
@@ -607,7 +601,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
         if (filterResult.IsFailure)
         {
-            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            ElasticSearchLog.TenantScopeMissing(_logger, _definition.Name);
             return Result<SearchCount>.Failure(filterResult.Error);
         }
 
@@ -621,7 +615,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         if (!response.IsValidResponse)
         {
             return Result<SearchCount>.Failure(
-                ElasticSearchFaultMapper.Map(response, _definition.Name, OperationCount, DescribeEndpoint()));
+                Fault(response, SearchOperations.Count, cancellationToken));
         }
 
         // Always exact: the _count API walks the whole match set rather than reading a capped
@@ -637,29 +631,51 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         int batchSize,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        using var operation = _telemetry.Start(SearchOperations.Enumerate, _definition.Name);
+        SharedKernel.Primitives.Errors.Error? failure = null;
+        Exception? faulted = null;
+
         var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
         if (filterResult.IsFailure)
         {
+            operation.Failed(filterResult.Error);
             throw new SearchStreamException(filterResult.Error);
         }
 
         var keepAlive = TimeSpan.FromSeconds(_options.PointInTimeKeepAliveSeconds);
-        var pitResponse = await _client
-            .OpenPointInTimeAsync(new OpenPointInTimeRequest(_definition.Name) { KeepAlive = keepAlive }, cancellationToken)
-            .ConfigureAwait(false);
+        OpenPointInTimeResponse pitResponse;
+        try
+        {
+            pitResponse = await _client
+                .OpenPointInTimeAsync(new OpenPointInTimeRequest(_definition.Name) { KeepAlive = keepAlive }, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            operation.Faulted(ex);
+            throw;
+        }
 
         if (!pitResponse.IsValidResponse)
         {
-            throw new SearchStreamException(
-                ElasticSearchFaultMapper.Map(pitResponse, _definition.Name, OperationEnumerate, DescribeEndpoint()));
+            SharedKernel.Primitives.Errors.Error pitError;
+            try
+            {
+                pitError = Fault(pitResponse, SearchOperations.Enumerate, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                operation.Faulted(ex);
+                throw;
+            }
+
+            operation.Failed(pitError);
+            throw new SearchStreamException(pitError);
         }
 
         var pitId = pitResponse.Id;
-        _logger.ElasticSearchPointInTimeOpened(_definition.Name, _options.PointInTimeKeepAliveSeconds);
+        ElasticSearchLog.PointInTimeOpened(_logger, _definition.Name, _options.PointInTimeKeepAliveSeconds);
         var batchCount = 0;
-        var startTimestamp = Stopwatch.GetTimestamp();
-        using var activity = SearchDiagnostics.StartActivity(OperationEnumerate, _definition.Name);
-
         try
         {
             ICollection<FieldValue>? searchAfter = null;
@@ -681,11 +697,38 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
                     request.SearchAfter = searchAfter;
                 }
 
-                var response = await _client.SearchAsync<TDocument>(request, cancellationToken).ConfigureAwait(false);
+                SearchResponse<TDocument> response;
+                try
+                {
+                    response = await _client.SearchAsync<TDocument>(request, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ElasticSearchFaultMapper.CallerCancellation(ex, cancellationToken) is { } cancellation)
+                {
+                    faulted = cancellation;
+                    throw new OperationCanceledException(cancellation.Message, cancellation, cancellationToken);
+                }
+                catch (Exception ex) when (ElasticSearchFaultMapper.TryClassify(ex, SearchOperations.Enumerate, DocumentTypeName, out var streamError))
+                {
+                    failure = streamError;
+                    ElasticSearchLog.OperationFaulted(_logger, SearchOperations.Enumerate, _definition.Name, streamError.Code, ex);
+                    throw new SearchStreamException(streamError, ex);
+                }
+
                 if (!response.IsValidResponse)
                 {
-                    throw new SearchStreamException(
-                        ElasticSearchFaultMapper.Map(response, _definition.Name, OperationEnumerate, DescribeEndpoint()));
+                    SharedKernel.Primitives.Errors.Error responseError;
+                    try
+                    {
+                        responseError = Fault(response, SearchOperations.Enumerate, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        faulted = ex;
+                        throw;
+                    }
+
+                    failure = responseError;
+                    throw new SearchStreamException(responseError);
                 }
 
                 batchCount++;
@@ -715,21 +758,37 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         }
         finally
         {
+            if (faulted is not null)
+            {
+                operation.Faulted(faulted);
+            }
+            else if (failure is not null)
+            {
+                operation.Failed(failure);
+            }
+            else if (cancellationToken.IsCancellationRequested)
+            {
+                operation.Canceled();
+            }
+            else
+            {
+                operation.Succeeded();
+            }
+
             var closeToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
             var closeResponse = await _client.ClosePointInTimeAsync(new ClosePointInTimeRequest(pitId), closeToken)
                 .ConfigureAwait(false);
 
             if (closeResponse.IsValidResponse)
             {
-                _logger.ElasticSearchPointInTimeClosed(_definition.Name, batchCount);
+                ElasticSearchLog.PointInTimeClosed(_logger, _definition.Name, batchCount);
             }
             else
             {
-                _logger.ElasticSearchPointInTimeCloseFailed(_definition.Name);
+                ElasticSearchLog.PointInTimeCloseFailed(
+                    _logger,
+                    _definition.Name, ElasticSearchFaultMapper.OriginalException(closeResponse));
             }
-
-            SearchDiagnostics.Complete(
-                activity, OperationEnumerate, _definition.Name, startTimestamp, errorCode: null);
         }
     }
 
@@ -835,30 +894,45 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         return buffer;
     }
 
+    private static string DocumentTypeName => typeof(TDocument).Name;
+
     /// <summary>
-    /// Returns the endpoint description used in unreachability errors — the configured node list, never
-    /// a credential.
+    /// Classifies a failed <paramref name="response"/> and logs it once at Warning with the captured transport
+    /// exception. An unrecognised fault or a caller cancellation throws before anything is logged.
     /// </summary>
-    private string DescribeEndpoint() => string.Join(",", _options.Nodes);
+    private Primitives.Errors.Error Fault(ElasticsearchResponse response, string operation, CancellationToken cancellationToken, bool write = false)
+    {
+        var error = write
+            ? ElasticSearchFaultMapper.MapWrite(response, _definition.Name, operation, cancellationToken, DocumentTypeName)
+            : ElasticSearchFaultMapper.Map(response, _definition.Name, operation, cancellationToken, DocumentTypeName);
+        ElasticSearchLog.EngineFault(
+            _logger,
+            operation,
+            _definition.Name,
+            (int?)response.ApiCallDetails?.HttpStatusCode,
+            ElasticSearchFaultMapper.OriginalException(response));
+        return error;
+    }
 
     /// <summary>
     /// Runs <paramref name="action"/> inside a <c>search {operation}</c> client span, records the
-    /// operation-duration histogram and the document counter, and converts an unexpected exception into
-    /// a classified <see cref="SearchErrors"/> failure.
+    /// operation-duration histogram and the document counter, and converts a recognised engine or
+    /// transport fault into a classified <see cref="SearchErrors"/> failure.
     /// </summary>
     /// <remarks>
     /// <para>
     /// The ElasticSearch client reports a failed call by returning a response whose
     /// <c>IsValidResponse</c> is <see langword="false"/> rather than throwing, so the individual
     /// <c>…CoreAsync</c> bodies already classify their own failures through
-    /// <see cref="ElasticSearchFaultMapper"/>. The catch here is the backstop for what the client does
-    /// still throw — serializer failures, and the <c>SwitchExpressionException</c> a closed-hierarchy
-    /// translation switch raises if a future filter node reaches an adapter that has not been taught to
-    /// translate it. Both would otherwise escape a <c>Result</c>-returning method.
+    /// <see cref="ElasticSearchFaultMapper"/>. The catch here handles what the client does still throw:
+    /// a transport or timeout exception, a serializer fault. Only a recognised fault becomes a failure;
+    /// anything else (a <c>SwitchExpressionException</c> from a translation switch, a programming error)
+    /// is rethrown untouched so a defect is never reported as a soft engine fault.
     /// </para>
     /// <para>
     /// <see cref="OperationCanceledException"/> raised by the caller's own token is rethrown untouched:
-    /// cancellation is an instruction, not an engine failure.
+    /// cancellation is an instruction, not an engine failure. The rethrow path still completes the span
+    /// and the duration histogram, tagged with the exception type, so it is not a telemetry blind spot.
     /// </para>
     /// </remarks>
     private async Task<Result<T>> ExecuteAsync<T>(
@@ -867,33 +941,42 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         int documentCount,
         CancellationToken cancellationToken)
     {
-        var startTimestamp = Stopwatch.GetTimestamp();
-        using var activity = SearchDiagnostics.StartActivity(operation, _definition.Name);
+        using var scope = _telemetry.Start(operation, _definition.Name);
 
         Result<T> result;
         try
         {
             result = await action(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
+            scope.Faulted(ex);
             throw;
+        }
+        catch (Exception ex) when (ElasticSearchFaultMapper.CallerCancellation(ex, cancellationToken) is { } cancellation)
+        {
+            scope.Faulted(cancellation);
+            // The client wraps most exceptions it surfaces; a cancellation the caller asked for still reaches the
+            // caller as an OperationCanceledException.
+            throw new OperationCanceledException(cancellation.Message, cancellation, cancellationToken);
+        }
+        catch (Exception ex) when (ElasticSearchFaultMapper.TryClassify(ex, operation, DocumentTypeName, out var error))
+        {
+            ElasticSearchLog.OperationFaulted(_logger, operation, _definition.Name, error.Code, ex);
+            result = Result<T>.Failure(error);
         }
         catch (Exception ex)
         {
-            var error = SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName, operation, ex.Message);
-            _logger.ElasticSearchOperationFaulted(operation, _definition.Name, error.Code);
-            result = Result<T>.Failure(error);
+            scope.Faulted(ex);
+            throw;
         }
 
         if (result.IsSuccess)
         {
-            SearchDiagnostics.RecordDocuments(operation, _definition.Name, documentCount);
+            _telemetry.RecordDocuments(operation, _definition.Name, documentCount);
         }
 
-        SearchDiagnostics.Complete(
-            activity, operation, _definition.Name, startTimestamp, result.IsFailure ? result.Error.Code : null);
+        scope.Complete(result);
         return result;
     }
 }

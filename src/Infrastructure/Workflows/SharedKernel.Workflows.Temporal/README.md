@@ -48,8 +48,8 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project (workflows, activities and the registration) |
-| Depends on | `SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography`, `SharedKernel.Application` (`ISender` only); `Temporalio` 1.17 (+ `.Extensions.Hosting`, `.Extensions.OpenTelemetry`, `.Extensions.DiagnosticSource`) |
-| Namespaces | `SharedKernel.Workflows.Temporal.Dispatch`, `.Authoring`, `.Hosting`, `.Configuration`, `.Errors`, `.Health`, `.Constants` |
+| Depends on | `SharedKernel.Primitives`, `.Execution`, `.Core`, `.Configuration`, `.Cryptography`, `SharedKernel.Application` (`ISender` only); `Temporalio` 1.17 (+ `.Extensions.Hosting`, `.Extensions.OpenTelemetry`, `.Extensions.DiagnosticSource`) |
+| Namespaces | `SharedKernel.Workflows.Temporal.Dispatch`, `.Authoring`, `.Hosting`, `.Configuration`, `.Errors`, `.Exceptions`, `.Health`, `.Constants` |
 | Needs in the host | `IClock` and logging; a mediator adapter (`app.UseMediatR()`) when you use `CommandActivity<>`; `ISymmetricEncryptionService` when you use `.WithPayloadEncryption()` |
 | Temporal server | Any Temporal server or Temporal Cloud namespace |
 
@@ -179,6 +179,10 @@ down the happy path. End every failure path in `throw Fail(error)` / `throw Fail
 
 - `TenantScope` is a required, separate parameter on every dispatch member. `TenantScope.Global` returns
   `workflow.tenant_scope_missing` before any I/O (log 17001).
+- `GetHandle` and `DescribeAsync` take a composed id and check that its tenant segment is the caller's. A foreign
+  tenant's id is answered `workflow.not_found`, the same as a missing execution, so the answer reveals nothing about
+  another tenant's ids; a blank id is `workflow.invalid_workflow_id`. All dispatch members share this guard and return a
+  `Result`.
 - No member accepts a raw workflow id: `IWorkflowIdFactory.Create(workflowTypeName, businessKey, tenantScope)` builds
   `{tenant}:{workflowType}:{businessKey}`. The id is the durable idempotency key of the workflow.
 - The tenant, correlation id and caller travel as Temporal headers (`RequestContextPropagation`, `WellKnownHeaders`).
@@ -265,7 +269,13 @@ using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Dispatch;   // IWorkflowDispatcher workflows
 
-var handle = workflows.GetHandle<string>(workflowId, runId: null, TenantScope.For(tenantId));
+Result<IWorkflowHandle<string>> attached = workflows.GetHandle<string>(workflowId, runId: null, TenantScope.For(tenantId));
+if (attached.IsFailure)
+{
+    return attached.Error;   // workflow.not_found for another tenant's id, workflow.invalid_workflow_id for a blank one
+}
+
+IWorkflowHandle<string> handle = attached.Value;
 await handle.SignalAsync("CancelByCustomer", args: (object?)null, ct);
 Result<bool> cancelled = await handle.QueryAsync<bool>("WasCancelledByCustomer", ct);
 Result<string> receipt = await handle.GetResultAsync(ct);
@@ -338,8 +348,9 @@ builder.Services.AddSharedKernelTemporalWorkflows(builder.Configuration)
   retries), so a ciphertext cannot be replayed into another workflow. Outside an execution context (CLI, Web UI) the
   binding is empty.
 - An encoded payload carries `encoding: binary/encrypted-sk-v2` and `EncryptedPayload.ToBytes()` data. A payload
-  without the marker passes through unchanged; one with the marker that fails to parse or decrypt throws
-  (`workflow.payload_codec_failure`) — ciphertext is never returned as plaintext.
+  without the marker passes through unchanged; one with the marker that fails to parse or decrypt throws a
+  `WorkflowPayloadCodecException` carrying `workflow.payload_codec_failure` (logged as 17006, with a fixed message that
+  names no key id or ciphertext) — ciphertext is never returned as plaintext.
 - **Costs:** payloads are opaque in the Web UI and CLI unless you deploy a codec server, and a key must stay resolvable
   for as long as any history encrypted under it may replay — months for a long workflow.
 
@@ -394,7 +405,7 @@ singletons. The package registers no `IClock` or `ILogger<T>`.
 | `StartAsync<TWorkflow>(options, tenantScope, ct)` | `Result<IWorkflowHandle>` |
 | `StartAsync<TWorkflow, TArgs>(args, options, tenantScope, ct)` | `Result<IWorkflowHandle>` |
 | `StartAsync<TWorkflow, TArgs, TResult>(args, options, tenantScope, ct)` | `Result<IWorkflowHandle<TResult>>` |
-| `GetHandle(workflowId, runId, tenantScope)` / `GetHandle<TResult>(…)` | a handle |
+| `GetHandle(workflowId, runId, tenantScope)` / `GetHandle<TResult>(…)` | `Result<IWorkflowHandle>` / `Result<IWorkflowHandle<TResult>>` (no I/O; refuses `Global`, a blank id and another tenant's id) |
 | `DescribeAsync(workflowId, tenantScope, ct)` | `Result<WorkflowExecutionDescription>` |
 | `IWorkflowHandle.SignalAsync` / `QueryAsync<T>` / `CancelAsync` / `TerminateAsync(reason)` | `Result` / `Result<T>` |
 | `IWorkflowHandle<TResult>.GetResultAsync` | `Result<TResult>` |
@@ -404,47 +415,69 @@ singletons. The package registers no `IClock` or `ILogger<T>`.
 
 ### Errors
 
-`WorkflowErrors`, prefix `workflow.`:
+`WorkflowErrorCodes` holds the codes as public constants (lowercase `workflow.{snake_reason}`); compare
+`result.Error.Code == WorkflowErrorCodes.AlreadyStarted`. The factory that builds the `Error` values is internal.
 
 | Code | Type | When |
 | --- | --- | --- |
 | `workflow.tenant_scope_missing` | Unauthorized | A dispatch call passed `TenantScope.Global` |
-| `workflow.not_found` | NotFound | No execution for the id |
+| `workflow.not_found` | NotFound | No execution for the id, or the id belongs to another tenant |
 | `workflow.already_started` | Conflict | An execution with the id is running |
-| `workflow.invalid_workflow_id` | Validation | The id could not be composed |
-| `workflow.invalid_workflow_registration` | Validation | A registration is not a valid workflow/activity |
-| `workflow.cancelled` / `.terminated` / `.timed_out` | Unexpected | The awaited execution ended that way |
-| `workflow.query_failed` / `.signal_failed` | Unexpected | The query or signal failed |
-| `workflow.service_unavailable` / `.namespace_not_found` | Unexpected | Temporal unreachable / namespace not addressable |
-| `workflow.worker_not_configured` | Unexpected | No worker for the task queue |
-| `workflow.determinism_violation` | Unexpected | A replay detected non-determinism |
-| `workflow.payload_codec_failure` | Unexpected | An encrypted payload could not be decoded |
+| `workflow.invalid_workflow_id` | Validation | The business key or workflow id is blank |
+| `workflow.cancelled` / `.terminated` | Unexpected | The awaited execution ended that way |
+| `workflow.timed_out` | Timeout | The awaited execution timed out (execution, run or task timeout) |
+| `workflow.request_timed_out` | Timeout | The RPC to the Temporal service ran out of time (gRPC `DEADLINE_EXCEEDED`) |
+| `workflow.query_failed` | Unexpected | The query was rejected or could not be answered |
+| `workflow.service_unavailable` | Unavailable | The Temporal service answered `UNAVAILABLE`, `RESOURCE_EXHAUSTED` or `ABORTED`, or the client could not connect |
+| `workflow.namespace_not_found` | Unexpected | The configured namespace does not exist (a deployment fault, never a caller 404) |
+| `workflow.rpc_failed` | Unexpected | Any other gRPC status: permission, credential, internal or contract fault |
+| `workflow.payload_codec_failure` | Unexpected | An encrypted payload could not be encoded or decoded (thrown as `WorkflowPayloadCodecException`) |
+| `workflow.unmapped_failure` | Unexpected | A Temporal failure the package has no mapping for; the message is fixed and carries no exception text |
+| `workflow.application_failure` | Unexpected | An application failure that carries no error type of its own |
+
+Only a Temporal failure (and the SDK's failed-connect exception) becomes a failed `Result`; any other exception, a
+cancellation included, propagates from the dispatch call. Builder composition errors (`Build()`, `WithWorker`,
+`AsClientOnly`, a missing `TargetHost` or `Namespace`) stay `InvalidOperationException` with a sentence that names the
+remedy; they fail at startup and never reach a request.
 
 ### Logging
 
+The package owns the sub-block 17000-17099. Templates carry no workflow id, tenant, business key or terminate reason.
+
 | Event id | Level | Event |
 | --- | --- | --- |
-| 17000 | Information | Workflow started |
-| 17001 | Warning | Dispatch rejected for `TenantScope.Global` |
+| 17000 | Debug | Workflow started (type only) |
+| 17001 | Warning | Dispatch refused for `TenantScope.Global` |
 | 17002 | Debug | Signal dispatched |
 | 17003 | Debug | Query dispatched |
-| 17004 | Warning | Workflow terminated (no compensation runs) |
+| 17004 | Information | Workflow terminated (no compensation runs) |
 | 17005 | Warning | A workflow observed no tenant header |
-| 17006 | Error | Payload codec failed |
+| 17006 | Error | Payload codec failed; carries the `WorkflowPayloadCodecException` |
 | 17007 | Information | Worker composition built |
-| 17008 | Information | Client-only composition built |
+| 17008 | Information | Client-only composition built (logged when the client is first built) |
 | 17009 | Warning | Readiness probe degraded |
 | 17010 | Information | Payload encryption configured |
 | 17011 | Debug | Activity heartbeat recorded |
 | 17012 | Warning | Raw client access enabled |
+| 17013 | Warning | A readiness probe check (reachability or namespace) faulted; carries the exception |
+| 17014 | Warning | A dispatch returned a failed result; carries `ErrorCode` and `ErrorType` |
+| 17015 | Error | A dispatch hit a Temporal failure with no mapping; carries the exception |
 
 ### Health and telemetry
 
 Registers the `workflows` readiness probe (`WorkflowReadiness.ProbeName`) on every composition;
 `AddSharedKernelReadiness()` exposes it on `/health/ready`. It is ready when Temporal answers, the namespace can be
 described and — on a worker — every worker is still polling; `ReadinessReport.Data` carries `Reachable`,
-`NamespaceAddressable` and `WorkerPollersActive`. A task-queue backlog never fails readiness. Traces and metrics use the
-name `SharedKernel.Workflows`; subscribe with ServiceDefaults' `WithWorkflowTelemetry()`.
+`NamespaceAddressable` and `WorkerPollersActive`. A task-queue backlog never fails readiness. A check that faults logs event
+17013 with the exception and the same report is returned.
+
+**Telemetry.** The package owns no `ActivitySource`: with `.WithOpenTelemetry()` the Temporal SDK's tracing interceptor
+emits the client, workflow and activity spans (sources prefixed `Temporalio.Extensions.OpenTelemetry.`), which
+ServiceDefaults' `WithWorkflowTelemetry()` subscribes. The interceptor is configured without the workflow-id span tag,
+because a workflow id is `{tenant}:{type}:{businessKey}`; spans carry no tenant, business key or workflow id, and no log or
+error message of this package does either. Parent linking across the client, workflow and activity spans needs the
+OpenTelemetry SDK in the process (`AddServiceDefaults()` provides it). `.WithMetrics()` feeds the SDK's metrics to the
+meter `SharedKernel.Workflows`, created from the host's `IMeterFactory` (the builder registers `AddMetrics()` when the host has not); their names are the SDK's.
 
 ## Testing
 

@@ -14,7 +14,7 @@
 | --- | --- |
 | `InMemoryWebhookDispatcher` (`IWebhookDispatcher`) | You assert which integration events your code pushed to subscribers — no subscription store, signing or HTTP |
 | `InMemoryNotificationSender` (`INotificationSender`, one per channel) | You assert which emails and SMS were sent, with which template model |
-| `SetDispatchResult` / `SetTestDeliveryResult` / `SetSendResult` | Delivery failures are scripted as returned results, exactly as production reports them |
+| `SetDispatchResult` / `SetTestDeliveryResult` / `SetSendResult` | Delivery failures are scripted as returned results, exactly as production reports them: build a failure with `WebhookDeliveryResult.Failed(...)` or `NotificationDeliveryResult.Failed(...)` and an `Error` (`NotificationErrors.*`, `WebhookErrorCodes.*`) |
 | `InMemoryWebhookDeliveryObserver`, `InMemoryNotificationDeliveryObserver` | You record the attempt/completion callbacks a real dispatcher or sender makes |
 | `AddInMemory…()` singletons, keyed senders | The recorder outlives the SUT's scope and resolves exactly as production code resolves it |
 

@@ -86,7 +86,7 @@ public sealed class InMemoryWebhookDispatcher : IWebhookDispatcher
 
         var result = _dispatchToResults.TryGetValue(subscription.SubscriptionId, out var configured)
             ? configured
-            : new WebhookDeliveryResult(subscription.SubscriptionId, Guid.NewGuid(), true, 200, 1, null);
+            : WebhookDeliveryResult.Succeeded(subscription.SubscriptionId, Guid.NewGuid(), 200, 1);
 
         return Task.FromResult(result);
     }
@@ -105,7 +105,7 @@ public sealed class InMemoryWebhookDispatcher : IWebhookDispatcher
 
         var result = _testDeliveryResults.TryGetValue(subscription.SubscriptionId, out var configured)
             ? configured
-            : new WebhookDeliveryResult(subscription.SubscriptionId, Guid.NewGuid(), true, 200, 1, null);
+            : WebhookDeliveryResult.Succeeded(subscription.SubscriptionId, Guid.NewGuid(), 200, 1);
 
         return Task.FromResult(result);
     }

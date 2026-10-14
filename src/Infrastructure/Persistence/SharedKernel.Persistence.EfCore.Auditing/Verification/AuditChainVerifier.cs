@@ -2,10 +2,14 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Diagnostics;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
+using SharedKernel.Persistence.EfCore.Auditing.Writing;
+using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Verification;
 
@@ -36,9 +40,28 @@ internal sealed class AuditChainVerifier(
         bool requirePayloads,
         CancellationToken cancellationToken)
     {
-        using var activity = AuditingMeter.ActivitySource.StartActivity("audit.verify");
-        activity?.SetTag("audit.resource_type", chain.ResourceType);
+        using var activity = AuditTracing.Start(AuditTracing.VerifySpan);
+        activity?.SetTag(PersistenceTagKeys.AuditResourceType, chain.ResourceType);
+        try
+        {
+            var verified = await WalkAsync(chain, anchor, expectedHead, requirePayloads, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag(WellKnownTagKeys.Outcome, verified.Result.IsIntact ? WellKnownOutcomes.Success : WellKnownOutcomes.Failure);
+            return verified;
+        }
+        catch (Exception ex)
+        {
+            AuditTracing.Fail(activity, ex);
+            throw;
+        }
+    }
 
+    private async Task<(AuditChainVerificationResult Result, byte[]? HeadMac)> WalkAsync(
+        ChainId chain,
+        ChainAnchor? anchor,
+        ChainAnchor? expectedHead,
+        bool requirePayloads,
+        CancellationToken cancellationToken)
+    {
         var connection = await connectionFactory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
         {
@@ -130,7 +153,7 @@ internal sealed class AuditChainVerifier(
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                throw new KeyNotFoundException($"Audit record '{recordId}' does not exist.");
+                throw new NotFoundException(AuditingErrors.RecordNotFound());
 
             var hasPayload = reader.GetBoolean(O + 3);
             if (reader.IsDBNull(O + 4))
@@ -254,9 +277,9 @@ internal sealed class AuditChainVerifier(
 
     private AuditChainVerificationResult Report(ChainId chain, Failure failure)
     {
-        AuditingLog.ChainVerificationFailed(logger, chain.TenantLabel, chain.ResourceType, failure.Result.Status, failure.Result.FailureKind, failure.Result.FailedAtSequence, failure.Result.Reason);
-        AuditingMeter.RecordVerificationFailure(failure.Result.FailureKind);
-        Activity.Current?.SetTag(AuditingMeter.FailureKindTag, failure.Result.FailureKind.ToString());
+        AuditingLog.ChainVerificationFailed(logger, chain.ResourceType, failure.Result.Status, failure.Result.FailureKind, failure.Result.FailedAtSequence);
+        AuditingInstruments.RecordVerificationFailure(failure.Result.FailureKind);
+        Activity.Current?.SetTag(PersistenceTagKeys.AuditFailureKind, failure.Result.FailureKind.ToString());
         return failure.Result;
     }
 

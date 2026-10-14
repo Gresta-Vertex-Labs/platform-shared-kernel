@@ -6,6 +6,8 @@
     <ProjectReference Include="..\SharedKernel.Messaging.MassTransit.AzureServiceBus.csproj" />
     <!-- The cross-transport guard tests also configure RabbitMQ. -->
     <ProjectReference Include="..\..\SharedKernel.Messaging.MassTransit.RabbitMq\SharedKernel.Messaging.MassTransit.RabbitMq.csproj" />
+    <!-- InMemoryLogger and the log-convention assertions. -->
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

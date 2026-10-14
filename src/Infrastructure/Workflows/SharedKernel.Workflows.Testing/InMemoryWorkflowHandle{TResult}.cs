@@ -96,7 +96,7 @@ public sealed class InMemoryWorkflowHandle<TResult> : IWorkflowHandle<TResult>
     {
         if (!_inner.TryGetExecution(out var execution))
         {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<TResult>.Failure(WorkflowErrors.NotFound(WorkflowId)));
+            return Task.FromResult(SharedKernel.Primitives.Results.Result<TResult>.Failure(WorkflowErrors.NotFound()));
         }
 
         if (!execution!.TryGetResult(out var value, out var isFailure))

@@ -4,7 +4,7 @@ namespace SharedKernel.Domain.Monetary;
 
 /// <summary>
 /// A business rule that is broken when a currency differs from the expected one, with the stable error code
-/// <c>money.currency_mismatch</c>.
+/// <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,8 +24,11 @@ namespace SharedKernel.Domain.Monetary;
 /// </example>
 public sealed class CurrencyMismatchRule : IBusinessRule
 {
-    /// <summary>The stable error code reported when the rule is broken: <c>money.currency_mismatch</c>.</summary>
-    public const string ErrorCode = "money.currency_mismatch";
+    /// <summary>
+    /// The stable error code reported when the rule is broken; the value of
+    /// <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
+    /// </summary>
+    public const string ErrorCode = DomainErrorCodes.Money.CurrencyMismatch;
 
     private readonly Currency _expected;
     private readonly Currency _actual;
@@ -46,7 +49,7 @@ public sealed class CurrencyMismatchRule : IBusinessRule
         _actual = actual;
     }
 
-    /// <summary>Gets the stable error code, always <see cref="ErrorCode"/> (<c>money.currency_mismatch</c>).</summary>
+    /// <summary>Gets the stable error code, always <see cref="ErrorCode"/>.</summary>
     public string Code => ErrorCode;
 
     /// <summary>Gets the message naming both codes, e.g. <c>Expected an amount in USD but got EUR.</c></summary>

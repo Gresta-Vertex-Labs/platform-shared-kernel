@@ -19,7 +19,10 @@ Test doubles: `InMemoryWebhookDispatcher`/`InMemoryNotificationSender` in `src/I
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | --- |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -31,4 +34,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. (Old rows naming `01.Core` P-249 as pending were stale — it shipped before LoggingRetrofit closed. `NotificationMessage.Locale` remains a forward-compatible seam; consuming `SharedKernel.Localization` is optional, not a dependency.)
+- `NotificationMessage.Locale` remains a forward-compatible seam; consuming `SharedKernel.Localization` is optional, not a dependency.

@@ -1,10 +1,11 @@
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
-using SharedKernel.Search.Meilisearch.Logging;
+using SharedKernel.Search.Meilisearch.Diagnostics;
 using SharedKernel.Search.Meilisearch.Options;
 
 namespace SharedKernel.Search.Meilisearch.Extensions;
@@ -39,6 +40,10 @@ public static class MeilisearchServiceCollectionExtensions
 
         services.AddValidatedOptions<MeilisearchOptions>(section);
 
+        // The provider telemetry creates its meter from the host's IMeterFactory; AddMetrics is a no-op when the host already added it.
+        services.AddMetrics();
+        services.TryAddSingleton<SearchTelemetry>();
+
         services
             .AddHttpClient(HttpClientName, (sp, client) =>
             {
@@ -53,11 +58,16 @@ public static class MeilisearchServiceCollectionExtensions
             // recycled on a schedule, so a Meilisearch pod rescheduled onto a new address is picked up
             // instead of being unreachable until the next deployment. SetHandlerLifetime would not help
             // here; nothing returns this client to the factory for the handler to expire.
-            .ConfigurePrimaryHttpMessageHandler(sp => new SocketsHttpHandler
-            {
-                PooledConnectionLifetime = TimeSpan.FromMinutes(
-                    sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value.PooledConnectionLifetimeMinutes),
-            });
+            // The SDK turns an HTTP failure into its typed MeilisearchApiError/MeilisearchCommunicationError/
+            // MeilisearchTimeoutError in this delegating handler, which its own (url, key) constructor installs but
+            // the (HttpClient, key) constructor does not. Without it a rejected POST (search, add, swap, create)
+            // deserialises the error body as if it were the success payload and no failure is ever reported.
+            .ConfigurePrimaryHttpMessageHandler(sp => new global::Meilisearch.MeilisearchMessageHandler(
+                new SocketsHttpHandler
+                {
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(
+                        sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value.PooledConnectionLifetimeMinutes),
+                }));
 
         var builder = new MeilisearchSearchBuilder(services);
 
@@ -70,8 +80,8 @@ public static class MeilisearchServiceCollectionExtensions
             var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName);
             var client = new global::Meilisearch.MeilisearchClient(httpClient, options.ApiKey);
 
-            sp.GetRequiredService<ILogger<global::Meilisearch.MeilisearchClient>>()
-                .MeilisearchClientConfigured(options.Url, builder.RegisteredIndexCount);
+            MeilisearchLog.ClientConfigured(
+                sp.GetRequiredService<ILogger<MeilisearchSearchBuilder>>(), builder.RegisteredIndexCount);
 
             return client;
         });

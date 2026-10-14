@@ -1,0 +1,59 @@
+<Project>
+
+  <!--
+    Kernel self-analysis: runs the SharedKernel.Analyzers rules (and CA2200) over the kernel's own production code under src/,
+    with every rule fixed as a build error (kernel.globalconfig; SK0034 stays a suggestion).
+
+    Import it ONCE from the root Directory.Build.targets (after the project body, because the tier is read here):
+
+        <Import Project="$(MSBuildThisFileDirectory)tools/Governance/SelfAnalysis/SharedKernel.SelfAnalysis.props" />
+
+    The file guards itself, so the import needs no condition. A project is analysed when ALL of these hold:
+      - it lives under src/ (samples/, tools/, _verification/ and eng/ are never analysed),
+      - it declares a SharedKernelTier other than Tooling (the analyzers and generators do not analyse themselves),
+      - it is not a test project and not an Exe harness.
+    SharedKernelSelfAnalysisForce=true overrides the location, tier and test checks: the probe under
+    tools/Governance/_verification/SelfAnalysisProbe uses it to prove the behaviour without the root import.
+
+    What it does for an analysed project:
+      - references SharedKernel.Analyzers as an analyzer-only project reference (ReferenceOutputAssembly="false", the
+        same edge shape as Presentation.WebApi -> WebApi.Generators; the tier check exempts it and it targets a Tooling
+        project). PrivateAssets="all" keeps it out of every packed .nuspec,
+      - adds kernel.globalconfig, which fixes the severity of every SK id and CA2200.
+    A project without TreatWarningsAsErrors fails on these errors regardless; nothing is listed in WarningsNotAsErrors.
+  -->
+  <PropertyGroup>
+    <_SkSelfAnalysisSrcRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', 'src'))</_SkSelfAnalysisSrcRoot>
+    <_SkSelfAnalysisProjectDirectory>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)'))</_SkSelfAnalysisProjectDirectory>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SharedKernelSelfAnalysis>false</SharedKernelSelfAnalysis>
+    <SharedKernelSelfAnalysis
+      Condition="$(_SkSelfAnalysisProjectDirectory.StartsWith('$(_SkSelfAnalysisSrcRoot)', System.StringComparison.OrdinalIgnoreCase))
+                 and '$(SharedKernelTier)' != '' and '$(SharedKernelTier)' != 'Tooling'
+                 and '$(IsTestProject)' != 'true' and '$(OutputType)' != 'Exe'">true</SharedKernelSelfAnalysis>
+    <SharedKernelSelfAnalysis Condition="'$(SharedKernelSelfAnalysisForce)' == 'true'">true</SharedKernelSelfAnalysis>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SharedKernelSelfAnalysis)' == 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\SharedKernel.Analyzers\SharedKernel.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    The severity file is added to EditorConfigFiles inside a target, the way the SDK's own analyzer packages add theirs
+    (AddGlobalAnalyzerConfigForPackage_*). A static GlobalAnalyzerConfigFiles item would be copied into EditorConfigFiles during
+    evaluation, and a Directory.Build.targets import is evaluated after that copy has already happened.
+  -->
+  <Target Name="SharedKernelSelfAnalysisSeverities"
+          BeforeTargets="CoreCompile"
+          Condition="'$(SharedKernelSelfAnalysis)' == 'true'">
+    <ItemGroup>
+      <EditorConfigFiles Include="$(MSBuildThisFileDirectory)kernel.globalconfig" />
+    </ItemGroup>
+  </Target>
+
+</Project>

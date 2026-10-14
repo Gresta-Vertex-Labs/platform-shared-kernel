@@ -213,6 +213,6 @@ internal static class ElasticSearchFilterCompiler
         SearchValueKind.Int64 => value.AsInt64,
         SearchValueKind.Double => value.AsDouble,
         _ => throw new InvalidOperationException(
-            $"Numeric range bound expected Int64 or Double but received {value.Kind}."),
+            $"A numeric range bound must be an Int64 or a Double, not a '{value.Kind}' value."),
     };
 }

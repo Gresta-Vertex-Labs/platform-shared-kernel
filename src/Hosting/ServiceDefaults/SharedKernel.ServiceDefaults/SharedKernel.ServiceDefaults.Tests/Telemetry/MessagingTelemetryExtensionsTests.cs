@@ -1,56 +1,67 @@
+using System.Diagnostics.Metrics;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Trace;
 using SharedKernel.ServiceDefaults.Telemetry;
 
 namespace SharedKernel.ServiceDefaults.Tests.Telemetry;
 
+[Collection(NonParallelTelemetryCollection.Name)]
 public sealed class MessagingTelemetryExtensionsTests
 {
     [Fact]
-    public void WithMessagingTelemetry_CalledTwice_RegistersTracerProviderBuilderOnce()
+    public void WithMessagingTelemetry_ReturnsSameBuilderInstance()
     {
         var builder = WebApplication.CreateBuilder();
 
-        builder.WithMessagingTelemetry();
-        builder.WithMessagingTelemetry();
-
-        using var provider = builder.Services.BuildServiceProvider();
-        var tracerProviderBuilders = provider.GetServices<TracerProviderBuilder>().ToList();
-
-        // The OpenTelemetry SDK de-duplicates registered ActivitySource names internally; calling
-        // the extension twice must not throw and must not register a second TracerProviderBuilder
-        // configuration delegate that would double-count instruments.
-        Assert.True(tracerProviderBuilders.Count <= 1);
+        Assert.Same(builder, builder.WithMessagingTelemetry());
     }
 
     [Fact]
-    public void WithMessagingTelemetry_CalledTwice_RegistersMeterProviderBuilderOnce()
+    public void WithMessagingTelemetry_ExportsASpanFromTheMassTransitSource()
     {
-        var builder = WebApplication.CreateBuilder();
+        using var host = TelemetryHarness.Create(builder => builder.WithMessagingTelemetry());
 
-        builder.WithMessagingTelemetry();
-        builder.WithMessagingTelemetry();
+        TelemetryHarness.EmitSpan("MassTransit", "Send");
 
-        using var provider = builder.Services.BuildServiceProvider();
-        var meterProviderBuilders = provider.GetServices<MeterProviderBuilder>().ToList();
-
-        // Same de-duplication guarantee as the tracing half, for the "MassTransit" meter.
-        Assert.True(meterProviderBuilders.Count <= 1);
+        Assert.Single(host.Spans, a => a.Source.Name == "MassTransit");
     }
 
     [Fact]
-    public void WithMessagingTelemetry_DoesNotThrow()
+    public void WithMessagingTelemetry_ExportsAMeasurementFromTheMassTransitMeter()
     {
-        var builder = WebApplication.CreateBuilder();
+        using var host = TelemetryHarness.Create(builder => builder.WithMessagingTelemetry());
 
-        var exception = Record.Exception(() =>
+        using var meter = new Meter("MassTransit");
+        meter.CreateCounter<long>("messaging.test.count").Add(1);
+        host.Flush();
+
+        Assert.Single(host.Metrics, m => m.MeterName == "MassTransit" && m.Name == "messaging.test.count");
+    }
+
+    [Fact]
+    public void WithMessagingTelemetry_CalledTwice_AddsNoDuplicate()
+    {
+        using var host = TelemetryHarness.Create(builder =>
         {
             builder.WithMessagingTelemetry();
             builder.WithMessagingTelemetry();
         });
 
-        Assert.Null(exception);
+        TelemetryHarness.EmitSpan("MassTransit", "Send");
+        using var meter = new Meter("MassTransit");
+        meter.CreateCounter<long>("messaging.twice.count").Add(1);
+        host.Flush();
+
+        Assert.Single(host.Spans, a => a.Source.Name == "MassTransit");
+        Assert.Single(host.Metrics, m => m.Name == "messaging.twice.count");
+    }
+
+    [Fact]
+    public void WithMessagingTelemetry_SubscribesNoKernelName_TheWildcardOwnsThose()
+    {
+        using var host = TelemetryHarness.Create(builder => builder.WithMessagingTelemetry());
+
+        TelemetryHarness.EmitSpan("SharedKernel.Messaging");
+
+        Assert.DoesNotContain("SharedKernel.Messaging", host.SpanSourceNames);
     }
 }

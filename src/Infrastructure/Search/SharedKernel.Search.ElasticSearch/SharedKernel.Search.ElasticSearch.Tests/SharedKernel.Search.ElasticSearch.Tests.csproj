@@ -10,6 +10,8 @@
     -->
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
+    <!-- The EventId integrity assertion of 00.Governance runs over the real provider assembly. -->
+    <ProjectReference Include="..\..\..\..\..\tools\Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

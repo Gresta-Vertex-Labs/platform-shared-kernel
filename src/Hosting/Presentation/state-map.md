@@ -23,11 +23,14 @@ Test helpers: `src/Hosting/Presentation/SharedKernel.Presentation.Testing`. Conf
 
 ## Phase Key Registry
 
-No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+| Phase key | Phase | Status |
+| --- | --- | :---: |
+
+Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
-None — every phase in this domain is complete. (The WO-074/P-468 and WO-078/P-484 rows the old progress table still counted as pending are all ● in their phase tables; the `PUB` "first publish" rows of P-563/P-579 are not domain work — every package publishes together through the release train, root P-577.)
+None — every phase in this domain is complete.
 
 ## Blocked
 
@@ -35,4 +38,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open. (`01.Core`'s `LoggingEventIdRanges`, `WellKnownHeaders`, `Error.Forbidden` and `SharedKernel.Localization` all shipped. `ErrorType.PreconditionFailed` was declined by design: 412 is an HTTP-native outcome.)
+- **Outbound, 01.Core (note for the core planner, optional):** a tag-only form of the recorder (`error.code` and `error.type` without touching status) would replace this domain's client-category tagging helper with a shared call; this domain works without it.

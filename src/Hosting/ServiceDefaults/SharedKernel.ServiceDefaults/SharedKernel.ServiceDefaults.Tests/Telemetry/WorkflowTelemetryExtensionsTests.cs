@@ -1,56 +1,76 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Trace;
 using SharedKernel.ServiceDefaults.Telemetry;
+using Temporalio.Extensions.OpenTelemetry;
 
 namespace SharedKernel.ServiceDefaults.Tests.Telemetry;
 
+/// <summary>
+/// <c>WithWorkflowTelemetry()</c> against the Temporal SDK's own source objects, so an upstream rename fails here
+/// instead of silently dropping the workflow spans.
+/// </summary>
+[Collection(NonParallelTelemetryCollection.Name)]
 public sealed class WorkflowTelemetryExtensionsTests
 {
+    private const string TemporalPrefix = "Temporalio.Extensions.OpenTelemetry.";
+
+    private static readonly string[] SdkSources =
+    [
+        TracingInterceptor.ClientSource.Name,
+        TracingInterceptor.WorkflowsSource.Name,
+        TracingInterceptor.ActivitiesSource.Name,
+        TracingInterceptor.NexusSource.Name,
+    ];
+
+    public static TheoryData<string> SdkSourceNames => new(SdkSources);
+
     [Fact]
-    public void WithWorkflowTelemetry_CalledTwice_RegistersTracerProviderBuilderOnce()
+    public void WithWorkflowTelemetry_ReturnsSameBuilderInstance()
     {
         var builder = WebApplication.CreateBuilder();
 
-        builder.WithWorkflowTelemetry();
-        builder.WithWorkflowTelemetry();
-
-        using var provider = builder.Services.BuildServiceProvider();
-        var tracerProviderBuilders = provider.GetServices<TracerProviderBuilder>().ToList();
-
-        // The OpenTelemetry SDK de-duplicates registered ActivitySource names internally; calling
-        // the extension twice must not throw and must not register a second TracerProviderBuilder
-        // configuration delegate that would double-count instruments.
-        Assert.True(tracerProviderBuilders.Count <= 1);
+        Assert.Same(builder, builder.WithWorkflowTelemetry());
     }
 
     [Fact]
-    public void WithWorkflowTelemetry_CalledTwice_RegistersMeterProviderBuilderOnce()
+    public void TheSdksTracingSources_AllShareTheSubscribedPrefix()
     {
-        var builder = WebApplication.CreateBuilder();
+        Assert.All(SdkSources, name => Assert.StartsWith(TemporalPrefix, name, StringComparison.Ordinal));
+    }
 
-        builder.WithWorkflowTelemetry();
-        builder.WithWorkflowTelemetry();
+    [Theory]
+    [MemberData(nameof(SdkSourceNames))]
+    public void WithWorkflowTelemetry_ExportsASpanFromEachTemporalTracingSource(string sourceName)
+    {
+        using var host = TelemetryHarness.Create(builder => builder.WithWorkflowTelemetry());
 
-        using var provider = builder.Services.BuildServiceProvider();
-        var meterProviderBuilders = provider.GetServices<MeterProviderBuilder>().ToList();
+        TelemetryHarness.EmitSpan(sourceName, "StartWorkflow:Test");
 
-        // Same de-duplication guarantee as the tracing half, for the "SharedKernel.Workflows" meter.
-        Assert.True(meterProviderBuilders.Count <= 1);
+        Assert.Single(host.Spans, a => a.Source.Name == sourceName);
     }
 
     [Fact]
-    public void WithWorkflowTelemetry_DoesNotThrow()
+    public void WithWorkflowTelemetry_DoesNotExportASourceOutsideTheTemporalPrefix()
     {
-        var builder = WebApplication.CreateBuilder();
+        using var host = TelemetryHarness.Create(builder => builder.WithWorkflowTelemetry());
 
-        var exception = Record.Exception(() =>
+        TelemetryHarness.EmitSpan("Temporalio");
+        TelemetryHarness.EmitSpan("Other.Temporalio.Extensions.OpenTelemetry.Client");
+        TelemetryHarness.EmitSpan("SharedKernel.Workflows");
+
+        Assert.Empty(host.Spans);
+    }
+
+    [Fact]
+    public void WithWorkflowTelemetry_CalledTwice_AddsNoDuplicate()
+    {
+        using var host = TelemetryHarness.Create(builder =>
         {
             builder.WithWorkflowTelemetry();
             builder.WithWorkflowTelemetry();
         });
 
-        Assert.Null(exception);
+        TelemetryHarness.EmitSpan(TracingInterceptor.ClientSource.Name);
+
+        Assert.Single(host.Spans);
     }
 }

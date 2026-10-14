@@ -16,6 +16,8 @@ using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.Abstractions.Diagnostics;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Dapper.Sessions;
 using SharedKernel.Persistence.EfCore;
@@ -27,6 +29,7 @@ using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Testing.Telemetry;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -202,6 +205,11 @@ public sealed class ConsumerVerifyTests
     [Fact]
     public async Task Composed_MultiTenancy_RowLevelSecurity_AuditTrail_Encryption_Retry()
     {
+        // A host with only the SharedKernel.* wildcard subscription: everything the persistence assemblies emit reaches these.
+        using var metrics = MetricRecorder.StartRecordingPrefix("SharedKernel.");
+        using var persistenceMetrics = MetricRecorder.StartRecordingPrefix("SharedKernel.Persistence");
+        using var spans = ActivityRecorder.StartRecordingPrefix("SharedKernel.Persistence");
+
         await using var postgres = new PostgreSqlBuilder("postgres:16.4").Build();
         await postgres.StartAsync();
 
@@ -326,5 +334,38 @@ public sealed class ConsumerVerifyTests
                 .QueryAsync(new AuditRecordQuery { ResourceType = nameof(Order), ResourceId = id.Value.ToString() });
             Assert.Single(history.Items);
         }
+
+        // A stored value that is no encrypted payload fails the read with the classified exception and counts the failure.
+        await using (var raw = NpgsqlDataSource.Create(admin))
+        await using (var command = raw.CreateCommand("UPDATE orders SET customer_email = 'planted'"))
+            await command.ExecuteNonQueryAsync();
+
+        await using (var scope = servicesA.CreateAsyncScope())
+        {
+            var failure = await Assert.ThrowsAsync<FieldEncryptionException>(
+                () => scope.ServiceProvider.GetRequiredService<IReadRepository<Order, OrderId>>().GetByIdAsync(id));
+            Assert.Equal(PersistenceErrorCodes.Encryption.MalformedPayload, failure.Error.Code);
+        }
+
+        // One identity: every source and meter a persistence assembly created is named SharedKernel.Persistence, every
+        // instrument is sharedkernel.persistence.* with a unit and seconds for durations, and the wildcard exported
+        // repository, audit, concurrency and encryption measurements.
+        Assert.All(spans.RecordedActivities, a => Assert.Equal(PersistenceTelemetry.Name, a.Source.Name));
+        Assert.All(persistenceMetrics.Instruments, i => Assert.Equal(PersistenceTelemetry.Name, i.MeterName));
+        persistenceMetrics.ShouldFollowMetricConvention();
+        Assert.All(persistenceMetrics.Instruments, i => Assert.StartsWith("sharedkernel.persistence.", i.Name, StringComparison.Ordinal));
+
+        Assert.Contains(spans.RecordedActivities, a => a.OperationName == "persistence add");
+        Assert.Contains(spans.RecordedActivities, a => a.OperationName == "persistence get_by_id");
+        Assert.All(
+            spans.RecordedActivities.Where(a => a.OperationName.StartsWith("persistence ", StringComparison.Ordinal)),
+            a => Assert.Equal(System.Diagnostics.ActivityKind.Internal, a.Kind));
+
+        metrics.ShouldHaveInstrument("sharedkernel.persistence.audit.append.duration", unit: "s", kind: InstrumentKind.Histogram);
+        Assert.NotEmpty(metrics.MeasurementsOf("sharedkernel.persistence.audit.append.duration"));
+        Assert.True(metrics.Sum("sharedkernel.persistence.concurrency_conflicts") >= 1);
+        Assert.True(metrics.Sum(
+            "sharedkernel.persistence.encryption.decrypt_failures",
+            new KeyValuePair<string, object?>("persistence.encryption.reason", "malformed_payload")) >= 1);
     }
 }

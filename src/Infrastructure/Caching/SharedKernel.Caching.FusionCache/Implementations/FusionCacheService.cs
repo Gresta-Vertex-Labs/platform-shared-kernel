@@ -1,10 +1,11 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Reflection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Caching.FusionCache.Diagnostics;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Events;
 
@@ -15,62 +16,72 @@ namespace SharedKernel.Caching.FusionCache.Implementations;
 /// plus the optional Redis distributed layer and backplane added by <c>AddRedisL2</c>.
 /// </summary>
 /// <remarks>
-/// Emits metrics under the meter <c>SharedKernel.Caching</c> and spans under the activity source of
-/// the same name, both versioned with this assembly. Tags carry only <c>{service}:{entity}</c> key
-/// prefixes: never an id and never a tenant.
+/// Emits metrics under the meter <see cref="CachingTelemetry.MeterName"/> (created through <see cref="IMeterFactory"/>)
+/// and spans under the activity source <see cref="CachingTelemetry.SourceName"/>, both versioned with this assembly. Tags
+/// carry only <c>{service}:{entity}</c> key prefixes: never an id and never a tenant.
 /// </remarks>
-internal sealed partial class FusionCacheService : ICacheService
+internal sealed class FusionCacheService : ICacheService
 {
     // Batch reads and writes fan out per-key L2 round-trips instead of awaiting them one by one.
     // Fixed rather than configurable until telemetry shows a workload for which 16 is wrong.
     private const int MaxBatchConcurrency = 16;
 
-    // The names stay "SharedKernel.Caching", which 13.ServiceDefaults' WithCachingTelemetry subscribes to.
-    private const string InstrumentationName = "SharedKernel.Caching";
+    // Span names are "{capability} {operation}", lowercase.
+    private const string SpanGet = "caching get";
+    private const string SpanGetOrSet = "caching get_or_set";
+    private const string SpanSet = "caching set";
 
-    private static readonly string InstrumentationVersion =
-        typeof(FusionCacheService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? typeof(FusionCacheService).Assembly.GetName().Version?.ToString()
-        ?? "0.0.0";
-
-    // Static and shared across instances; negligible cost without a listener.
-    private static readonly Meter _meter = new(InstrumentationName, InstrumentationVersion);
-
-    private static readonly Counter<long> _cacheHits =
-        _meter.CreateCounter<long>(
-            "cache.hits",
-            description: "Reads answered from the cache. Tags: cache.key_prefix ({service}:{entity}), cache.level (l1 or l2).");
-
-    private static readonly Counter<long> _cacheMisses =
-        _meter.CreateCounter<long>(
-            "cache.misses",
-            description: "Reads no cache layer could answer: a TryGet miss or a GetOrSet factory run. Tag: cache.key_prefix.");
-
-    private static readonly Histogram<double> _factoryDuration =
-        _meter.CreateHistogram<double>(
-            "cache.factory.duration",
-            unit: "ms",
-            description: "Factory execution duration in milliseconds. Tag: cache.key_prefix.");
-
-    private static readonly Counter<long> _cacheErrors =
-        _meter.CreateCounter<long>(
-            "cache.errors",
-            description: "Failed cache writes and factory runs. Tag: cache.error_type (exception type name).");
-
-    private static readonly Counter<long> _cacheEvictions =
-        _meter.CreateCounter<long>(
-            "cache.evictions",
-            description: "Memory-cache evictions. Tag: cache.eviction_reason.");
-
-    private static readonly ActivitySource _activitySource = new(InstrumentationName, InstrumentationVersion);
+    // The only static telemetry state: an ActivitySource is process-wide by design. The meter and its instruments
+    // are created per instance through IMeterFactory.
+    private static readonly ActivitySource _activitySource =
+        new(CachingTelemetry.SourceName, TelemetryVersion.Of(typeof(FusionCacheService).Assembly));
 
     private readonly IFusionCache _cache;
     private readonly ILogger<FusionCacheService> _logger;
+    private readonly Counter<long> _cacheHits;
+    private readonly Counter<long> _cacheMisses;
+    private readonly Histogram<double> _factoryDuration;
+    private readonly Counter<long> _cacheErrors;
+    private readonly Counter<long> _cacheEvictions;
 
-    public FusionCacheService(IFusionCache cache, ILogger<FusionCacheService> logger)
+    public FusionCacheService(IFusionCache cache, IMeterFactory meterFactory, ILogger<FusionCacheService> logger)
     {
+        ArgumentNullException.ThrowIfNull(cache);
+        ArgumentNullException.ThrowIfNull(meterFactory);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _cache = cache;
         _logger = logger;
+
+        var meter = meterFactory.Create(new MeterOptions(CachingTelemetry.MeterName)
+        {
+            Version = TelemetryVersion.Of(typeof(FusionCacheService).Assembly),
+        });
+
+        _cacheHits = meter.CreateCounter<long>(
+            CachingTelemetry.HitsInstrument,
+            unit: "{hit}",
+            description: "Reads answered from a cache layer. Tags: caching.key_prefix ({service}:{entity}), caching.level (l1 or l2).");
+
+        _cacheMisses = meter.CreateCounter<long>(
+            CachingTelemetry.MissesInstrument,
+            unit: "{miss}",
+            description: "Reads no cache layer could answer: a TryGet miss or a GetOrSet factory run. Tag: caching.key_prefix.");
+
+        _factoryDuration = meter.CreateHistogram<double>(
+            CachingTelemetry.FactoryDurationInstrument,
+            unit: "s",
+            description: "Factory execution duration in seconds. Tags: caching.key_prefix, outcome (success, exception or canceled).");
+
+        _cacheErrors = meter.CreateCounter<long>(
+            CachingTelemetry.ErrorsInstrument,
+            unit: "{error}",
+            description: "Failed cache writes and factory runs. Tags: caching.operation (set or factory), error.type (exception full name).");
+
+        _cacheEvictions = meter.CreateCounter<long>(
+            CachingTelemetry.EvictionsInstrument,
+            unit: "{eviction}",
+            description: "Memory-cache evictions. Tag: caching.eviction_reason.");
 
         // Hits come from FusionCache events, so the answering layer is known. Misses are counted at the
         // call sites: a memory miss that the distributed layer answers is not a miss.
@@ -79,19 +90,28 @@ internal sealed partial class FusionCacheService : ICacheService
         _cache.Events.Memory.Eviction += OnMemoryEviction;
     }
 
-    private static void OnMemoryHit(object? sender, FusionCacheEntryHitEventArgs e) =>
-        _cacheHits.Add(1,
-            new KeyValuePair<string, object?>("cache.key_prefix", ExtractKeyPrefix(e.Key)),
-            new KeyValuePair<string, object?>("cache.level", "l1"));
+    private void OnMemoryHit(object? sender, FusionCacheEntryHitEventArgs e) =>
+        RecordHit(e.Key, CachingTagValues.LevelMemory);
 
-    private static void OnDistributedHit(object? sender, FusionCacheEntryHitEventArgs e) =>
-        _cacheHits.Add(1,
-            new KeyValuePair<string, object?>("cache.key_prefix", ExtractKeyPrefix(e.Key)),
-            new KeyValuePair<string, object?>("cache.level", "l2"));
+    private void OnDistributedHit(object? sender, FusionCacheEntryHitEventArgs e) =>
+        RecordHit(e.Key, CachingTagValues.LevelDistributed);
 
-    private static void OnMemoryEviction(object? sender, FusionCacheEntryEvictionEventArgs e) =>
-        _cacheEvictions.Add(1,
-            new KeyValuePair<string, object?>("cache.eviction_reason", e.Reason.ToString()));
+    private void RecordHit(string key, string level) =>
+        _cacheHits.Add(
+            1,
+            new KeyValuePair<string, object?>(CachingTagKeys.KeyPrefix, ExtractKeyPrefix(key)),
+            new KeyValuePair<string, object?>(CachingTagKeys.Level, level));
+
+    private void OnMemoryEviction(object? sender, FusionCacheEntryEvictionEventArgs e) =>
+        _cacheEvictions.Add(
+            1,
+            new KeyValuePair<string, object?>(CachingTagKeys.EvictionReason, e.Reason.ToString()));
+
+    private void RecordError(string operation, Exception exception) =>
+        _cacheErrors.Add(
+            1,
+            new KeyValuePair<string, object?>(CachingTagKeys.Operation, operation),
+            new KeyValuePair<string, object?>(WellKnownTagKeys.ErrorType, exception.GetType().FullName ?? exception.GetType().Name));
 
     // The low-cardinality, tenant-free part of a key for metrics, traces and logs: {service}:{entity}
     // from both {service}:{entity}:{id}[:...] and {service}:@{tenant}:{entity}:{id}[:...].
@@ -124,16 +144,25 @@ internal sealed partial class FusionCacheService : ICacheService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
-        using var activity = _activitySource.StartActivity("cache.get", ActivityKind.Client);
+        using var activity = _activitySource.StartActivity(SpanGet, ActivityKind.Client);
         var keyPrefix = ExtractKeyPrefix(key);
-        activity?.SetTag("cache.key_prefix", keyPrefix);
+        activity?.SetTag(CachingTagKeys.KeyPrefix, keyPrefix);
 
-        var result = await _cache.TryGetAsync<T>(key, token: ct).ConfigureAwait(false);
+        MaybeValue<T> result;
+        try
+        {
+            result = await _cache.TryGetAsync<T>(key, token: ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            activity.RecordException(ex);
+            throw;
+        }
 
         if (!result.HasValue)
             RecordMiss(keyPrefix);
 
-        activity?.SetTag("cache.outcome", result.HasValue ? "hit" : "miss");
+        activity?.SetTag(CachingTagKeys.Result, result.HasValue ? CachingTagValues.ResultHit : CachingTagValues.ResultMiss);
 
         return result.HasValue ? CacheLookup<T>.Hit(result.Value) : CacheLookup<T>.Miss;
     }
@@ -188,9 +217,9 @@ internal sealed partial class FusionCacheService : ICacheService
         ArgumentNullException.ThrowIfNull(factory);
         ArgumentNullException.ThrowIfNull(policy);
 
-        using var activity = _activitySource.StartActivity("cache.get_or_set", ActivityKind.Client);
+        using var activity = _activitySource.StartActivity(SpanGetOrSet, ActivityKind.Client);
         var keyPrefix = ExtractKeyPrefix(key);
-        activity?.SetTag("cache.key_prefix", keyPrefix);
+        activity?.SetTag(CachingTagKeys.KeyPrefix, keyPrefix);
 
         var entryOptions = BuildEntryOptions(policy, _cache.DefaultEntryOptions);
         var tags = policy.Tags.Count > 0 ? policy.Tags : null;
@@ -203,27 +232,25 @@ internal sealed partial class FusionCacheService : ICacheService
             async (fusionContext, token) =>
             {
                 factoryInvoked = true;
-                Log.FactoryInvoked(_logger, keyPrefix);
-                _cacheMisses.Add(1, new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
-                var sw = Stopwatch.StartNew();
+                FusionCacheLog.FactoryInvoked(_logger, keyPrefix);
+                _cacheMisses.Add(1, new KeyValuePair<string, object?>(CachingTagKeys.KeyPrefix, keyPrefix));
+                var startedAt = Stopwatch.GetTimestamp();
                 try
                 {
                     var context = new CacheFactoryContext(key, policy);
                     var value = await factory(context, token).ConfigureAwait(false);
-                    sw.Stop();
-                    _factoryDuration.Record(
-                        sw.Elapsed.TotalMilliseconds,
-                        new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
+                    RecordFactoryDuration(keyPrefix, startedAt, WellKnownOutcomes.Success);
 
                     ApplyFactoryDecision(context, fusionContext.Options);
                     return value;
                 }
                 catch (Exception ex)
                 {
-                    sw.Stop();
-                    _cacheErrors.Add(1,
-                        new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
-                    activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
+                    // Cancellation is not an error: it records the duration with the canceled outcome and nothing else.
+                    var outcome = activity.RecordException(ex);
+                    RecordFactoryDuration(keyPrefix, startedAt, outcome);
+                    if (outcome == WellKnownOutcomes.Exception)
+                        RecordError(CachingTagValues.OperationFactory, ex);
                     throw;
                 }
             },
@@ -232,7 +259,7 @@ internal sealed partial class FusionCacheService : ICacheService
             tags,
             token: ct).ConfigureAwait(false);
 
-        activity?.SetTag("cache.outcome", factoryInvoked ? "miss" : "hit");
+        activity?.SetTag(CachingTagKeys.Result, factoryInvoked ? CachingTagValues.ResultMiss : CachingTagValues.ResultHit);
 
         return result;
     }
@@ -242,9 +269,9 @@ internal sealed partial class FusionCacheService : ICacheService
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(policy);
 
-        using var activity = _activitySource.StartActivity("cache.set", ActivityKind.Client);
+        using var activity = _activitySource.StartActivity(SpanSet, ActivityKind.Client);
         var keyPrefix = ExtractKeyPrefix(key);
-        activity?.SetTag("cache.key_prefix", keyPrefix);
+        activity?.SetTag(CachingTagKeys.KeyPrefix, keyPrefix);
 
         var entryOptions = BuildEntryOptions(policy, _cache.DefaultEntryOptions);
         var tags = policy.Tags.Count > 0 ? policy.Tags : null;
@@ -255,13 +282,12 @@ internal sealed partial class FusionCacheService : ICacheService
         }
         catch (Exception ex)
         {
-            _cacheErrors.Add(1,
-                new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
-            activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
+            if (activity.RecordException(ex) == WellKnownOutcomes.Exception)
+                RecordError(CachingTagValues.OperationSet, ex);
             throw;
         }
 
-        Log.CacheSet(_logger, keyPrefix);
+        FusionCacheLog.CacheSet(_logger, keyPrefix);
     }
 
     public async ValueTask SetManyAsync<T>(
@@ -284,7 +310,7 @@ internal sealed partial class FusionCacheService : ICacheService
             async (entry, token) =>
             {
                 await _cache.SetAsync(entry.Key, entry.Value, entryOptions, tags, token: token).ConfigureAwait(false);
-                Log.CacheSet(_logger, ExtractKeyPrefix(entry.Key));
+                FusionCacheLog.CacheSet(_logger, ExtractKeyPrefix(entry.Key));
             }).ConfigureAwait(false);
     }
 
@@ -293,7 +319,7 @@ internal sealed partial class FusionCacheService : ICacheService
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
         await _cache.RemoveAsync(key, token: ct).ConfigureAwait(false);
-        Log.CacheRemoved(_logger, ExtractKeyPrefix(key));
+        FusionCacheLog.CacheRemoved(_logger, ExtractKeyPrefix(key));
     }
 
     public async ValueTask ExpireAsync(string key, CancellationToken ct = default)
@@ -301,7 +327,7 @@ internal sealed partial class FusionCacheService : ICacheService
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
         await _cache.ExpireAsync(key, token: ct).ConfigureAwait(false);
-        Log.CacheExpired(_logger, ExtractKeyPrefix(key));
+        FusionCacheLog.CacheExpired(_logger, ExtractKeyPrefix(key));
     }
 
     public async ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default)
@@ -309,7 +335,7 @@ internal sealed partial class FusionCacheService : ICacheService
         ArgumentException.ThrowIfNullOrWhiteSpace(tag);
 
         await _cache.RemoveByTagAsync(tag, token: ct).ConfigureAwait(false);
-        Log.CacheTagRemoved(_logger, DescribeTag(tag));
+        FusionCacheLog.CacheTagRemoved(_logger, DescribeTag(tag));
     }
 
     public async ValueTask RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken ct = default)
@@ -329,20 +355,27 @@ internal sealed partial class FusionCacheService : ICacheService
         await _cache.RemoveByTagAsync(distinctTags, token: ct).ConfigureAwait(false);
 
         foreach (var tag in distinctTags)
-            Log.CacheTagRemoved(_logger, DescribeTag(tag));
+            FusionCacheLog.CacheTagRemoved(_logger, DescribeTag(tag));
     }
 
     public async ValueTask ClearAsync(CancellationToken ct = default)
     {
         await _cache.ClearAsync(allowFailSafe: false, token: ct).ConfigureAwait(false);
-        Log.CacheCleared(_logger);
+        FusionCacheLog.CacheCleared(_logger);
     }
 
     private void RecordMiss(string keyPrefix)
     {
-        Log.CacheMiss(_logger, keyPrefix);
-        _cacheMisses.Add(1, new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
+        FusionCacheLog.CacheMiss(_logger, keyPrefix);
+        _cacheMisses.Add(1, new KeyValuePair<string, object?>(CachingTagKeys.KeyPrefix, keyPrefix));
     }
+
+    // Seconds, tagged with the outcome the shared recorder returned for the factory run.
+    private void RecordFactoryDuration(string keyPrefix, long startedAt, string outcome) =>
+        _factoryDuration.Record(
+            Stopwatch.GetElapsedTime(startedAt).TotalSeconds,
+            new KeyValuePair<string, object?>(CachingTagKeys.KeyPrefix, keyPrefix),
+            new KeyValuePair<string, object?>(WellKnownTagKeys.Outcome, outcome));
 
     // Converts a CachePolicy to FusionCache entry options, starting from the cache's default entry
     // options, which carry the service-wide CachingOptions defaults (distributed timeouts, fail-safe throttle).
@@ -412,38 +445,5 @@ internal sealed partial class FusionCacheService : ICacheService
             options.SetDistributedCacheDurationInfinite();
         else
             options.DistributedCacheDuration = l2Duration;
-    }
-
-    // Source-generated log methods. Keys are logged as {service}:{entity} prefixes and tenant tags as
-    // @tenant:{tag}, so ids and tenant ids never reach logs.
-    private static partial class Log
-    {
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 10, Level = LogLevel.Debug,
-            Message = "Cache miss for {KeyPrefix}")]
-        internal static partial void CacheMiss(ILogger logger, string keyPrefix);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 11, Level = LogLevel.Debug,
-            Message = "Cache set for {KeyPrefix}")]
-        internal static partial void CacheSet(ILogger logger, string keyPrefix);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 12, Level = LogLevel.Debug,
-            Message = "Cache factory invoked for {KeyPrefix}")]
-        internal static partial void FactoryInvoked(ILogger logger, string keyPrefix);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 13, Level = LogLevel.Debug,
-            Message = "Cache entry removed for {KeyPrefix}")]
-        internal static partial void CacheRemoved(ILogger logger, string keyPrefix);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 14, Level = LogLevel.Debug,
-            Message = "Cache entries removed for tag {Tag}")]
-        internal static partial void CacheTagRemoved(ILogger logger, string tag);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 16, Level = LogLevel.Debug,
-            Message = "Cache entry expired for {KeyPrefix}")]
-        internal static partial void CacheExpired(ILogger logger, string keyPrefix);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 17, Level = LogLevel.Warning,
-            Message = "Cache cleared: every entry of this cache was removed")]
-        internal static partial void CacheCleared(ILogger logger);
     }
 }

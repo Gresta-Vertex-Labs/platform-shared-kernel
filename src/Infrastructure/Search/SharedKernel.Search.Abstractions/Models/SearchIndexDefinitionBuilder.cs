@@ -1,3 +1,4 @@
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
@@ -114,13 +115,13 @@ public sealed class SearchIndexDefinitionBuilder
     public Result<SearchIndexDefinition> Build()
     {
         var fieldValidation = SearchIndexDefinition.ValidateFields(_fields);
-        if (fieldValidation is not null)
+        if (fieldValidation != Error.None)
         {
             return Result<SearchIndexDefinition>.Failure(fieldValidation);
         }
 
         var textAnalysisValidation = SearchIndexDefinition.ValidateTextAnalysis(_synonyms, _stopWords);
-        if (textAnalysisValidation is not null)
+        if (textAnalysisValidation != Error.None)
         {
             return Result<SearchIndexDefinition>.Failure(textAnalysisValidation);
         }

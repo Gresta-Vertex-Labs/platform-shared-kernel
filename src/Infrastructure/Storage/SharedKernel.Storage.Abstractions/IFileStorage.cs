@@ -297,7 +297,7 @@ public interface IFileStorage
     /// <exception cref="StorageException">
     /// Thrown by this call itself when <paramref name="prefix"/> is <see langword="null"/> or invalid
     /// (<see cref="StorageErrorCodes.InvalidKey"/>), and during enumeration when a page cannot be read; its
-    /// <see cref="StorageException.Error"/> carries the storage error.
+    /// <c>Error</c> carries the storage error, and the HTTP, gRPC and SignalR edges map an uncaught instance by its error type.
     /// </exception>
     /// <exception cref="OperationCanceledException">The token was cancelled during enumeration.</exception>
     /// <remarks>

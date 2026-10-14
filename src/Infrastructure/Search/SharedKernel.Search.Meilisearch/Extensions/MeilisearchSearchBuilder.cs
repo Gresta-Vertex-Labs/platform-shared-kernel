@@ -9,7 +9,6 @@ using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Diagnostics;
 using SharedKernel.Search.Meilisearch.Index;
 using SharedKernel.Search.Meilisearch.Instant;
-using SharedKernel.Search.Meilisearch.Logging;
 using SharedKernel.Search.Meilisearch.Options;
 using SharedKernel.Search.Meilisearch.Provisioning;
 using SharedKernel.Search.Meilisearch.Raw;
@@ -53,7 +52,7 @@ public sealed class MeilisearchSearchBuilder
         if (definitionResult.IsFailure)
         {
             throw new InvalidOperationException(
-                $"Failed to build the SearchIndexDefinition for Meilisearch index '{indexName}': {definitionResult.Error.Message}");
+                $"The definition of Meilisearch index '{indexName}' is invalid with error code '{definitionResult.Error.Code}', so correct the index configuration passed to AddIndex.");
         }
 
         var definition = definitionResult.Value;
@@ -64,12 +63,14 @@ public sealed class MeilisearchSearchBuilder
             definition,
             sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value,
             sp.GetRequiredService<IClock>(),
-            sp.GetRequiredService<ILogger<MeilisearchIndex<TDocument>>>()));
+            sp.GetRequiredService<ILogger<MeilisearchIndex<TDocument>>>(),
+            sp.GetRequiredService<SearchTelemetry>()));
 
         _services.AddScoped<IInstantSearch<TDocument>>(sp => new MeilisearchInstantSearch<TDocument>(
             sp.GetRequiredService<global::Meilisearch.MeilisearchClient>(),
             definition,
-            sp.GetRequiredService<ILogger<MeilisearchInstantSearch<TDocument>>>()));
+            sp.GetRequiredService<ILogger<MeilisearchInstantSearch<TDocument>>>(),
+            sp.GetRequiredService<SearchTelemetry>()));
 
         return this;
     }
@@ -98,14 +99,14 @@ public sealed class MeilisearchSearchBuilder
         if (rules.Length == 0)
         {
             throw new ArgumentException(
-                "At least one ranking rule is required; an empty list would clear Meilisearch's ranking rules entirely.",
+                "At least one ranking rule is required, because an empty list would clear the engine's ranking rules entirely.",
                 nameof(rules));
         }
 
         if (!_indexDefinitions.ContainsKey(indexName))
         {
             throw new InvalidOperationException(
-                $"Cannot set ranking rules for Meilisearch index '{indexName}': it has not been registered. " +
+                $"Ranking rules cannot be set for Meilisearch index '{indexName}' because it is not registered. " +
                 "Call AddIndex<TDocument>(...) for this index first.");
         }
 
@@ -158,7 +159,8 @@ public sealed class MeilisearchSearchBuilder
                 sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value,
                 indexDefinitions,
                 rankingRules,
-                sp.GetRequiredService<ILogger<MeilisearchIndexProvisioner>>()));
+                sp.GetRequiredService<ILogger<MeilisearchIndexProvisioner>>(),
+                sp.GetRequiredService<SearchTelemetry>()));
 
         _services.AddSingleton<ISearchIndexProvisioner>(sp =>
             sp.GetRequiredKeyedService<ISearchIndexProvisioner>(SearchWellKnown.MeilisearchProviderName));
@@ -191,14 +193,15 @@ public sealed class MeilisearchSearchBuilder
                 sp.GetRequiredService<global::Meilisearch.MeilisearchClient>(),
                 sp.GetRequiredService<IOptions<MeilisearchOptions>>().Value,
                 sp.GetRequiredService<IClock>(),
-                sp.GetRequiredService<ILogger<MeilisearchTenantTokenIssuer>>()));
+                sp.GetRequiredService<ILogger<MeilisearchTenantTokenIssuer>>(),
+                sp.GetRequiredService<SearchTelemetry>()));
         }
 
         if (_rawClientAccessAllowed)
         {
             _services.AddSingleton<IMeilisearchRawClientAccessor>(sp =>
             {
-                sp.GetRequiredService<ILogger<MeilisearchRawClientAccessor>>().MeilisearchRawClientAccessEnabled();
+                MeilisearchLog.RawClientAccessEnabled(sp.GetRequiredService<ILogger<MeilisearchRawClientAccessor>>());
                 return new MeilisearchRawClientAccessor(sp.GetRequiredService<global::Meilisearch.MeilisearchClient>());
             });
         }

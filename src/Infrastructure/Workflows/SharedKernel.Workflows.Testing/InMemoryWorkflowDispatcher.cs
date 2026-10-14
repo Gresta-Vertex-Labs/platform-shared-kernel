@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Constants;
 using SharedKernel.Workflows.Temporal.Dispatch;
@@ -71,76 +72,78 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
     public IReadOnlyList<InMemoryWorkflowStartRecord> StartedWorkflows => _startedWorkflows.ToArray();
 
     /// <inheritdoc />
-    public Task<SharedKernel.Primitives.Results.Result<IWorkflowHandle>> StartAsync<TWorkflow>(
+    public Task<Result<IWorkflowHandle>> StartAsync<TWorkflow>(
         WorkflowStartOptions options, TenantScope tenantScope, CancellationToken cancellationToken = default)
         where TWorkflow : WorkflowBase
         => Task.FromResult(StartCore<TWorkflow>(args: null, options, tenantScope));
 
     /// <inheritdoc />
-    public Task<SharedKernel.Primitives.Results.Result<IWorkflowHandle>> StartAsync<TWorkflow, TArgs>(
+    public Task<Result<IWorkflowHandle>> StartAsync<TWorkflow, TArgs>(
         TArgs args, WorkflowStartOptions options, TenantScope tenantScope, CancellationToken cancellationToken = default)
         where TWorkflow : WorkflowBase
         => Task.FromResult(StartCore<TWorkflow>(args, options, tenantScope));
 
     /// <inheritdoc />
-    public Task<SharedKernel.Primitives.Results.Result<IWorkflowHandle<TResult>>> StartAsync<TWorkflow, TArgs, TResult>(
+    public Task<Result<IWorkflowHandle<TResult>>> StartAsync<TWorkflow, TArgs, TResult>(
         TArgs args, WorkflowStartOptions options, TenantScope tenantScope, CancellationToken cancellationToken = default)
         where TWorkflow : WorkflowBase
     {
         var result = StartCore<TWorkflow>(args, options, tenantScope);
         if (result.IsFailure)
         {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<IWorkflowHandle<TResult>>.Failure(result.Error));
+            return Task.FromResult(Result<IWorkflowHandle<TResult>>.Failure(result.Error));
         }
 
         var typed = new InMemoryWorkflowHandle<TResult>((InMemoryWorkflowHandle)result.Value);
-        return Task.FromResult(SharedKernel.Primitives.Results.Result<IWorkflowHandle<TResult>>.Success(typed));
+        return Task.FromResult(Result<IWorkflowHandle<TResult>>.Success(typed));
     }
 
     /// <inheritdoc />
-    public IWorkflowHandle GetHandle(string workflowId, string? runId, TenantScope tenantScope)
+    public Result<IWorkflowHandle> GetHandle(string workflowId, string? runId, TenantScope tenantScope)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
-        if (tenantScope.IsGlobal)
+        var check = CheckHandleRequest(workflowId, tenantScope);
+        if (check.IsFailure)
         {
-            throw new ArgumentException("TenantScope.Global is not permitted.", nameof(tenantScope));
+            return Result<IWorkflowHandle>.Failure(check.Error);
         }
 
         // Never round-trips -- constructs unconditionally regardless of whether a backing execution
         // exists yet, matching real Temporal semantics exactly (a handle's existence is not checked
         // until an operation is invoked against it).
-        return new InMemoryWorkflowHandle(_executions, workflowId, runId);
+        return Result<IWorkflowHandle>.Success(new InMemoryWorkflowHandle(_executions, workflowId, runId));
     }
 
     /// <inheritdoc />
-    public IWorkflowHandle<TResult> GetHandle<TResult>(string workflowId, string? runId, TenantScope tenantScope)
+    public Result<IWorkflowHandle<TResult>> GetHandle<TResult>(string workflowId, string? runId, TenantScope tenantScope)
     {
-        var inner = (InMemoryWorkflowHandle)GetHandle(workflowId, runId, tenantScope);
-        return new InMemoryWorkflowHandle<TResult>(inner);
+        var check = CheckHandleRequest(workflowId, tenantScope);
+        if (check.IsFailure)
+        {
+            return Result<IWorkflowHandle<TResult>>.Failure(check.Error);
+        }
+
+        var inner = new InMemoryWorkflowHandle(_executions, workflowId, runId);
+        return Result<IWorkflowHandle<TResult>>.Success(new InMemoryWorkflowHandle<TResult>(inner));
     }
 
     /// <inheritdoc />
-    public Task<SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>> DescribeAsync(
+    public Task<Result<WorkflowExecutionDescription>> DescribeAsync(
         string workflowId, TenantScope tenantScope, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
-
-        if (tenantScope.IsGlobal)
+        var check = CheckHandleRequest(workflowId, tenantScope);
+        if (check.IsFailure)
         {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>.Failure(
-                WorkflowErrors.TenantScopeMissing()));
+            return Task.FromResult(Result<WorkflowExecutionDescription>.Failure(check.Error));
         }
 
         if (SimulateFailure)
         {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>.Failure(
-                WorkflowErrors.ServiceUnavailable("SimulateFailure is enabled.")));
+            return Task.FromResult(Result<WorkflowExecutionDescription>.Failure(WorkflowErrors.ServiceUnavailable()));
         }
 
         if (!_executions.TryGetValue(workflowId, out var execution))
         {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>.Failure(
-                WorkflowErrors.NotFound(workflowId)));
+            return Task.FromResult(Result<WorkflowExecutionDescription>.Failure(WorkflowErrors.NotFound()));
         }
 
         var description = new WorkflowExecutionDescription
@@ -155,13 +158,32 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
             HistoryLength = 0,
         };
 
-        return Task.FromResult(SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>.Success(description));
+        return Task.FromResult(Result<WorkflowExecutionDescription>.Success(description));
+    }
+
+    // The guard the real dispatcher shares between GetHandle and DescribeAsync: a global scope is refused, a blank id is
+    // invalid, and a foreign tenant's id is answered exactly like a missing execution.
+    private static Result CheckHandleRequest(string workflowId, TenantScope tenantScope)
+    {
+        if (tenantScope.IsGlobal)
+        {
+            return Result.Failure(WorkflowErrors.TenantScopeMissing());
+        }
+
+        if (string.IsNullOrWhiteSpace(workflowId))
+        {
+            return Result.Failure(WorkflowErrors.InvalidWorkflowId("the workflow id must not be blank."));
+        }
+
+        return WorkflowIdOwnership.IsOwnedBy(workflowId, tenantScope)
+            ? Result.Success()
+            : Result.Failure(WorkflowErrors.NotFound());
     }
 
     /// <summary>
     /// Registers a query handler for <paramref name="queryName"/> against an already-started
     /// execution -- the test-setup counterpart <see cref="InMemoryWorkflowHandle.QueryAsync{TQueryResult}"/>
-    /// consults. An unconfigured query name returns <c>WorkflowErrors.QueryFailed</c>.
+    /// consults. An unconfigured query name returns <c>workflow.query_failed</c>.
     /// </summary>
     /// <exception cref="InvalidOperationException">No execution exists for <paramref name="workflowId"/>.</exception>
     public void ConfigureQueryHandler<TQueryResult>(string workflowId, string queryName, Func<TQueryResult> handler)
@@ -260,7 +282,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         _startedWorkflows.Clear();
     }
 
-    private SharedKernel.Primitives.Results.Result<IWorkflowHandle> StartCore<TWorkflow>(
+    private Result<IWorkflowHandle> StartCore<TWorkflow>(
         object? args, WorkflowStartOptions options, TenantScope tenantScope)
         where TWorkflow : WorkflowBase
     {
@@ -273,18 +295,18 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         // the check on).
         if (tenantScope.IsGlobal)
         {
-            return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(WorkflowErrors.TenantScopeMissing());
+            return Result<IWorkflowHandle>.Failure(WorkflowErrors.TenantScopeMissing());
         }
 
         if (SimulateFailure)
         {
-            return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(
-                WorkflowErrors.ServiceUnavailable("SimulateFailure is enabled."));
+            return Result<IWorkflowHandle>.Failure(
+                WorkflowErrors.ServiceUnavailable());
         }
 
         if (string.IsNullOrWhiteSpace(options.BusinessKey))
         {
-            return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(
+            return Result<IWorkflowHandle>.Failure(
                 WorkflowErrors.InvalidWorkflowId("BusinessKey must not be null, empty, or whitespace."));
         }
 
@@ -297,7 +319,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         // future reconciliation pass against 17.Workflows's own shipped dispatcher behavior.
         if (_executions.TryGetValue(workflowId, out var existing) && existing.Status == WorkflowLifecycleStatus.Running)
         {
-            return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(WorkflowErrors.AlreadyStarted(workflowId));
+            return Result<IWorkflowHandle>.Failure(WorkflowErrors.AlreadyStarted());
         }
 
         var runId = string.Create(CultureInfo.InvariantCulture, $"in-memory-run-{Interlocked.Increment(ref _runIdSequence)}");
@@ -314,7 +336,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         _executions[workflowId] = execution;
         _startedWorkflows.Enqueue(new InMemoryWorkflowStartRecord(workflowTypeName, workflowId, tenantScope, args));
 
-        return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Success(
+        return Result<IWorkflowHandle>.Success(
             new InMemoryWorkflowHandle(_executions, workflowId, runId));
     }
 

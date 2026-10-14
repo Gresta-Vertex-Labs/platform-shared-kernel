@@ -14,22 +14,31 @@ namespace SharedKernel.Primitives.Logging;
 /// ad hoc numeric literal disconnected from the domain's reserved block.
 /// </para>
 /// <example>
-/// How an <c>EventId</c> is derived in practice — domain base plus a local offset, never a bare
-/// literal:
+/// How an <c>EventId</c> is derived in practice — a per-package <c>const</c> arithmetic class over the domain
+/// base, never a bare literal. A method cannot be used here because <c>[LoggerMessage(EventId = …)]</c> needs a
+/// compile-time constant:
 /// <code>
+/// internal static class CachingLoggingEventIds
+/// {
+///     // 2100 = LoggingEventIdRanges.Caching (2000) + sub-block 1 (1 * PackageSubBlockWidth).
+///     internal const int Base = LoggingEventIdRanges.Caching + 1 * LoggingEventIdRanges.PackageSubBlockWidth;
+///     internal const int BackplaneReconnected = Base + 1;
+/// }
+///
 /// internal static partial class CachingLog
 /// {
-///     // 2100 = LoggingEventIdRanges.Caching (2000) + this package's sub-block offset (100).
 ///     [LoggerMessage(
-///         EventId = LoggingEventIdRanges.Caching + 100,
+///         EventId = CachingLoggingEventIds.BackplaneReconnected,
 ///         Level = LogLevel.Warning,
-///         Message = "Cache backplane reconnected after {AttemptCount} attempts")]
+///         Message = "The cache backplane reconnected after {AttemptCount} attempts.")]
 ///     public static partial void BackplaneReconnected(ILogger logger, int attemptCount);
 /// }
 /// </code>
-/// Note the <c>EventId</c> is written as an expression against the constant rather than as
-/// <c>2100</c>. That is the point of the registry: the number stays traceable to the domain that
-/// owns it, and a reader can tell at a glance which block it belongs to.
+/// One such class per package, never interleaved with another package's. The <c>EventId</c> stays traceable to
+/// the domain that owns it, and a reader can tell at a glance which block it belongs to. Messages are full
+/// sentences ending in a full stop, with named PascalCase placeholders. Tests and governance rules use
+/// <see cref="SubBlockStart(int, int)"/> and <see cref="IsInSubBlock(int, int, int)"/> to assert a package stays in
+/// its sub-block.
 /// </example>
 /// <para>
 /// <b>Domain-level boundary only:</b> this registry enforces only the 1000-wide domain boundary.
@@ -145,4 +154,43 @@ public static class LoggingEventIdRanges
 
     /// <summary>Reserved <c>EventId</c> block base for <c>20.Reporting</c> (20000-20999).</summary>
     public const int Reporting = 20000;
+
+    /// <summary>
+    /// The number of 100-wide sub-blocks in one domain block (<c>DomainRangeWidth / PackageSubBlockWidth</c>, 10).
+    /// </summary>
+    private const int SubBlocksPerDomain = DomainRangeWidth / PackageSubBlockWidth;
+
+    /// <summary>Gets the first <c>EventId</c> of a package sub-block: <c>domainBase + subBlockIndex * 100</c>.</summary>
+    /// <remarks>
+    /// For tests and governance. A <c>[LoggerMessage]</c> attribute needs a compile-time constant, so a package writes
+    /// the same arithmetic as <c>const</c> expressions (see the type remarks).
+    /// </remarks>
+    /// <param name="domainBase">A domain base constant of this class (a non-negative multiple of 1000).</param>
+    /// <param name="subBlockIndex">The sub-block index, 0 to 9.</param>
+    /// <returns>The first <c>EventId</c> of the sub-block.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="domainBase"/> is negative or not a multiple of <see cref="DomainRangeWidth"/>, or
+    /// <paramref name="subBlockIndex"/> is outside 0-9.
+    /// </exception>
+    public static int SubBlockStart(int domainBase, int subBlockIndex)
+    {
+        if (domainBase < 0 || domainBase % DomainRangeWidth != 0)
+            throw new ArgumentOutOfRangeException(nameof(domainBase), domainBase, "The domain base must be a non-negative multiple of 1000.");
+        if (subBlockIndex < 0 || subBlockIndex >= SubBlocksPerDomain)
+            throw new ArgumentOutOfRangeException(nameof(subBlockIndex), subBlockIndex, "The sub-block index must be 0 to 9.");
+
+        return domainBase + (subBlockIndex * PackageSubBlockWidth);
+    }
+
+    /// <summary>Determines whether <paramref name="eventId"/> lies inside the given package sub-block.</summary>
+    /// <param name="eventId">The <c>EventId</c> to test.</param>
+    /// <param name="domainBase">A domain base constant of this class (a non-negative multiple of 1000).</param>
+    /// <param name="subBlockIndex">The sub-block index, 0 to 9.</param>
+    /// <returns><see langword="true"/> when <paramref name="eventId"/> is within the sub-block's 100 numbers.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The same conditions as <see cref="SubBlockStart(int, int)"/>.</exception>
+    public static bool IsInSubBlock(int eventId, int domainBase, int subBlockIndex)
+    {
+        var start = SubBlockStart(domainBase, subBlockIndex);
+        return eventId >= start && eventId < start + PackageSubBlockWidth;
+    }
 }

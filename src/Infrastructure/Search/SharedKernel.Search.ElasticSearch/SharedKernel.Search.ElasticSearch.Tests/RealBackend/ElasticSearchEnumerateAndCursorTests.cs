@@ -196,6 +196,48 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReadCursorAsync_AfterCloseCursorAsync_ReturnsCursorExpired_OnTheRealPointInTimeMissingSignal()
+    {
+        // VERIFIED against ElasticSearch 9.4.2: reading a closed point-in-time answers HTTP 404 with a top-level
+        // search_phase_execution_exception whose root cause is search_context_missing_exception. That signal, and
+        // only that signal, is CursorExpired; the expiry-by-keep-alive case below observes the same shape.
+        var cursorSearch = ElasticsearchProviderFactory.CreateCursorSearch<TestProduct>(_client, _definition);
+        var openResult = await cursorSearch.OpenCursorAsync(
+            new SearchRequest { PageSize = 3 }, TenantScope.For(TestProductCorpus.TenantA), TimeSpan.FromMinutes(1));
+        openResult.IsSuccess.Should().BeTrue();
+        (await cursorSearch.ReadCursorAsync(openResult.Value)).IsSuccess.Should().BeTrue("a live cursor reads fine");
+        (await cursorSearch.CloseCursorAsync(openResult.Value)).IsSuccess.Should().BeTrue();
+
+        var readResult = await cursorSearch.ReadCursorAsync(openResult.Value);
+
+        readResult.IsFailure.Should().BeTrue();
+        readResult.Error.Code.Should().Be("search.elasticsearch.cursor_expired");
+        readResult.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Conflict);
+    }
+
+    [Fact]
+    public async Task ReadCursorAsync_WithABogusPointInTimeId_IsNotCursorExpired()
+    {
+        // A point-in-time id the engine cannot parse answers 400 illegal_argument_exception: a bad request, not
+        // a lapsed cursor, so it must not be reported as the expiry signal.
+        var cursorSearch = ElasticsearchProviderFactory.CreateCursorSearch<TestProduct>(_client, _definition);
+        var openResult = await cursorSearch.OpenCursorAsync(
+            new SearchRequest { PageSize = 3 }, TenantScope.For(TestProductCorpus.TenantA), TimeSpan.FromMinutes(1));
+        var forged = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(openResult.Value.Token))
+                .Replace(ExtractPitId(openResult.Value.Token), "bogus-id-not-base64", StringComparison.Ordinal)));
+
+        var readResult = await cursorSearch.ReadCursorAsync(new SharedKernel.Search.ElasticSearch.Cursors.SearchCursor(forged, openResult.Value.ExpiresAt));
+
+        readResult.IsFailure.Should().BeTrue();
+        readResult.Error.Code.Should().NotBe("search.elasticsearch.cursor_expired");
+        await cursorSearch.CloseCursorAsync(openResult.Value);
+    }
+
+    private static string ExtractPitId(string token)
+        => System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(token)).RootElement.GetProperty("PitId").GetString()!;
+
+    [Fact]
     public async Task ReadCursorAsync_AfterKeepAliveExpires_ReturnsCursorExpired()
     {
         var cursorSearch = ElasticsearchProviderFactory.CreateCursorSearch<TestProduct>(_client, _definition);

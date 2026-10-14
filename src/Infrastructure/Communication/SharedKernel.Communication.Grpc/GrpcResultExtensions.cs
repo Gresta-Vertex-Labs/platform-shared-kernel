@@ -1,6 +1,7 @@
 using Google.Rpc;
 using Grpc.Core;
 using SharedKernel.Communication.Grpc.Internal;
+using SharedKernel.Communication.Internal;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using RpcStatus = Google.Rpc.Status;
@@ -21,9 +22,9 @@ namespace SharedKernel.Communication;
 /// <para>
 /// A status with no <c>ErrorInfo</c> — from a service outside the platform, or raised by the client — gets
 /// <c>grpc.{status}</c>, except that a call that never reached the service is
-/// <see cref="CommunicationErrorCodes.Unreachable"/>, one that ran out of its deadline
+/// <see cref="CommunicationErrorCodes.Unavailable"/>, one that ran out of its deadline
 /// <see cref="CommunicationErrorCodes.Timeout"/>, and one whose access token could not be had
-/// <see cref="CommunicationErrorCodes.AccessTokenUnavailable"/>.
+/// <see cref="CommunicationErrorCodes.AccessTokenUnavailable"/> (the channel reports it as <c>Internal</c>, so its retry policy does not repeat it).
 /// </para>
 /// </remarks>
 /// <example>
@@ -57,7 +58,7 @@ public static class GrpcResultExtensions
             }
             catch (RpcException exception) when (exception.StatusCode == StatusCode.Cancelled)
             {
-                throw new OperationCanceledException(exception.Status.Detail, exception, cancellationToken);
+                throw new OperationCanceledException("The gRPC call was canceled by the caller.", exception, cancellationToken);
             }
         }
     }
@@ -77,7 +78,7 @@ public static class GrpcResultExtensions
         // Raised by the client when the request never got a response: refused, reset, unresolvable, or TLS failed.
         if (FindInner<HttpRequestException>(exception.Status.DebugException) is not null)
         {
-            return Error.Unavailable(CommunicationErrorCodes.Unreachable, "The service could not be reached.");
+            return CommunicationErrors.Unavailable();
         }
 
         StatusCode statusCode = exception.StatusCode;
@@ -92,12 +93,13 @@ public static class GrpcResultExtensions
         }
 
         string code = info is { Reason: { Length: > 0 } reason } ? reason : CodeWithoutErrorInfo(exception);
-        return GrpcStatusErrorTypeMap.Create(GrpcStatusErrorTypeMap.Resolve(statusCode), code, message);
+        return CommunicationErrors.Create(GrpcStatusErrorTypeMap.Resolve(statusCode), code, message);
     }
 
     private static string CodeWithoutErrorInfo(RpcException exception) => exception.StatusCode switch
     {
         StatusCode.DeadlineExceeded => CommunicationErrorCodes.Timeout,
+        // Every other status keeps the grpc.{status} name 14.Presentation gives it.
         _ => GrpcStatusErrorTypeMap.CodeFor(exception.StatusCode),
     };
 

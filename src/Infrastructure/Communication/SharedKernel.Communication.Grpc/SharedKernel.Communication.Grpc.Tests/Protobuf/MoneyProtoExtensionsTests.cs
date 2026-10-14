@@ -44,7 +44,7 @@ public sealed class MoneyProtoExtensionsTests
         Action read = () => money.ToDecimal();
 
         read.Should().Throw<ArgumentException>();
-        money.ToMoney().Errors.Should().ContainSingle().Which.Code.Should().Be("money.proto.invalid");
+        money.ToMoney().Errors.Should().ContainSingle().Which.Code.Should().Be("communication.grpc.invalid_money");
     }
 
     [Fact]

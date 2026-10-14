@@ -57,7 +57,7 @@ public sealed class Result<T> : IHasSuccessFlag, IResultOfT<T>, IFailureFactory<
     /// <exception cref="InvalidOperationException">Thrown when the result represents a failure.</exception>
     public T Value => IsSuccess
         ? _value!
-        : throw new InvalidOperationException("Cannot access Value on a failed result. Check IsSuccess before accessing Value.");
+        : throw new InvalidOperationException("Value must not be read from a failed result. Check IsSuccess first.");
 
     /// <summary>
     /// Gets the error.
@@ -70,7 +70,7 @@ public sealed class Result<T> : IHasSuccessFlag, IResultOfT<T>, IFailureFactory<
     /// <exception cref="InvalidOperationException">Thrown when the result represents a success.</exception>
     public Errors.Error Error => IsFailure
         ? _error
-        : throw new InvalidOperationException("Cannot access Error on a successful result. Check IsFailure before accessing Error.");
+        : throw new InvalidOperationException("Error must not be read from a successful result. Check IsFailure first.");
 
     /// <summary>Creates a successful result containing the specified <paramref name="value"/>.</summary>
     /// <param name="value">The success value.</param>
@@ -164,11 +164,10 @@ public readonly struct Result : IHasSuccessFlag
     /// </exception>
     public Errors.Error Error => IsFailure
         ? (_error ?? throw new InvalidOperationException(
-            "This Result is an uninitialized default(Result), which is not a valid result: it "
-            + "reports IsFailure but carries no error. Produce results with Result.Success() or "
-            + "Result.Failure(error) — never default(Result), an unassigned field, an unpopulated "
-            + "array element, or the out-parameter of a failed TryGetValue."))
-        : throw new InvalidOperationException("Cannot access Error on a successful result. Check IsFailure before accessing Error.");
+            "This Result is an uninitialized default(Result) and carries no error. Create results with "
+            + "Result.Success() or Result.Failure(error), not with default(Result), an unassigned field, "
+            + "an unpopulated array element or the out-parameter of a failed TryGetValue."))
+        : throw new InvalidOperationException("Error must not be read from a successful result. Check IsFailure first.");
 
     /// <summary>Creates a successful <see cref="Result"/>.</summary>
     public static Result Success() => new(true, Errors.Error.None);

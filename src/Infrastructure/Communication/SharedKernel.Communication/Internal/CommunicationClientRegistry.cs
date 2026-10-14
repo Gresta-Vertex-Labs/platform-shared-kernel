@@ -27,13 +27,15 @@ internal sealed class CommunicationClientRegistry
 
         if (name.Contains(':', StringComparison.Ordinal))
         {
-            throw new ArgumentException($"Client name '{name}' must not contain ':' (it names a configuration section).", nameof(name));
+            throw new ArgumentException(
+                $"The client name '{name}' must not contain ':' because it names a configuration section. Use a name without it.",
+                nameof(name));
         }
 
         if (!registry._clients.TryAdd(name, kind))
         {
             throw new InvalidOperationException(
-                $"A {registry._clients[name]} client named '{name}' is already registered; client names must be unique.");
+                $"A {registry._clients[name]} client named '{name}' is already registered. Use a different name, because client names are unique across REST and gRPC.");
         }
     }
 }

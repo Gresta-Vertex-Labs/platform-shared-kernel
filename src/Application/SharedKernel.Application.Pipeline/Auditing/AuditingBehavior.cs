@@ -2,7 +2,10 @@ using SharedKernel.Application.Auditing;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Auditing;
+using System.Diagnostics;
+using SharedKernel.Application.Pipeline.Diagnostics;
 using SharedKernel.Application.Pipeline.Shared;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Application.Pipeline.Auditing;
 
@@ -47,7 +50,7 @@ namespace SharedKernel.Application.Pipeline.Auditing;
 /// nested command — the outer command's own entry records the failure.
 /// </para>
 /// </remarks>
-internal sealed partial class AuditingBehavior<TRequest, TResponse>(
+internal sealed class AuditingBehavior<TRequest, TResponse>(
     IAuditTrailWriter auditTrailWriter,
     ILogger<AuditingBehavior<TRequest, TResponse>> logger)
     : IPipelineBehavior<TRequest, TResponse>
@@ -72,12 +75,15 @@ internal sealed partial class AuditingBehavior<TRequest, TResponse>(
             {
                 await auditTrailWriter.RecordAsync(faultEntry, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception auditWriteException)
+            catch (Exception auditWriteException) when (
+                auditWriteException is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                LogAuditWriteFailedDuringException(
+                // Documented catch-all (rule 16): the handler's own exception is the one that must propagate.
+                PipelineLog.AuditWriteFailedDuringException(
                     logger,
-                    auditWriteException,
-                    typeof(TRequest).FullName ?? typeof(TRequest).Name);
+                    typeof(TRequest).FullName ?? typeof(TRequest).Name,
+                    auditWriteException);
+                Activity.Current.AddExceptionEvents(auditWriteException);
             }
 
             throw;
@@ -92,15 +98,4 @@ internal sealed partial class AuditingBehavior<TRequest, TResponse>(
 
         return response;
     }
-
-    /// <summary>
-    /// <see cref="IAuditTrailWriter.RecordAsync"/> threw while recording the fault entry for a
-    /// command whose handler had already thrown (Error). The original handler exception is still
-    /// the one propagated to the caller — see this behavior's class remarks.
-    /// </summary>
-    [LoggerMessage(
-        EventId = ApplicationBehaviorsLoggingEventIds.LogAuditWriteFailedDuringException,
-        Level = LogLevel.Error,
-        Message = "Recording the audit entry for a faulted {RequestType} failed; the original exception still propagates")]
-    private static partial void LogAuditWriteFailedDuringException(ILogger logger, Exception exception, string requestType);
 }

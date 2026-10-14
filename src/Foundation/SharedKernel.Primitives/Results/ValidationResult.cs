@@ -133,7 +133,7 @@ public sealed record ValidationResult<T>
     /// <exception cref="InvalidOperationException">Thrown when validation failed. Check <see cref="IsValid"/> first.</exception>
     public T Value => IsValid
         ? _value!
-        : throw new InvalidOperationException("Cannot access Value on a failed ValidationResult. Check IsValid before accessing Value.");
+        : throw new InvalidOperationException("Value must not be read from a failed ValidationResult. Check IsValid first.");
 
     /// <summary>Creates a successful <see cref="ValidationResult{T}"/> carrying the specified <paramref name="value"/>.</summary>
     /// <param name="value">The validated value.</param>

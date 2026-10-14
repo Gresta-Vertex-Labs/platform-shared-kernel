@@ -168,13 +168,13 @@ public sealed class AsymmetricSignatureServiceTests(SigningKeyMaterial keys)
     }
 
     [Fact]
-    public async Task SignAsync_UnknownKey_ThrowsKeyNotFound()
+    public async Task SignAsync_UnknownKey_ThrowsInvalidOperation()
     {
         AsymmetricSignatureService service = CreateService(keys.CreateKey("k", SignatureAlgorithm.ES256));
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await service.SignAsync(Data, "missing"));
-        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await service.SignAsync(new MemoryStream(Data), "missing"));
-        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await service.GetAlgorithmAsync("missing"));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.SignAsync(Data, "missing"));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.SignAsync(new MemoryStream(Data), "missing"));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.GetAlgorithmAsync("missing"));
     }
 
     [Fact]

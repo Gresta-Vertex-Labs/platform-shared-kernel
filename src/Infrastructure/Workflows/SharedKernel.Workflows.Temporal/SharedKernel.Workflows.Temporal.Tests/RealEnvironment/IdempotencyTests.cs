@@ -56,7 +56,7 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
             TenantScope.For(TestTenants.Idem));
 
         second.IsFailure.Should().BeTrue();
-        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId).Code);
+        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted().Code);
 
         // No second execution: describing the id still reports the ORIGINAL run.
         string runIdAfterRejection = await DescribedRunIdAsync(dispatcher, first.Value.WorkflowId);
@@ -100,7 +100,7 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
         string firstRunId = await DescribedRunIdAsync(dispatcher, first.Value.WorkflowId);
 
         await first.Value.CancelAsync();
-        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: firstRunId, TenantScope.For(TestTenants.Idem));
+        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: firstRunId, TenantScope.For(TestTenants.Idem)).Value;
         await firstHandle.GetResultAsync();
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(
@@ -126,7 +126,7 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
         first.IsSuccess.Should().BeTrue();
 
         await first.Value.CancelAsync();
-        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Idem));
+        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Idem)).Value;
         await firstHandle.GetResultAsync();
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(
@@ -134,6 +134,6 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
             TenantScope.For(TestTenants.Idem));
 
         second.IsFailure.Should().BeTrue(because: "RejectDuplicate never reuses the id regardless of the previous execution's closed state");
-        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId).Code);
+        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted().Code);
     }
 }

@@ -28,7 +28,7 @@ Harnesses: `src/Infrastructure/Search/consumer-verify/{Meilisearch,ElasticSearch
 **Tier edges:**
 - `.Abstractions` takes **no** `PackageReference` and references only `SharedKernel.Primitives`, `.Execution`, `.Contracts`; no DI extension, `ActivitySource` or `[LoggerMessage]`.
 - Providers reference `.Abstractions`, `Primitives`, `Configuration`, their engine SDK (`MeiliSearch`, `Elastic.Clients.Elasticsearch`; versions in `Directory.Packages.props`) and `Microsoft.Extensions.*`. **No declared adapter edge**: never each other, no shared base or `.Core` — parallel types are duplicated on purpose.
-- Fixtures (`MeilisearchContainerFixture`, `ElasticsearchContainerFixture`) belong to `16.Testing`; `WithSearchTelemetry()` to `13.ServiceDefaults`; `samples/Shop/Catalog` is a report line unless the phase includes it.
+- Fixtures (`MeilisearchContainerFixture`, `ElasticsearchContainerFixture`) belong to `16.Testing`; the `SharedKernel.*` telemetry wildcard to `13.ServiceDefaults`; `samples/Shop/Catalog` is a report line unless the phase includes it.
 
 ---
 
@@ -37,7 +37,7 @@ Harnesses: `src/Infrastructure/Search/consumer-verify/{Meilisearch,ElasticSearch
 - **Filter AST.** A new `SearchFilter` node or `SearchValue` kind lands in both compilers and `InMemorySearchIndex<T>` in the same phase. No discard arm; `CS8509;CS8524` stay visible via `<WarningsNotAsErrors>` (never `NoWarn`/pragma).
 - **Escaping** differs per engine: Meilisearch filter strings escape quotes and backslashes; ElasticSearch goes through the Query DSL object model. Range inclusivity and empty `All`/`Any` semantics are decided by the conformance suite.
 - **Tenant predicate** is the outermost `AND` after translation; on ElasticSearch a non-scoring `filter` clause.
-- **Outage mapping is identical** across providers (`search.unreachable` 503, `search.timeout` 504, `search.unauthorized`) though Meilisearch's SDK throws and ElasticSearch's returns an invalid response. Caller cancellation propagates as `OperationCanceledException`.
+- **Outage mapping is identical** across providers (`search.unavailable` 503, `search.timeout` 504, `search.engine_unauthorized` 500) though Meilisearch's SDK throws and ElasticSearch's returns an invalid response. Caller cancellation propagates as `OperationCanceledException`.
 - **Lifetimes and keys:** clients, provisioners, descriptors singleton, keyed by `SearchWellKnown.*ProviderName` and unkeyed to the same instance; `ISearchIndex<T>` and per-document exclusives scoped, never keyed. Raw-`TOptions` consumers registered through a factory unwrapping `IOptions<TOptions>.Value`.
 - **Schema:** fields, synonyms and stop words feed `SearchIndexDefinition.Fingerprint`, which must be stable across declaration order; a live-index conflict returns `IndexDefinitionConflict`.
 - **ElasticSearch:** `.WithSourceSerializerContext(...)` is required for trimmed consumers (9221 warning otherwise); `VerifyElasticSearchEngineVersionAsync` is an explicit call, never a hidden startup hook.

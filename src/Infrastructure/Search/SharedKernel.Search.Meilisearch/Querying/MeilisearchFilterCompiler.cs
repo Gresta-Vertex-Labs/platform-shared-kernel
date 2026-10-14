@@ -92,7 +92,7 @@ internal static class MeilisearchFilterCompiler
         return clauses.Count switch
         {
             0 => throw new InvalidOperationException(
-                $"RangeFilter on field '{filter.Field}' has neither a From nor a To bound."),
+                $"A range filter on field '{filter.Field}' needs at least one bound, but it has neither a From nor a To."),
             1 => clauses[0],
             _ => $"({clauses[0]}) AND ({clauses[1]})",
         };

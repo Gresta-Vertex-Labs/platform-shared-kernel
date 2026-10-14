@@ -10,7 +10,10 @@ using Amazon.S3.Transfer;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
+using SharedKernel.Storage.S3.Diagnostics;
 using S3ByteRange = Amazon.S3.Model.ByteRange;
 
 namespace SharedKernel.Storage.S3.Internal;
@@ -41,14 +44,16 @@ internal sealed class S3FileStorage : IFileStorage
     private readonly S3StoreOptions _options;
     private readonly IClock _clock;
     private readonly ILogger _logger;
+    private readonly StorageTelemetry _telemetry;
     private readonly string _keyPrefix;
 
-    public S3FileStorage(string storeName, S3StoreOptions options, S3Connection connection, IClock clock, ILogger<S3FileStorage> logger)
+    public S3FileStorage(string storeName, S3StoreOptions options, S3Connection connection, IClock clock, StorageTelemetry telemetry, ILogger<S3FileStorage> logger)
     {
         StoreName = storeName;
         _options = options;
         _connection = connection;
         _clock = clock;
+        _telemetry = telemetry;
         _logger = logger;
         _keyPrefix = options.KeyPrefix ?? string.Empty;
     }
@@ -83,7 +88,7 @@ internal sealed class S3FileStorage : IFileStorage
                     "ChecksumSha256 on a stream that cannot report its length also needs ContentLength (for a request body, Request.ContentLength).")
                 : null)) is Error invalid)
         {
-            return Task.FromResult(Result<FileReference>.Failure(invalid));
+            return Rejected<FileReference>(OperationUpload, invalid);
         }
 
         long? knownLength = options.ContentLength ?? (content.CanSeek ? content.Length - content.Position : null);
@@ -101,7 +106,7 @@ internal sealed class S3FileStorage : IFileStorage
                     ? await PutAsync(key, content, options, knownLength, cancellationToken).ConfigureAwait(false)
                     : await TransferAsync(key, content, options, cancellationToken).ConfigureAwait(false);
 
-                StorageTelemetry.RecordBytes(StoreName, _connection.Name, StorageTelemetry.Upload, knownLength ?? 0);
+                _telemetry.RecordBytes(StoreName, _connection.Name, StorageTelemetry.UploadDirection, knownLength ?? 0);
                 return Result<FileReference>.Success(Reference(this, key, eTag, versionId));
             },
             ex => MapServiceError(ex, OperationUpload, key, options.Condition),
@@ -116,7 +121,7 @@ internal sealed class S3FileStorage : IFileStorage
         options ??= new FileDownloadOptions();
         if (CheckKey(key) is Error invalid)
         {
-            return Task.FromResult(Result<FileDownload>.Failure(invalid));
+            return Rejected<FileDownload>(OperationDownload, invalid);
         }
 
         var request = new GetObjectRequest
@@ -168,7 +173,7 @@ internal sealed class S3FileStorage : IFileStorage
                     Metadata = ToMetadata(response.Metadata),
                 };
 
-                StorageTelemetry.RecordBytes(StoreName, _connection.Name, StorageTelemetry.Download, response.ContentLength);
+                _telemetry.RecordBytes(StoreName, _connection.Name, StorageTelemetry.DownloadDirection, response.ContentLength);
                 return Result<FileDownload>.Success(
                     new FileDownload(response.ResponseStream, properties, response.ContentLength, wholeObjectAsRange ? null : returned));
             },
@@ -185,7 +190,7 @@ internal sealed class S3FileStorage : IFileStorage
     {
         if (CheckKey(key) is Error invalid)
         {
-            return Task.FromResult(Result<FileProperties>.Failure(invalid));
+            return Rejected<FileProperties>(OperationProperties, invalid);
         }
 
         return RunAsync(
@@ -199,7 +204,7 @@ internal sealed class S3FileStorage : IFileStorage
     {
         if (CheckKey(key) is Error invalid)
         {
-            return Task.FromResult(Result<bool>.Failure(invalid));
+            return Rejected<bool>(OperationExists, invalid);
         }
 
         return RunAsync(
@@ -306,7 +311,7 @@ internal sealed class S3FileStorage : IFileStorage
                         foreach (DeleteError error in response.DeleteErrors ?? [])
                         {
                             string errorKey = Relative(error.Key);
-                            if (string.Equals(error.Code, S3ErrorCodes.NoSuchKey, StringComparison.Ordinal))
+                            if (string.Equals(error.Code, S3ProviderCodes.NoSuchKey, StringComparison.Ordinal))
                             {
                                 deleted.Add(errorKey);
                             }
@@ -380,7 +385,7 @@ internal sealed class S3FileStorage : IFileStorage
         ArgumentNullException.ThrowIfNull(request);
         if (StorageValidation.ValidateList(request) is Error invalid)
         {
-            return Task.FromResult(Result<FileListPage>.Failure(invalid));
+            return Rejected<FileListPage>(OperationList, invalid);
         }
 
         return RunAsync(
@@ -419,7 +424,7 @@ internal sealed class S3FileStorage : IFileStorage
         ArgumentNullException.ThrowIfNull(options);
         if ((CheckKey(key) ?? StorageValidation.ValidatePresignedDownload(options, _options.MaxPresignExpiry)) is Error invalid)
         {
-            return Task.FromResult(Result<PresignedRequest>.Failure(invalid));
+            return Rejected<PresignedRequest>(OperationPresign, invalid);
         }
 
         DateTimeOffset expiresAt = _clock.UtcNow + options.Expiry;
@@ -450,7 +455,7 @@ internal sealed class S3FileStorage : IFileStorage
             ?? Require(options.ChecksumSha256 is null || Features.Sha256Checksums, "SHA-256 checksums")
             ?? RequireEncryption()) is Error invalid)
         {
-            return Task.FromResult(Result<PresignedRequest>.Failure(invalid));
+            return Rejected<PresignedRequest>(OperationPresign, invalid);
         }
 
         DateTimeOffset expiresAt = _clock.UtcNow + options.Expiry;
@@ -513,7 +518,7 @@ internal sealed class S3FileStorage : IFileStorage
             ?? Require(Features.PresignedPost, "presigned POST uploads")
             ?? RequireEncryption()) is Error invalid)
         {
-            return Task.FromResult(Result<PresignedPost>.Failure(invalid));
+            return Rejected<PresignedPost>(OperationPresign, invalid);
         }
 
         DateTimeOffset expiresAt = _clock.UtcNow + options.Expiry;
@@ -577,7 +582,7 @@ internal sealed class S3FileStorage : IFileStorage
             ?? Require(options.Tags is not { Count: > 0 } || Features.ObjectTags, "object tags")
             ?? RequireEncryption()) is Error invalid)
         {
-            return Task.FromResult(Result<MultipartUpload>.Failure(invalid));
+            return Rejected<MultipartUpload>(OperationMultipart, invalid);
         }
 
         var request = new InitiateMultipartUploadRequest
@@ -618,7 +623,7 @@ internal sealed class S3FileStorage : IFileStorage
             ?? StorageValidation.ValidatePartNumber(partNumber)
             ?? StorageValidation.ValidateExpiry(expiry, _options.MaxPresignExpiry)) is Error invalid)
         {
-            return Task.FromResult(Result<PresignedRequest>.Failure(invalid));
+            return Rejected<PresignedRequest>(OperationPresign, invalid);
         }
 
         DateTimeOffset expiresAt = _clock.UtcNow + expiry;
@@ -646,7 +651,7 @@ internal sealed class S3FileStorage : IFileStorage
         ArgumentNullException.ThrowIfNull(parts);
         if ((CheckKey(upload.Key) ?? RequireCondition(condition)) is Error invalid)
         {
-            return Task.FromResult(Result<FileReference>.Failure(invalid));
+            return Rejected<FileReference>(OperationMultipart, invalid);
         }
 
         var request = new CompleteMultipartUploadRequest
@@ -668,7 +673,7 @@ internal sealed class S3FileStorage : IFileStorage
                     .ConfigureAwait(false);
                 return Result<FileReference>.Success(Reference(this, upload.Key, response.ETag, response.VersionId));
             },
-            ex => ex.ErrorCode is S3ErrorCodes.InvalidPart or S3ErrorCodes.InvalidPartOrder or S3ErrorCodes.EntityTooSmall
+            ex => ex.ErrorCode is S3ProviderCodes.InvalidPart or S3ProviderCodes.InvalidPartOrder or S3ProviderCodes.EntityTooSmall
                 ? StorageErrors.InvalidRequest(
                     "The parts do not complete the upload: every part must be uploaded with the ETag given, and every part but the last must be at least 5 MiB.")
                 : MapServiceError(ex, OperationMultipart, upload.Key, condition),
@@ -723,19 +728,32 @@ internal sealed class S3FileStorage : IFileStorage
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            S3StorageLog.ProbeFailed(_logger, ex, StoreName, Bucket);
+            S3StorageLog.ProbeFailed(_logger, StoreName, Bucket, ex);
             if (ex is AmazonServiceException redirect && IsRedirect(redirect.StatusCode))
             {
-                S3StorageLog.WrongRegion(_logger, StoreName, Bucket, redirect.ErrorCode, redirect.RequestId);
+                S3StorageLog.WrongRegion(_logger, StoreName, Bucket, redirect.ErrorCode, redirect.RequestId, redirect);
             }
 
             error = ex is AmazonServiceException { StatusCode: HttpStatusCode.Forbidden }
                 ? StorageErrors.AccessDenied(StoreName)
                 : StorageErrors.Unavailable(StoreName, OperationProbe);
         }
+        catch (OperationCanceledException ex)
+        {
+            // The caller's own cancellation: a duration and no error status, then it propagates.
+            _telemetry.RecordDuration(OperationProbe, StoreName, _connection.Name, start, activity.RecordException(ex));
+            throw;
+        }
 
-        StorageTelemetry.Complete(activity, OperationProbe, StoreName, _connection.Name, start, error?.Code);
-        return error is null ? Result.Success() : Result.Failure(error);
+        if (error is null)
+        {
+            _telemetry.RecordDuration(OperationProbe, StoreName, _connection.Name, start, WellKnownOutcomes.Success);
+            return Result.Success();
+        }
+
+        string outcome = activity.RecordFailure(error);
+        _telemetry.RecordDuration(OperationProbe, StoreName, _connection.Name, start, outcome, error.Type.ToString(), error.Code);
+        return Result.Failure(error);
     }
 
     private async Task<(string? ETag, string? VersionId)> TransferAsync(
@@ -862,7 +880,7 @@ internal sealed class S3FileStorage : IFileStorage
     {
         if ((target.CheckKey(destinationKey) ?? target.RequireEncryption()) is Error invalid)
         {
-            return Task.FromResult(Result<FileReference>.Failure(invalid));
+            return Rejected<FileReference>(OperationCopy, invalid);
         }
 
         bool replace = options.ContentType is not null || options.Metadata is not null;
@@ -989,7 +1007,7 @@ internal sealed class S3FileStorage : IFileStorage
     /// Runs one provider call: records a span and a duration, and turns provider exceptions into storage
     /// errors. Cancellation requested by the caller propagates.
     /// </summary>
-    /// A mapping that returns <see langword="null"/> means the rejection is an expected outcome: <c>onNotMapped</c> supplies the result.
+    /// <remarks>A mapping that returns <see langword="null"/> means the rejection is an expected outcome: <c>onNotMapped</c> supplies the result.</remarks>
     private async Task<Result<T>> RunAsync<T>(
         string operation,
         Func<Task<Result<T>>> action,
@@ -1011,17 +1029,53 @@ internal sealed class S3FileStorage : IFileStorage
         }
         catch (Exception ex) when (IsTransportFailure(ex) && !cancellationToken.IsCancellationRequested)
         {
-            S3StorageLog.Unavailable(_logger, ex, StoreName, Bucket, operation, statusCode: null, errorCode: null, requestId: null);
+            S3StorageLog.Unavailable(_logger, StoreName, Bucket, operation, statusCode: null, errorCode: null, requestId: null, ex);
             result = StorageErrors.Unavailable(StoreName, operation);
         }
+        catch (Exception ex)
+        {
+            // The caller's cancellation, or a defect: still a span status, an exception event and a duration,
+            // then the original exception propagates untouched.
+            string failedOutcome = activity.RecordException(ex);
+            _telemetry.RecordDuration(
+                operation,
+                StoreName,
+                _connection.Name,
+                start,
+                failedOutcome,
+                failedOutcome == WellKnownOutcomes.Exception ? ex.GetType().FullName : null);
+            throw;
+        }
 
-        StorageTelemetry.Complete(activity, operation, StoreName, _connection.Name, start, result.IsFailure ? result.Error.Code : null);
+        string outcome = activity.RecordResult(result);
+        if (result.IsFailure)
+        {
+            _telemetry.RecordDuration(operation, StoreName, _connection.Name, start, outcome, result.Error.Type.ToString(), result.Error.Code);
+        }
+        else
+        {
+            _telemetry.RecordDuration(operation, StoreName, _connection.Name, start, outcome);
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// Returns a request refused before anything was sent (validation, a feature the endpoint lacks) as a failed result,
+    /// recorded like any other failed operation so the refusal shows in traces and metrics.
+    /// </summary>
+    private Task<Result<T>> Rejected<T>(string operation, Error error)
+    {
+        long start = Stopwatch.GetTimestamp();
+        using Activity? activity = StorageTelemetry.StartActivity(operation, StoreName, _connection.Name);
+        string outcome = activity.RecordFailure(error);
+        _telemetry.RecordDuration(operation, StoreName, _connection.Name, start, outcome, error.Type.ToString(), error.Code);
+        return Task.FromResult(Result<T>.Failure(error));
     }
 
     /// <summary>A 404 for the object (or upload) itself — never for a missing bucket, which is a configuration error.</summary>
     private static bool IsMissingObject(AmazonServiceException ex) =>
-        ex.StatusCode == HttpStatusCode.NotFound && ex.ErrorCode != S3ErrorCodes.NoSuchBucket;
+        ex.StatusCode == HttpStatusCode.NotFound && ex.ErrorCode != S3ProviderCodes.NoSuchBucket;
 
     private static bool IsRedirect(HttpStatusCode status) =>
         status is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect or HttpStatusCode.TemporaryRedirect;
@@ -1036,16 +1090,16 @@ internal sealed class S3FileStorage : IFileStorage
 
         Error? expected = status switch
         {
-            HttpStatusCode.NotFound when code != S3ErrorCodes.NoSuchBucket => StorageErrors.NotFound(StoreName, key),
+            HttpStatusCode.NotFound when code != S3ProviderCodes.NoSuchBucket => StorageErrors.NotFound(StoreName, key),
             HttpStatusCode.PreconditionFailed => condition?.MustNotExist == true
                 ? StorageErrors.AlreadyExists(StoreName, key)
                 : StorageErrors.PreconditionFailed(StoreName, key),
-            HttpStatusCode.Conflict when code == S3ErrorCodes.ConditionalRequestConflict => condition?.MustNotExist == true
+            HttpStatusCode.Conflict when code == S3ProviderCodes.ConditionalRequestConflict => condition?.MustNotExist == true
                 ? StorageErrors.AlreadyExists(StoreName, key)
                 : StorageErrors.PreconditionFailed(StoreName, key),
             HttpStatusCode.RequestedRangeNotSatisfiable => StorageErrors.InvalidRange(StoreName, key),
-            HttpStatusCode.BadRequest when code is S3ErrorCodes.BadDigest or S3ErrorCodes.InvalidDigest
-                or S3ErrorCodes.ChecksumMismatch or S3ErrorCodes.Sha256Mismatch => StorageErrors.ChecksumMismatch(StoreName, key),
+            HttpStatusCode.BadRequest when code is S3ProviderCodes.BadDigest or S3ProviderCodes.InvalidDigest
+                or S3ProviderCodes.ChecksumMismatch or S3ProviderCodes.Sha256Mismatch => StorageErrors.ChecksumMismatch(StoreName, key),
             _ => null,
         };
 
@@ -1055,9 +1109,9 @@ internal sealed class S3FileStorage : IFileStorage
             return expected;
         }
 
-        if (IsRedirect(status) || code is S3ErrorCodes.PermanentRedirect or S3ErrorCodes.AuthorizationHeaderMalformed)
+        if (IsRedirect(status) || code is S3ProviderCodes.PermanentRedirect or S3ProviderCodes.AuthorizationHeaderMalformed)
         {
-            S3StorageLog.WrongRegion(_logger, StoreName, Bucket, code, ex.RequestId);
+            S3StorageLog.WrongRegion(_logger, StoreName, Bucket, code, ex.RequestId, ex);
             return StorageErrors.ProviderError(StoreName, operation);
         }
 
@@ -1069,24 +1123,24 @@ internal sealed class S3FileStorage : IFileStorage
 
         if (status == HttpStatusCode.NotImplemented)
         {
-            S3StorageLog.ProviderError(_logger, ex, StoreName, Bucket, operation, status, code, ex.RequestId);
+            S3StorageLog.ProviderError(_logger, StoreName, Bucket, operation, status, code, ex.RequestId, ex);
             return StorageErrors.NotSupported(StoreName, $"this {operation} request");
         }
 
-        if ((int)status >= 500 || status == HttpStatusCode.TooManyRequests || code is S3ErrorCodes.SlowDown or S3ErrorCodes.RequestTimeout)
+        if ((int)status >= 500 || status == HttpStatusCode.TooManyRequests || code is S3ProviderCodes.SlowDown or S3ProviderCodes.RequestTimeout)
         {
-            S3StorageLog.Unavailable(_logger, ex, StoreName, Bucket, operation, status, code, ex.RequestId);
+            S3StorageLog.Unavailable(_logger, StoreName, Bucket, operation, status, code, ex.RequestId, ex);
             return StorageErrors.Unavailable(StoreName, operation);
         }
 
-        S3StorageLog.ProviderError(_logger, ex, StoreName, Bucket, operation, status, code, ex.RequestId);
+        S3StorageLog.ProviderError(_logger, StoreName, Bucket, operation, status, code, ex.RequestId, ex);
         return StorageErrors.ProviderError(StoreName, operation);
     }
 
     private Error MapDeleteError(DeleteError error, string key) => error.Code switch
     {
-        S3ErrorCodes.AccessDenied => StorageErrors.AccessDenied(StoreName, key),
-        S3ErrorCodes.SlowDown or "InternalError" or "ServiceUnavailable" => StorageErrors.Unavailable(StoreName, OperationDeleteMany),
+        S3ProviderCodes.AccessDenied => StorageErrors.AccessDenied(StoreName, key),
+        S3ProviderCodes.SlowDown or "InternalError" or "ServiceUnavailable" => StorageErrors.Unavailable(StoreName, OperationDeleteMany),
         _ => StorageErrors.ProviderError(StoreName, OperationDeleteMany),
     };
 

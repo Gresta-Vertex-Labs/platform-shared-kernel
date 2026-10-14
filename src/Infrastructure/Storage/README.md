@@ -44,8 +44,8 @@ tenant isolation by construction, writes that never overwrite by accident and pr
 | [SharedKernel.Storage.Testing](SharedKernel.Storage.Testing/README.md) | Testing | test projects | `AddInMemoryStore(name)` / `AddInMemoryTenantStore(name)` — the production validation and tenant rules, no bucket |
 
 Start with Abstractions in the Application project and S3 in Infrastructure; add Obs when a store lives on Huawei
-Cloud. `SharedKernel.ServiceDefaults` maps the probes (`AddSharedKernelReadiness()`) and exports telemetry
-(`WithStorageTelemetry()`).
+Cloud. `SharedKernel.ServiceDefaults` maps the probes (`AddSharedKernelReadiness()`) and `AddServiceDefaults()` exports
+the `SharedKernel.Storage` traces and metrics.
 
 ## How it fits together
 
@@ -99,7 +99,6 @@ builder.Services.AddSharedKernelStorage()
     .AddTenantStore("documents");          // SharedKernel:Storage:Stores:documents
 
 builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // storage-invoices, storage-documents
-builder.WithStorageTelemetry();
 
 public sealed class ContractFiles(
     [FromKeyedServices("documents")] ITenantFileStorage documents, IRequestContext request)

@@ -51,7 +51,7 @@ contract from your own code.
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Abstractions — reference it from your **Application** project |
-| Depends on | `SharedKernel.Execution`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| Depends on | `SharedKernel.Execution`, `SharedKernel.Core`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
 | Namespaces | `SharedKernel.Idempotency.Abstractions` |
 | Implementations | [`SharedKernel.Idempotency.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.Redis/README.md), [`SharedKernel.Idempotency.EfCore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.EfCore/README.md) |
 
@@ -128,8 +128,10 @@ stateDiagram-v2
   callers never pass a tenant. The inbound adapters set the context: `UseSharedKernelRequestContext()` for HTTP,
   `WithInboundRequestContext()` for messages, the job runner for scheduled work.
 - **Responses are opaque.** The stored response is the caller's string, exactly as given.
-- **Fail closed.** An unreachable store throws; each provider offers one explicit opt-out,
-  `AllowExecutionOnStoreUnavailable`.
+- **Fail closed.** An unreachable or unresponsive store makes every member throw `IdempotencyStoreUnavailableException`
+  (`Error.Unavailable`, `idempotency.store_unavailable`, the provider's own exception as `InnerException`); each
+  provider offers one explicit opt-out, `AllowExecutionOnStoreUnavailable`. Cancellation and programming errors are
+  never reported as an outage.
 
 ### How the two callers use it
 
@@ -192,7 +194,12 @@ services.AddIdempotencyStore<InMemoryStore>(IdempotencyPurpose.Message, ServiceL
 - `TryBeginAsync` must be a single conditional write, never a read followed by a write.
 - Never throw from `CompleteAsync`/`ReleaseAsync` for a lost or foreign token — return `false`.
 - Store the response string exactly as given; never parse it.
-- Throw on an unreachable backend unless the store offers an explicit, documented fail-open switch.
+- Throw `IdempotencyStoreUnavailableException` (with the backend's exception as the inner exception) on an unreachable
+  backend, unless the store offers an explicit, documented fail-open switch. Let cancellation, an undefined purpose
+  and every other defect propagate unchanged.
+- Call `IdempotencyPurposes.ThrowIfUndefined(purpose)` first in every member.
+- Emit telemetry under the shared names in `IdempotencyTelemetry` and `IdempotencyTagKeys`, with your own
+  `idempotency.provider` value; never put a key, fingerprint, token, tenant or response in a tag.
 
 ## Reference
 
@@ -216,6 +223,9 @@ services.AddIdempotencyStore<InMemoryStore>(IdempotencyPurpose.Message, ServiceL
 | `IdempotencyReservationStatus` | `Started`, `InProgress`, `Completed`, `FingerprintMismatch` |
 | `IdempotencyPurposeSelection` | `ForRequests()`, `ForMessages()`, `For(purpose)` — passed to every registration method |
 | `IdempotencyTenantScope` | `For(TenantId?)`, `Current(IRequestContextAccessor)`, `NoTenant` (`"no-tenant"`), `MaxLength` (36) |
+| `IdempotencyStoreUnavailableException` | A `SharedKernelException` thrown by a fail-closed store: `Error.Unavailable` with `idempotency.store_unavailable` and the fixed message "The idempotency store is unavailable."; constructors `(Error)`, `(Error, Exception)` and `(Exception innerException)` |
+| `IdempotencyPurposes` | `ThrowIfUndefined(purpose)` — the one guard every store applies first; throws `ArgumentOutOfRangeException` |
+| `IdempotencyTelemetry`, `IdempotencyTagKeys` | The constants of the shared telemetry (below); no instances |
 
 ### Registration
 
@@ -232,19 +242,45 @@ Resolve a store with `[FromKeyedServices(IdempotencyPurpose.Request)] IIdempoten
 ### Error codes
 
 Defined by the callers in `SharedKernel.Primitives`' `ErrorCodes.Idempotency`: `idempotency.key_required`,
-`idempotency.key_invalid`, `idempotency.in_progress`, `idempotency.key_reused`. This package raises none itself.
+`idempotency.key_invalid`, `idempotency.in_progress`, `idempotency.key_reused`, and `idempotency.store_unavailable`
+(`ErrorType.Unavailable`), which `IdempotencyStoreUnavailableException` carries. The pipeline passes that exception's
+`Error` through unchanged, so a client sees the same code whichever layer refused the call.
+
+### Telemetry
+
+Every provider emits under one `ActivitySource` and one `Meter` named `SharedKernel.Idempotency`
+(`IdempotencyTelemetry.SourceName`); a host subscribes through the `SharedKernel.*` wildcard. This package holds the
+names only; the providers own the instances and tell themselves apart with the `idempotency.provider` tag.
+
+| Constant | Value |
+| --- | --- |
+| `BeginSpanName`, `CompleteSpanName`, `ReleaseSpanName` | `idempotency begin`, `idempotency complete`, `idempotency release` |
+| `OperationDurationInstrument` | `sharedkernel.idempotency.operation.duration` (histogram, unit `s`) |
+| `FailOpenInstrument` | `sharedkernel.idempotency.fail_open` (counter, unit `{operation}`) |
+| `IdempotencyTagKeys` | `idempotency.purpose`, `idempotency.operation`, `idempotency.result`, `idempotency.provider`, `idempotency.fail_open` |
+| `ResultStarted`, `ResultInProgress`, `ResultCompleted`, `ResultFingerprintMismatch` | the `idempotency.result` values of a begin |
+| `ResultApplied`, `ResultLost`, `ResultFailOpen` | the values of a complete or release, and of an outage let through |
 
 ### Logging
 
 This package does not log.
+
+### Upgrading
+
+- A fail-closed outage throws `IdempotencyStoreUnavailableException` instead of the provider's raw exception.
+- The package now also references `SharedKernel.Core` (the base of the exception), so it appears in the package's
+  dependencies.
+- The exception text of the registration guards changed: an undefined purpose reads "'7' is not a defined
+  IdempotencyPurpose value." and a duplicate reads "An IIdempotencyStore is already registered for IdempotencyPurpose
+  'Request'. Register one store per purpose."
 
 ## Testing
 
 Reference [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md)
 from your test project. `services.AddFakeIdempotencyStore()` registers one singleton `FakeIdempotencyStore` for both
 purposes (or the ones you pass), replacing any real store. It implements the same protocol — the four statuses and
-the stale-token rule — and adds `Expire(purpose, key)` to model a lease running out, `Calls`, `LastTtl`,
-`LastRetention` and `Reset()`. Atomicity itself is only proved against the real providers.
+the stale-token rule — and adds `Expire(purpose, key)` to model a lease running out, `SimulateStoreUnavailable()` /
+`RestoreStore()` to model a fail-closed outage, `Calls`, `LastTtl`, `LastRetention` and `Reset()`. Atomicity itself is only proved against the real providers.
 
 ## Pitfalls
 

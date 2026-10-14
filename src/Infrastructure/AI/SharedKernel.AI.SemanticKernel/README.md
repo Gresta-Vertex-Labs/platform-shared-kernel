@@ -122,9 +122,12 @@ flowchart LR
   `IntelligenceStreamException` on a mid-stream failure.
 - **Tools.** Each `ToolDefinition` is offered to the model with `ToolCallBehavior.EnableFunctions(…, autoInvoke:
   false)`. A `ToolCallsRequested` result carries `ToolCalls`; you run them and send a follow-up request.
-- **Retries.** None by default. With `.WithBoundedRetry(maxAttempts, baseDelay)`, `CompleteAsync` retries a
-  `ClientResultException` with status 429 or ≥ 500, waiting `baseDelay × 2^(attempt − 1)` between attempts, up to
-  `maxAttempts` attempts in total. A 4xx other than 429 is never retried, and streaming is never retried.
+- **Retries.** None by default: `CompleteAsync` and `EmbedManyAsync` reach the endpoint exactly once. The OpenAI SDK's
+  own retry policy (which retries 408, 429, 5xx, transport faults and timeouts up to three times underneath every call)
+  is switched off at registration, so a throttled request is never billed or dispatched behind your back. With
+  `.WithBoundedRetry(maxAttempts, baseDelay)`, `CompleteAsync` retries a real HTTP 429 or 5xx status (never keyed on the
+  mapped error type), waiting `baseDelay × 2^(attempt − 1)` between attempts, up to `maxAttempts` attempts in total. A 408,
+  a 4xx other than 429, a transport fault and a timeout are never retried, and streaming is never retried.
 - **Context window.** `ICompletionProviderDescriptor.ValidateContextWindow(estimatedTokens)` compares your estimate
   with `ContextWindowTokens`. `CompleteAsync` does not estimate on its own.
 - **Transport.** One `OpenAIClient` singleton uses the named `HttpClient` `SharedKernel.AI.SemanticKernel` (timeout
@@ -205,14 +208,22 @@ Section `Intelligence:SemanticKernel` (`SemanticKernelOptions.SectionName`), val
 
 | Failure | Code |
 | --- | --- |
-| HTTP 401, 403 | `intelligence.unauthorized` |
-| HTTP 404 | `intelligence.model_not_found` |
-| HTTP 429 | `intelligence.rate_limited` (no retry-after value) |
-| HTTP ≥ 500 | `intelligence.engine_fault` |
-| Any other status or exception | `intelligence.completion_failed` |
+| HTTP 401, 403 | `intelligence.engine_unauthorized` (Unexpected: the provider rejected the kernel's own key) |
+| HTTP 404 | `intelligence.model_not_found` (NotFound) |
+| HTTP 408, a client timeout while your token is live | `intelligence.timeout` (Timeout, HTTP 504) |
+| HTTP 429 | `intelligence.rate_limited` (Unavailable, HTTP 503; no retry-after value) |
+| HTTP 502, 503, 504, a transport fault (no response) | `intelligence.unavailable` (Unavailable, HTTP 503) |
+| Any other HTTP ≥ 500 | `intelligence.engine_fault` (names only the HTTP status) |
+| Any other HTTP status, for example 400 | `intelligence.completion_failed` (names only the HTTP status) |
+| An undecodable response | `intelligence.engine_fault` |
+| Any other exception (a defect, a Semantic Kernel `KernelException` raised before any request) | not caught: it propagates with its stack |
 | Empty `EmbedManyAsync` input | `intelligence.invalid_query` |
 | More than `MaxEmbeddingBatchSize` texts | `intelligence.batch_size_exceeded` |
 | Estimate above `ContextWindowTokens` | `intelligence.context_window_exceeded` |
+
+**What an error says.** `Error.Message` is kernel-authored text plus the provider, operation and model names and an HTTP status number. It never holds the connector's message (which can echo the endpoint, the deployment name or request fragments), a response body or the API key: that detail reaches the log through the exception parameter.
+
+**Classify or rethrow.** Chat goes through Semantic Kernel's connector, which raises `HttpOperationException` (with the SDK's `ClientResultException` inside); embeddings use the SDK client directly and raise `ClientResultException`. Both are classified by their HTTP status. A cancelled caller token is always an `OperationCanceledException`; a timeout with your token live is `intelligence.timeout`. `CompleteStreamingAsync` throws `IntelligenceStreamException` (a `SharedKernelException`) for a recognised fault and lets anything else through.
 
 ### Logging
 
@@ -223,13 +234,31 @@ Section `Intelligence:SemanticKernel` (`SemanticKernelOptions.SectionName`), val
 | 10302 | Warning | Embedding batch above the ceiling |
 | 10303 | Debug | Completion finished, with finish reason and billed tokens |
 | 10304 | Debug | Streaming completion started |
-| 10305 | Warning | Request rejected before any I/O (declared; not emitted by the current code) |
+| 10305 | Warning | Request rejected before any I/O (error type and code only) |
 | 10306 | Warning | Estimated prompt above the context window (declared; not emitted by the current code) |
-| 10307 | Error | Operation faulted |
+| 10307 | Warning | Operation faulted: a classified failure, logged once with its error code and the exception |
 | 10308 | Warning | Raw client access enabled |
-| 10309 | Warning | Retrying a completion (attempt, maximum, error code) |
+| 10309 | Warning | Retrying a completion (attempt, maximum, error code; carries the transient exception) |
 
-Prompts, completions and the API key are never logged.
+Prompts, completions, message content, tool arguments and the API key are never logged. A propagating exception is not logged here; the caller's handler logs it once.
+
+### Telemetry
+
+One `ActivitySource` and one `Meter`, both named `SharedKernel.AI` (the host's `SharedKernel.*` wildcard subscribes to them).
+
+| What | Name | Unit | Tags |
+| --- | --- | --- | --- |
+| Span, kind Client | `ai embed`, `ai embed_many`, `ai complete`, `ai complete_stream` | | `ai.provider` = `semantickernel`, `ai.operation`, `ai.model` |
+| Duration histogram | `sharedkernel.ai.operation.duration` | `s` | the span tags plus `outcome` (`success`, `failure`, `exception`, `canceled`) and `error.type` on a non-success |
+| Token counter | `sharedkernel.ai.tokens` | `{token}` | `ai.provider`, `ai.operation`, `ai.model`, `ai.token_type` (`input`, `output`) |
+
+Tokens are counted once per completed call from the usage the provider returned (zero is not recorded, a failed call counts
+nothing, a stream counts the usage its final chunk carried, a retry counts only the successful attempt). `ai.model` is the
+configured model id, or `_OTHER` when `CompletionRequest.ModelId` asks for another one, so a caller cannot mint metric
+dimensions. Prompts, completions, message content, tool arguments and the API key are never tags. A recognised failure
+sets the span status to `Error` with `error.code` and `error.type`; a defect is recorded as an exception event; a
+cancellation leaves the status unset. A stream span ends when the enumerator completes, faults or is disposed and never
+replaces the consumer's `Activity.Current`.
 
 ### Health
 

@@ -73,11 +73,8 @@ internal sealed class FieldEncryptionRuntime(
     {
         if (!EncryptedPayload.TryParse(stored, out var payload))
         {
-            EncryptionMeter.RecordDecryptFailure("malformed_payload");
-            throw new CryptographicException(
-                $"The stored value of encrypted property '{member.DisplayName}' is not an encrypted payload: it was " +
-                "written unencrypted, truncated or altered. To encrypt existing plaintext, run the maintenance job with " +
-                "'EncryptionMaintenanceMode.EncryptPlaintext'.");
+            EncryptionInstruments.RecordDecryptFailure(EncryptionTagValues.MalformedPayload);
+            throw EncryptionErrors.MalformedPayload(member.DisplayName);
         }
 
         var side = SideConnection(context);
@@ -87,7 +84,7 @@ internal sealed class FieldEncryptionRuntime(
         if (tenantId is { } rowTenant && UsesTenantKey(member) && !TenantKeyIds.TryParse(payload.KeyId, out _)
             && tenantKeys.GetBlocking(rowTenant, side, create: false) is { IsShredded: true })
         {
-            EncryptionMeter.RecordDecryptFailure("tenant_key_shredded");
+            EncryptionInstruments.RecordDecryptFailure(EncryptionTagValues.TenantKeyShredded);
             throw new TenantKeyShreddedException();
         }
 
@@ -105,16 +102,14 @@ internal sealed class FieldEncryptionRuntime(
             case DecryptOutcome.Success:
                 return plaintext!;
             case DecryptOutcome.UnknownKey:
-                EncryptionMeter.RecordDecryptFailure("unknown_key");
+                EncryptionInstruments.RecordDecryptFailure(EncryptionTagValues.UnknownKey);
                 throw new EncryptionKeyNotFoundException(payload.KeyId);
             case DecryptOutcome.TenantKeyShredded:
-                EncryptionMeter.RecordDecryptFailure("tenant_key_shredded");
+                EncryptionInstruments.RecordDecryptFailure(EncryptionTagValues.TenantKeyShredded);
                 throw new TenantKeyShreddedException();
             default:
-                EncryptionMeter.RecordDecryptFailure("decryption_failed");
-                throw new CryptographicException(
-                    $"Decryption failed for encrypted property '{member.DisplayName}' (key '{payload.KeyId}'): the " +
-                    "value was altered, or copied from another row, column or tenant.");
+                EncryptionInstruments.RecordDecryptFailure(EncryptionTagValues.DecryptionFailed);
+                throw EncryptionErrors.DecryptionFailed(member.DisplayName);
         }
     }
 

@@ -179,12 +179,18 @@ The `tenant_directory` table (`tenant_id`, `host`, `resolution_key`, `display_na
 | `TenantDescriptor` | `TenantId`, `DisplayName`, `Status` (`Active`/`Suspended`/`Offboarded`), `IsolationMode` (`Shared`/`Dedicated`), `DefaultCulture`, `Settings` |
 | `DatabaseTenantCatalog`, `CachedTenantCatalog` (`DefaultTtl` = 30 s, `InvalidateTenantAsync`), `CatalogTenantStatusValidator` | Catalog implementations |
 
+### Server span
+
+When a tenant resolves (and is active), `TenantResolutionMiddleware` tags the ASP.NET Core server span with `tenant.id`, next to the `TenantId` baggage used for log enrichment. When nothing resolves it writes nothing: the span keeps the credential-asserted tenant that `UseSharedKernelRequestContext()` tagged, so for an inactive tenant the span shows the asserted tenant while the request itself runs with no tenant.
+
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13100 | Debug | Tenant resolved — tenant id and strategy name |
+| 13100 | Debug | Resolved the tenant with the strategy `{StrategyName}` (no tenant id in the message; the exported record carries it as the ambient `TenantId` attribute) |
 | 13101 | Trace | No tenant resolved, or the resolved tenant is inactive |
+
+The package owns the sub-block 13100-13199 of the ServiceDefaults EventId block (13000-13999); its ids are unchanged.
 
 ## Testing
 

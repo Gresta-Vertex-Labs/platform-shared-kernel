@@ -3,14 +3,14 @@ using OpenAI.Embeddings;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Errors;
-using SharedKernel.AI.SemanticKernel.Errors;
-using SharedKernel.AI.SemanticKernel.Logging;
+using SharedKernel.AI.SemanticKernel.Diagnostics;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.AI.SemanticKernel.Embeddings;
 
 /// <summary>The Semantic Kernel implementation of <see cref="IEmbeddingGenerator"/>.</summary>
 /// <remarks>
+/// <para>
 /// <b>Built directly on the OpenAI SDK's own <see cref="EmbeddingClient"/>, not
 /// <c>Microsoft.SemanticKernel.Embeddings.ITextEmbeddingGenerationService</c>:</b> verified directly
 /// against the compiled assemblies — SK's neutral embedding service returns a bare
@@ -22,6 +22,13 @@ namespace SharedKernel.AI.SemanticKernel.Embeddings;
 /// honest rather than fabricate a usage value. The chat/completion half
 /// (<see cref="Orchestration.SemanticKernelOrchestrator"/>) uses SK's own
 /// <c>IChatCompletionService</c> directly, since that connector's metadata dictionary does carry usage.
+/// </para>
+/// <para>
+/// <b>One dispatch.</b> Each call reaches the endpoint exactly once: the SDK's own retry policy is disabled in the
+/// registration, and this type never retries. Each call is one Client span, <c>ai embed</c> or <c>ai embed_many</c>
+/// (<see cref="EmbedAsync"/> shares one core with <see cref="EmbedManyAsync"/>, so it yields one span, not two), and
+/// the returned token usage is counted once.
+/// </para>
 /// </remarks>
 internal sealed class SemanticKernelEmbeddingGenerator : IEmbeddingGenerator
 {
@@ -29,6 +36,7 @@ internal sealed class SemanticKernelEmbeddingGenerator : IEmbeddingGenerator
 
     private readonly EmbeddingClient _client;
     private readonly int _maxBatchSize;
+    private readonly SemanticKernelTelemetry _telemetry;
     private readonly ILogger<SemanticKernelEmbeddingGenerator> _logger;
 
     public SemanticKernelEmbeddingGenerator(
@@ -36,18 +44,21 @@ internal sealed class SemanticKernelEmbeddingGenerator : IEmbeddingGenerator
         string modelId,
         int dimension,
         int maxBatchSize,
+        SemanticKernelTelemetry telemetry,
         ILogger<SemanticKernelEmbeddingGenerator> logger)
     {
         // client is deliberately NOT null-checked here: EmbeddingClient ships no interface, so the
         // "construct with a null! client" no-I/O proof technique (09.Search's MeilisearchIndex
         // precedent) is this package's only way to prove a rejection path never reaches the client.
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
+        ArgumentNullException.ThrowIfNull(telemetry);
         ArgumentNullException.ThrowIfNull(logger);
 
         _client = client;
         ModelId = modelId;
         Dimension = dimension;
         _maxBatchSize = maxBatchSize;
+        _telemetry = telemetry;
         _logger = logger;
     }
 
@@ -59,7 +70,7 @@ internal sealed class SemanticKernelEmbeddingGenerator : IEmbeddingGenerator
     {
         ArgumentNullException.ThrowIfNull(text);
 
-        var batchResult = await EmbedManyAsync([text], cancellationToken).ConfigureAwait(false);
+        var batchResult = await EmbedCoreAsync(IntelligenceOperations.Embed, [text], cancellationToken).ConfigureAwait(false);
         if (batchResult.IsFailure)
         {
             return Result<EmbeddingResult>.Failure(batchResult.Error);
@@ -75,55 +86,68 @@ internal sealed class SemanticKernelEmbeddingGenerator : IEmbeddingGenerator
         });
     }
 
-    public async Task<Result<EmbeddingBatchResult>> EmbedManyAsync(
+    public Task<Result<EmbeddingBatchResult>> EmbedManyAsync(
         IReadOnlyList<string> texts,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(texts);
 
-        if (texts.Count == 0)
-        {
-            return Result<EmbeddingBatchResult>.Failure(IntelligenceErrors.InvalidQuery("At least one text must be supplied."));
-        }
+        return EmbedCoreAsync(IntelligenceOperations.EmbedMany, texts, cancellationToken);
+    }
 
-        if (texts.Count > _maxBatchSize)
-        {
-            _logger.SemanticKernelBatchSizeExceeded(texts.Count, _maxBatchSize);
-            return Result<EmbeddingBatchResult>.Failure(IntelligenceErrors.BatchSizeExceeded(texts.Count, _maxBatchSize, ProviderName));
-        }
-
-        try
-        {
-            var options = new EmbeddingGenerationOptions { Dimensions = Dimension };
-            var response = await _client.GenerateEmbeddingsAsync(texts, options, cancellationToken).ConfigureAwait(false);
-            var collection = response.Value;
-
-            var vectors = collection
-                .OrderBy(embedding => embedding.Index)
-                .Select(embedding => embedding.ToFloats())
-                .ToList();
-
-            var tokenUsage = new TokenUsage
+    private async Task<Result<EmbeddingBatchResult>> EmbedCoreAsync(
+        string operation,
+        IReadOnlyList<string> texts,
+        CancellationToken cancellationToken)
+    {
+        var result = await SemanticKernelOperationRunner.RunAsync(
+            _telemetry, _logger, operation, ModelId, ModelId, cancellationToken, async () =>
             {
-                PromptTokens = collection.Usage.InputTokenCount,
-                CompletionTokens = 0,
-                TotalTokens = collection.Usage.TotalTokenCount,
-            };
+                if (texts.Count == 0)
+                {
+                    var empty = IntelligenceErrors.InvalidQuery("At least one text must be supplied.");
+                    SemanticKernelLog.SemanticKernelRequestRejected(_logger, ModelId, empty.Type.ToString(), empty.Code);
+                    return Result<EmbeddingBatchResult>.Failure(empty);
+                }
 
-            _logger.SemanticKernelEmbeddingCompleted(texts.Count, ModelId, tokenUsage.TotalTokens);
+                if (texts.Count > _maxBatchSize)
+                {
+                    SemanticKernelLog.SemanticKernelBatchSizeExceeded(_logger, texts.Count, _maxBatchSize);
+                    return Result<EmbeddingBatchResult>.Failure(IntelligenceErrors.BatchSizeExceeded(texts.Count, _maxBatchSize, ProviderName));
+                }
 
-            return Result<EmbeddingBatchResult>.Success(new EmbeddingBatchResult
-            {
-                Embeddings = vectors,
-                ModelId = ModelId,
-                Dimension = Dimension,
-                TokenUsage = tokenUsage,
-            });
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+                var options = new EmbeddingGenerationOptions { Dimensions = Dimension };
+                var response = await _client.GenerateEmbeddingsAsync(texts, options, cancellationToken).ConfigureAwait(false);
+                var collection = response.Value;
+
+                var vectors = collection
+                    .OrderBy(embedding => embedding.Index)
+                    .Select(embedding => embedding.ToFloats())
+                    .ToList();
+
+                var tokenUsage = new TokenUsage
+                {
+                    PromptTokens = collection.Usage.InputTokenCount,
+                    CompletionTokens = 0,
+                    TotalTokens = collection.Usage.TotalTokenCount,
+                };
+
+                SemanticKernelLog.SemanticKernelEmbeddingCompleted(_logger, texts.Count, ModelId, tokenUsage.TotalTokens);
+
+                return Result<EmbeddingBatchResult>.Success(new EmbeddingBatchResult
+                {
+                    Embeddings = vectors,
+                    ModelId = ModelId,
+                    Dimension = Dimension,
+                    TokenUsage = tokenUsage,
+                });
+            }).ConfigureAwait(false);
+
+        if (result.IsSuccess)
         {
-            _logger.SemanticKernelEngineFault(nameof(EmbedManyAsync), ModelId);
-            return Result<EmbeddingBatchResult>.Failure(SemanticKernelErrors.FromException(ex, ProviderName, nameof(EmbedManyAsync), ModelId));
+            _telemetry.RecordTokens(operation, ModelId, result.Value.TokenUsage);
         }
+
+        return result;
     }
 }

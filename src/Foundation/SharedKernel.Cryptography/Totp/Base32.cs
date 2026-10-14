@@ -1,4 +1,5 @@
 using System.Text;
+using SharedKernel.Cryptography.Internal;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -90,6 +91,5 @@ public static class Base32
         return output;
     }
 
-    private static Error Invalid() =>
-        Error.Validation(CryptographyErrorCodes.InvalidBase32Encoding, "The text is not valid Base32.");
+    private static Error Invalid() => CryptographyErrors.InvalidBase32();
 }

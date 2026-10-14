@@ -35,4 +35,10 @@ internal static class WorkflowsTestFixtures
         IdReusePolicy = WorkflowIdReusePolicy.AllowDuplicate,
         IdConflictPolicy = WorkflowIdConflictPolicy.Fail,
     };
+
+    /// <summary>A composed workflow id owned by <see cref="TenantA"/>.</summary>
+    public static string OwnId(string key = "no-such-id") => $"{TenantA}:{nameof(SampleWorkflow)}:{key}";
+
+    /// <summary>A composed workflow id owned by <see cref="TenantB"/>.</summary>
+    public static string ForeignId(string key = "no-such-id") => $"{TenantB}:{nameof(SampleWorkflow)}:{key}";
 }

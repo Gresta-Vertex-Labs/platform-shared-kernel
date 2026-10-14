@@ -49,7 +49,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Foundation — reference it from **any** project |
-| Depends on | `OpenFeature` + `OpenFeature.Hosting` (the API), `Microsoft.FeatureManagement` (the backend), `SharedKernel.Primitives`, `SharedKernel.Execution` |
+| Depends on | `OpenFeature` + `OpenFeature.Hosting` (the API), `Microsoft.FeatureManagement` (the backend), `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Core` |
 | Namespaces | `SharedKernel.FeatureManagement`; `OpenFeature` for `IFeatureClient` |
 
 Libraries that only evaluate flags need `IFeatureClient` and the `FeatureFlag<T>` declarations; only the host calls
@@ -212,12 +212,23 @@ Evaluation never throws. Every problem returns the flag's declared default, and 
 | Flag not in configuration | Default | `FlagNotFound` | `ERROR` |
 | Variant value does not fit a string or number flag | Default | `TypeMismatch` | `ERROR` |
 | Variant object does not fit `T` | Default | `ParseError` | `ERROR` |
-| A filter or the configuration throws | Default | `General` (warning logged, EventId 1301) | `ERROR` |
+| A filter or the configuration throws | Default | `General` (error logged, EventId 1301) | `ERROR` |
 | Provider not initialized yet (no host started) | Default | `ProviderNotReady` | `ERROR` |
 | Flag enabled, no variant allocated | Default | `None` | `DEFAULT` |
 | Flag disabled | `false`, or the `default_when_disabled` variant | `None` | `DISABLED` |
 
-The error message names the flag and variant; it never includes an exception message, which may quote configuration.
+The error message names the flag and variant; it never includes an exception message or a configuration value. A value
+that does not fit an object flag is reported with one of these fixed reasons, after
+`Variant '<name>' does not fit <T>:`:
+
+| Reason | When |
+| --- | --- |
+| an object was expected | The variant is a scalar or a list where an object is needed |
+| a list was expected | A list property holds a scalar |
+| a value is not true or false | A `bool` property holds other text |
+| a value is not a number | A numeric property holds other text |
+| a single value was expected, not an object or a list | A scalar property holds an object or a list |
+| the value does not fit the flag's type | The value is well-formed but the type rejects it (overflow, unknown enum name) |
 
 ### Startup validation
 
@@ -231,6 +242,10 @@ Feature flag configuration is invalid:
 - 'PageSize' variant 'Large': its configuration_value is not a whole number.
 - 'Checkout' has no variants; a FeatureFlag.Object flag reads its value from one.
 ```
+
+The exception derives `SharedKernelException` (`SharedKernel.Core`): its `Error` has the code
+`feature_management.invalid_flag_configuration` and `ErrorType.Unexpected`, and `Failures` keeps the declaration order.
+Each line names only a flag key, a variant name and a fixed reason; never a configuration value.
 
 ### Telemetry
 
@@ -412,13 +427,14 @@ Behaviour options are set in code on `FeatureFlagOptions` (not bound from config
 | `FeatureTargetingContext` | `UserId`, `TenantId`, `Groups`, `TargetingKey`; `ForTenant`, `ToEvaluationContext` |
 | `IFeatureTargetingContextAccessor` | `GetTargetingContext()`: the current caller |
 | `FeatureContextKeys` | Evaluation-context attributes: `TenantId` = `"tenantId"`, `Groups` = `"groups"` |
-| `FeatureFlagValidationException` | Startup failure with `Failures` |
+| `FeatureFlagValidationException` | Startup failure with `Failures`; a `SharedKernelException` with `FeatureManagementErrorCodes.InvalidFlagConfiguration` (`Unexpected`) |
+| `FeatureManagementErrorCodes` | `InvalidFlagConfiguration` = `"feature_management.invalid_flag_configuration"` |
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 1301 | Warning | `Feature flag {FlagKey} could not be evaluated; the caller's default value was used` — once per failed evaluation |
+| 1301 | Error | `Evaluating the feature flag '{FlagKey}' failed, so the caller's default value was used.` — once per failed evaluation, with the exception |
 
 ## Testing
 

@@ -78,10 +78,12 @@ flowchart BT
     Primitives["Primitives<br/>Result · Error · IClock · registries"]
     Configuration["Configuration<br/>AddValidatedOptions"]
     Execution["Execution<br/>IRequestContext · TenantId · IUnitOfWork"] --> Primitives
+    Execution --> Core
     Core["Core<br/>railway · guards · exceptions"] --> Primitives
     Localization["Localization"] --> Primitives
     DataPrivacy["DataPrivacy"] --> Primitives
     FeatureManagement["FeatureManagement"] --> Execution
+    FeatureManagement --> Core
     Compression["Compression"] --> Configuration
     Cryptography["Cryptography"] --> Configuration
     Validation["Validation"] --> Core

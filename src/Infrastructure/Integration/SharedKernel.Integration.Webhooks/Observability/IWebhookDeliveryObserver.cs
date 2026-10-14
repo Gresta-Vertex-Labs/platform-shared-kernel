@@ -9,7 +9,7 @@ namespace SharedKernel.Integration.Webhooks.Observability;
 /// <remarks>
 /// Zero or more observers are registered via <c>WithDeliveryObserver&lt;T&gt;()</c>. All registered
 /// observers are invoked for every attempt and completion; an observer's exception is caught and
-/// logged at <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/>, never allowed to fault the
+/// logged at <see cref="Microsoft.Extensions.Logging.LogLevel.Error"/>, never allowed to fault the
 /// delivery pipeline. This is the seam a consuming service uses to persist a delivery-history ledger
 /// against its own <c>06.Persistence</c> stack without this package taking a <c>06.Persistence</c>
 /// dependency.

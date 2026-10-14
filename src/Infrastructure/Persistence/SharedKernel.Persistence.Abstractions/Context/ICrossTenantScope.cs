@@ -43,7 +43,7 @@ public interface ICrossTenantScope
     /// <summary>Activates the cross-tenant bypass until the returned handle is disposed.</summary>
     /// <param name="reason">
     /// Why tenant isolation is bypassed (e.g. <c>"monthly revenue report"</c>). Required; written to the
-    /// log together with the calling actor. Never put personal data in it.
+    /// log together with the calling actor's kind. A constant, never data: no personal data, tenant or user id.
     /// </param>
     /// <returns>A handle that deactivates this entry when disposed. Disposing twice is harmless.</returns>
     /// <exception cref="ArgumentException"><paramref name="reason"/> is null, empty or whitespace.</exception>

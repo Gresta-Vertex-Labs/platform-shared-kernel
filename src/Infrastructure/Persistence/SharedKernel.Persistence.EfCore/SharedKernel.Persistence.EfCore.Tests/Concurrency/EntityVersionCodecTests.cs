@@ -390,7 +390,7 @@ public sealed class EntityVersionCodecTests : IDisposable
     public async Task X4_NoWarmUp_ForAnInMemoryProvider(bool registeredAsSynchronous)
     {
         var provider = new CountingInMemoryKeyProvider(Key1);
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         if (registeredAsSynchronous)
             services.AddSingleton<ISynchronousEncryptionKeyProvider>(provider);
         else
@@ -417,7 +417,7 @@ public sealed class EntityVersionCodecTests : IDisposable
     public async Task X4_TheRegistration_WarmsUpOnce_SoConcurrencyVersionGetCallsNoProvider()
     {
         var provider = new AsynchronousOnlyKeyProvider(Key1);
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddLogging();
         services.AddSingleton<IEncryptionKeyProvider>(provider);
         services.AddSharedKernelEfCore<VersionedTestDbContext>(Sqlite).Build();
         services.AddSharedKernelEfCore<StringIncludeDbContext>(Sqlite).Build();
@@ -475,7 +475,7 @@ public sealed class EntityVersionCodecTests : IDisposable
     {
         static EntityVersionKeyRing Ring(Action<IServiceCollection> register)
         {
-            var services = new ServiceCollection();
+            var services = new ServiceCollection().AddLogging();
             register(services);
             return new EntityVersionKeyRing(services.BuildServiceProvider());
         }

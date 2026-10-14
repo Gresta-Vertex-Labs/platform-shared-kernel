@@ -117,16 +117,16 @@ internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeCont
 
             default:
                 throw new InvalidOperationException(
-                    $"{_store.GetType().Name}.{nameof(IIdempotencyStore.TryBeginAsync)} returned " +
-                    $"{nameof(IdempotencyReservationStatus)}.{reservation.Status} for a message reservation, whose " +
-                    "fingerprint is fixed.");
+                    $"The store '{_store.GetType().Name}' returned the status '{reservation.Status}' from " +
+                    $"{nameof(IIdempotencyStore.TryBeginAsync)} for a message reservation, whose fingerprint is fixed, " +
+                    "so the store must not report a fingerprint mismatch.");
         }
 
         var token = reservation.Token
             ?? throw new InvalidOperationException(
-                $"{_store.GetType().Name}.{nameof(IIdempotencyStore.TryBeginAsync)} returned " +
-                $"{nameof(IdempotencyReservationStatus.Started)} without a reservation token. A started " +
-                "reservation must carry the token required to complete or release it.");
+                $"The store '{_store.GetType().Name}' returned the status '{nameof(IdempotencyReservationStatus.Started)}' " +
+                $"from {nameof(IIdempotencyStore.TryBeginAsync)} without a reservation token, so it must supply the " +
+                "token required to complete or release a started reservation.");
 
         try
         {

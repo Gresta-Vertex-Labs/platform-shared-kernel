@@ -69,12 +69,12 @@ public sealed class InMemoryWorkflowHandleOfTTests
     public async Task GetResultAsync_NoBackingExecution_ReturnsNotFound_NeverThrows()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        IWorkflowHandle<string> handle = dispatcher.GetHandle<string>("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        IWorkflowHandle<string> handle = dispatcher.GetHandle<string>(WorkflowsTestFixtures.OwnId(), runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)).Value;
 
         Result<string> result = await handle.GetResultAsync();
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     // --- forwarding surface ---

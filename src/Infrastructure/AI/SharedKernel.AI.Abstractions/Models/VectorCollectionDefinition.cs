@@ -65,13 +65,13 @@ public sealed record VectorCollectionDefinition
         ArgumentNullException.ThrowIfNull(fields);
 
         var structuralError = ValidateStructure(name, embeddingModelId, dimension);
-        if (structuralError is not null)
+        if (structuralError.Type != ErrorType.None)
         {
             return Result<VectorCollectionDefinition>.Failure(structuralError);
         }
 
         var fieldError = ValidateFields(fields);
-        if (fieldError is not null)
+        if (fieldError.Type != ErrorType.None)
         {
             return Result<VectorCollectionDefinition>.Failure(fieldError);
         }
@@ -88,10 +88,10 @@ public sealed record VectorCollectionDefinition
 
     /// <summary>
     /// Validates the structural (non-field) invariants shared by <see cref="Create"/> and
-    /// <see cref="VectorCollectionDefinitionBuilder.Build"/>. Returns <see langword="null"/> when
+    /// <see cref="VectorCollectionDefinitionBuilder.Build"/>. Returns <see cref="Error.None"/> when
     /// valid.
     /// </summary>
-    internal static Error? ValidateStructure(string name, string embeddingModelId, int dimension)
+    internal static Error ValidateStructure(string name, string embeddingModelId, int dimension)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -108,14 +108,14 @@ public sealed record VectorCollectionDefinition
             return IntelligenceErrors.InvalidCollectionDefinition("Dimension must be a positive integer.");
         }
 
-        return null;
+        return Error.None;
     }
 
     /// <summary>
     /// Validates that no <paramref name="fields"/> entry has an empty name and that no two entries
-    /// share a name. Returns <see langword="null"/> when valid.
+    /// share a name. Returns <see cref="Error.None"/> when valid.
     /// </summary>
-    internal static Error? ValidateFields(IReadOnlyList<VectorFieldDefinition> fields)
+    internal static Error ValidateFields(IReadOnlyList<VectorFieldDefinition> fields)
     {
         var seenNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var field in fields)
@@ -131,7 +131,7 @@ public sealed record VectorCollectionDefinition
             }
         }
 
-        return null;
+        return Error.None;
     }
 
     /// <summary>

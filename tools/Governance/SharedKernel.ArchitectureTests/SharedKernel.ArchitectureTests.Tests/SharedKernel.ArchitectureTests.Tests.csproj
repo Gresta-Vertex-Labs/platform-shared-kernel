@@ -232,4 +232,10 @@
     <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Cryptography.Argon2\SharedKernel.Cryptography.Argon2.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Cryptography.KeyVault.Azure\SharedKernel.Cryptography.KeyVault.Azure.csproj" PrivateAssets="all" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- KernelSelfAnalysisConfigTests compares kernel.globalconfig with the descriptors the
+         analyzer assembly really reports, so a new SK id cannot be forgotten. Test-only; Tooling references nothing in the
+         kernel and this is not a kernel reference. -->
+    <ProjectReference Include="..\..\SharedKernel.Analyzers\SharedKernel.Analyzers.csproj" />
+  </ItemGroup>
 </Project>

@@ -1,3 +1,5 @@
+using SharedKernel.Security.Oidc.Authentication;
+using SharedKernel.Security.Oidc.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -33,7 +35,7 @@ public sealed class TokenRevocationAuthenticationTests
         using HttpResponseMessage response = await host.SendAsync(TestTokens.Create().Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", true);
+        host.LogRecords.ShouldHaveLoggedWithoutException(new(OidcLoggingEventIds.TokenRevoked));
     }
 
     [Fact]
@@ -45,7 +47,9 @@ public sealed class TokenRevocationAuthenticationTests
         using HttpResponseMessage response = await host.SendAsync(TestTokens.Create().Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", false);
+        host.LogRecords.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCheckFailed), typeof(HttpRequestException));
+        host.Logs.ShouldHaveCategory(typeof(OidcJwtBearerHandler));
+        host.LogRecords.ShouldNotHaveLogged(new(OidcLoggingEventIds.TokenRevoked));
     }
 
     [Fact]

@@ -7,7 +7,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 ![Packages: 3](https://img.shields.io/badge/packages-3-informational)
-![Analyzer rules: 45](https://img.shields.io/badge/analyzer%20rules-45-informational)
+![Analyzer rules: 47](https://img.shields.io/badge/analyzer%20rules-47-informational)
 ![Tier: Tooling](https://img.shields.io/badge/tier-Tooling-6a737d)
 ![Roslyn: 4.14](https://img.shields.io/badge/Roslyn-4.14-512BD4)
 ![NetArchTest: 1.3](https://img.shields.io/badge/NetArchTest-1.3-informational)
@@ -23,7 +23,7 @@
 
 ## What you get
 
-- **Conventions as compiler warnings.** 45 Roslyn rules (`SK0001`–`SK0708`) flag a clock read instead of `IClock`, a
+- **Conventions as compiler warnings.** 47 Roslyn rules (`SK0001`–`SK0708`) flag a clock read instead of `IClock`, a
   discarded `Result`, a magic header name, `ILogger.LogXxx` instead of `[LoggerMessage]`, or personal data logged
   unmasked — in the IDE and on every `dotnet build`, each with a help link to the fix.
 - **Adopt at your own pace.** Every rule defaults to **Warning**; escalate one rule or a whole category (`Security`)
@@ -69,6 +69,23 @@ flowchart LR
 - **Kernel types are matched by name.** The analyzers reference no SharedKernel assembly; they match kernel types by
   metadata name, so they run in any project, and tests compiled against the real kernel catch a rename.
 - **Rule ids are never reused.** A retired rule keeps a row below, telling you to delete any suppression that names it.
+
+### Observability rules are enforced
+
+The kernel's own observability rules (the SK analyzers and `CA2200` over `src/`, and the platform-wide EventId ownership,
+telemetry-naming, log-template and error-code checks) fail the build or a test. There is no report mode and no switch.
+
+- **Analyzers.** `SelfAnalysis/SharedKernel.SelfAnalysis.props` (imported once from the root `Directory.Build.targets`) adds
+  `SharedKernel.Analyzers` and `SelfAnalysis/kernel.globalconfig` to every kernel project under `src/`: each SK id and `CA2200` is an
+  `error`, whatever the project's `TreatWarningsAsErrors`. `SK0044` (bare numeric `[LoggerMessage]` id) is off by default
+  for consumers and enabled here; `SK0034` stays `suggestion`. Consumers' default severity (Warning) is unchanged.
+- **Assertions.** `PlatformObservabilityReportTests` runs the four assertions over every built production assembly; a finding or a
+  missing (`unscanned`) assembly fails the test with one aggregated message that groups the sites by domain (the table is also written to
+  `artifacts/observability/platform-report.md`). Read the message as `[rule] assembly site: detail`: fix the site, never the rule.
+- **Suppressions.** `SuppressionAuditTests` fails on a `NoWarn`, `WarningsNotAsErrors`, severity below `error`, `#pragma warning disable`
+  or `SuppressMessage` of these rules in `src/` unless the owning domain's `CLAUDE.md` names the rule and the file.
+- **Proof.** `tools/Governance/SelfAnalysis/verify-self-analysis.sh` builds `_verification/SelfAnalysisProbe` (one deliberate violation per
+  rule, `TreatWarningsAsErrors` on and off): every finding is an error.
 
 <a id="analyzer-rule-index"></a>
 <a id="rule-reference"></a>
@@ -120,6 +137,8 @@ Every diagnostic's IDE help link lands on its row here; the rule id links to the
 | <a id="sk0040-pipelinemarkerresponseshapemismatch"></a>[SK0040](SharedKernel.Analyzers/README.md#sk0040) | Design | `[RequirePermission]`/`IIdempotentRequest` on a non-`Result` request → return `Result` |
 | <a id="sk0041-duplicatecacheablequeryname"></a>[SK0041](SharedKernel.Analyzers/README.md#sk0041) | Design | Two cacheable queries share a name → rename one |
 | <a id="sk0042-nonconstantdappersqlargument"></a>[SK0042](SharedKernel.Analyzers/README.md#sk0042) | Security | Non-constant Dapper `sql` → fixed SQL, values as parameters |
+| <a id="sk0043-exceptionexposingerrormustderivesharedkernelexception"></a>[SK0043](SharedKernel.Analyzers/README.md#sk0043) | Design | Exception with an `Error` and no `SharedKernelException` base → derive it |
+| <a id="sk0044-loggermessageeventidbareliteral"></a>[SK0044](SharedKernel.Analyzers/README.md#sk0044) | Design | Bare numeric `[LoggerMessage]` EventId (opt-in) → `{Package}LoggingEventIds` constant |
 | <a id="sk0201-tenanteddbcontextonmodelcreatingguard"></a>[SK0201](SharedKernel.Analyzers/README.md#sk0201) | Design | `TenantedDbContext.OnModelCreating` without `base` call → call it |
 | <a id="sk0202-ignorequeryfiltersoutsidetenantedrepository"></a>[SK0202](SharedKernel.Analyzers/README.md#sk0202) | Design | `IgnoreQueryFilters()` outside persistence → cross-tenant scope + named filter |
 | <a id="sk0703-messagebussingletonregistration"></a>[SK0703](SharedKernel.Analyzers/README.md#sk0703) | Usage | Singleton `IMessageBus`/`IEventPublisher` → scoped |

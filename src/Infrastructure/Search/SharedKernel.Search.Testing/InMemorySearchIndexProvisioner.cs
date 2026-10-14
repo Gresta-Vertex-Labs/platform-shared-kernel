@@ -53,7 +53,7 @@ public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
 
         if (SimulateFailure)
         {
-            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(definition.Name, "SimulateFailure enabled")));
+            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(definition.Name, "the double's SimulateFailure flag is set.")));
         }
 
         if (!_indexes.TryGetValue(definition.Name, out var existing))
@@ -99,7 +99,7 @@ public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
 
         if (SimulateFailure)
         {
-            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(indexName, "SimulateFailure enabled")));
+            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(indexName, "the double's SimulateFailure flag is set.")));
         }
 
         // Idempotent -- an absent name still succeeds, mirroring Storage/InMemoryFileStorage.DeleteAsync.
@@ -114,7 +114,7 @@ public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
 
         if (SimulateFailure)
         {
-            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(request.LiveIndexName, "SimulateFailure enabled")));
+            return Task.FromResult(Result.Failure(SearchErrors.WriteRejected(request.LiveIndexName, "the double's SimulateFailure flag is set.")));
         }
 
         if (!_indexes.TryGetValue(request.StagingIndexName, out var stagingDefinition))

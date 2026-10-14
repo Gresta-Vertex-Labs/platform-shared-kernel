@@ -129,7 +129,7 @@ public sealed class ApplicationPipelineTestHarnessTests
 
         var expectedTag = typeof(SucceedingCommand).FullName ?? nameof(SucceedingCommand);
         var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.type"), expectedTag))
+            .Where(a => Equals(a.GetTagItem("application.request_type"), expectedTag))
             .ToList();
         Assert.Single(spans);
     }
@@ -211,6 +211,29 @@ public sealed class ApplicationPipelineTestHarnessTests
             items.Add(item);
 
         Assert.Equal([0, 1, 2], items);
+    }
+
+    [Fact]
+    public async Task CreateStream_WithActivityCapture_CapturesTheStreamSpanAndTheStreamDurationMeasurement()
+    {
+        using var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddTransient<IStreamQueryHandler<CountStream, int>, CountStreamHandler>();
+        harness.WithActivityCapture().Build();
+        using var provider = harness.Services.BuildServiceProvider();
+        var requestType = typeof(CountStream).FullName;
+
+        await foreach (var item in provider.GetRequiredService<ISender>().CreateStream(new CountStream(2)))
+            Assert.True(item >= 0);
+
+        Assert.Contains(
+            harness.CapturedActivities,
+            activity => activity.OperationName == "application stream"
+                && Equals(activity.GetTagItem("application.request_type"), requestType));
+        Assert.Contains(
+            harness.CapturedMeasurements,
+            measurement => measurement.InstrumentName == "sharedkernel.application.request.duration"
+                && measurement.Tags.Any(tag => tag.Key == "application.request_type" && Equals(tag.Value, requestType))
+                && measurement.Tags.Any(tag => tag.Key == "application.request_kind" && Equals(tag.Value, "stream")));
     }
 
     [Fact]

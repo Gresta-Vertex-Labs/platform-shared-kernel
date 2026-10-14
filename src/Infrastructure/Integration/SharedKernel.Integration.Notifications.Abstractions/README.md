@@ -125,7 +125,8 @@ flowchart LR
 - **No router.** A send is one message to one channel: resolve the sender keyed by `NotificationChannel` and call
   it. `NotificationChannel` has two members, `Email` and `Sms`.
 - **Never throws for delivery failures.** A non-2xx response, timeout, transport error or unresolvable attachment
-  returns `NotificationDeliveryResult { IsSuccess = false, Error = … }`; only a `null` message throws.
+  returns `NotificationDeliveryResult { IsSuccess = false, Error = <an Error with an integration.notification.* code> }`;
+  only a `null` message throws. Caller cancellation propagates.
 - **Deduplication is per provider.** Twilio sends `NotificationDeliveryId` as `Idempotency-Key` (enforced by Twilio).
   SendGrid carries it in `custom_args` (correlation only), so duplicate-email prevention is your outbox's job.
 - **Retries** happen inside each provider's resilience pipeline, driven by `NotificationDeliveryOptions`; observers see
@@ -192,7 +193,7 @@ public sealed class NotificationLedger(AppDbContext db) : INotificationDeliveryO
 }
 ```
 
-An observer exception is caught and logged at Warning; it never changes the send result.
+An observer exception is caught and logged at Error; it never changes the send result.
 
 ## Configuration
 
@@ -213,7 +214,7 @@ Section `SharedKernel:Integration:Notifications`, validated when the host starts
 
 | Method | Registers |
 | --- | --- |
-| `AddSharedKernelNotifications(Action<NotificationDeliveryOptions>? configure = null)` | `NotificationDeliveryOptions` only — no sender, no identity resolver |
+| `AddSharedKernelNotifications(Action<NotificationDeliveryOptions>? configure = null)` | `NotificationDeliveryOptions` and the `NotificationMetrics` singleton — no sender, no identity resolver |
 | `WithNotificationDeliveryObserver<T>()` | An additional scoped `INotificationDeliveryObserver` |
 
 ### Types
@@ -223,10 +224,11 @@ Section `SharedKernel:Integration:Notifications`, validated when the host starts
 | `INotificationSender` | `SupportedChannel`, `SendAsync<TTemplateModel>(message, ct)` → `NotificationDeliveryResult` |
 | `NotificationMessage<TTemplateModel>` | Required `NotificationDeliveryId`, `Channel`, `Recipient`, `TemplateId`, `TemplateModel`; optional `ReplyTo`, `Attachments`, `Locale` (reserved, not used yet) |
 | `NotificationAttachment` | Required `FileReference`, `FileName`; optional `ContentType` |
-| `NotificationDeliveryResult` | `NotificationDeliveryId`, `IsSuccess`, `ProviderMessageId`, `Error` |
+| `NotificationDeliveryResult` | `NotificationDeliveryId`, `IsSuccess`, `ProviderMessageId`, `Error` (`Error?`, `null` exactly when the send succeeded); `Succeeded(...)` and `Failed(...)` factories |
+| `NotificationErrorCodes`, `NotificationErrors` | The four `integration.notification.*` codes and the `Error` factory both providers build |
 | `NotificationDeliveryContext` | `NotificationDeliveryId`, `Channel`, `Recipient`, `TemplateId` (for observers) |
 | `NotificationSenderIdentity` | `FromAddress`, `DisplayName`, `ReplyTo` |
-| `NotificationIntegrationActivitySource`, `NotificationActivityTags` | Source `SharedKernel.Integration`; tags `notification.channel`, `notification.outcome`, `notification.attempt_count` |
+| `NotificationIntegrationActivitySource`, `NotificationTagKeys`, `NotificationMetrics` | Source and meter `SharedKernel.Integration`; span `notification send`; tags `notification.channel`, `notification.delivery_id`, `notification.attempt_count`; instruments `sharedkernel.integration.notification.sends` (`{message}`) and `...send.duration` (`s`) |
 
 ### Logging
 

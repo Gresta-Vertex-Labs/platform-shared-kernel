@@ -116,6 +116,25 @@ public sealed class FakeUnitOfWorkTests
     }
 
     [Fact]
+    public async Task ExecuteInTransactionAsync_SwallowedJoinedFailure_ThrowsTheClassifiedRolledBackException()
+    {
+        var unitOfWork = new FakeUnitOfWork();
+
+        var thrown = await Assert.ThrowsAsync<SharedKernel.Execution.Transactions.TransactionRolledBackException>(() =>
+            unitOfWork.ExecuteInTransactionAsync(async ct =>
+            {
+                await unitOfWork.ExecuteInTransactionAsync(
+                    _ => Task.FromResult(SharedKernel.Primitives.Results.Result.Failure(
+                        SharedKernel.Primitives.Errors.Error.BusinessRule("rule", "denied"))),
+                    ct);
+            }));
+
+        Assert.IsAssignableFrom<SharedKernel.Core.Exceptions.SharedKernelException>(thrown);
+        Assert.Equal("execution.transaction_rolled_back", thrown.Error.Code);
+        Assert.Equal(1, unitOfWork.RollbackCount);
+    }
+
+    [Fact]
     public async Task ExecuteInTransactionAsync_TransientFailures_ReplayTheOperation()
     {
         var unitOfWork = new FakeUnitOfWork { TransientFailures = 2 };

@@ -11,6 +11,10 @@ service TestService {
   rpc Fail (EchoRequest) returns (EchoReply);
   // Writes one message, then fails in the way request.value names.
   rpc StreamFail (EchoRequest) returns (stream EchoReply);
+  // Reads the first message, then fails in the way its value names (client-streaming shape).
+  rpc ClientStreamFail (stream EchoRequest) returns (EchoReply);
+  // Reads the first message, then fails in the way its value names (duplex shape).
+  rpc DuplexFail (stream EchoRequest) returns (stream EchoReply);
   // Waits until the call is cancelled, then throws what request.value names (nothing more when empty); see
   // TestServiceImpl.AfterCancellation.
   rpc WaitForCancellation (EchoRequest) returns (EchoReply);

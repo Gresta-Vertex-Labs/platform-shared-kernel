@@ -52,7 +52,7 @@ public static class RequestContextApplicationBuilderExtensions
             && !isService.IsService(typeof(SecurityRequestContext)))
         {
             throw new InvalidOperationException(
-                "UseSharedKernelRequestContext() requires services.AddSharedKernelRequestContext() to be called first.");
+                "UseSharedKernelRequestContext() requires AddSharedKernelRequestContext(). Call services.AddSharedKernelRequestContext() before building the application.");
         }
 
         return app.UseMiddleware<RequestContextMiddleware>();

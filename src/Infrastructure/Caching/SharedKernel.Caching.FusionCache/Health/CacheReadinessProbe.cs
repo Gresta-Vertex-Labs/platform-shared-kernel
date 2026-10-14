@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Diagnostics;
 using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Caching.FusionCache.Health;
@@ -16,7 +18,7 @@ namespace SharedKernel.Caching.FusionCache.Health;
 /// blip would do more harm than the blip. The Redis connection itself has its own probe in
 /// <c>SharedKernel.Caching.Redis.Core</c>.
 /// </remarks>
-internal sealed class CacheReadinessProbe(IServiceProvider services) : IReadinessProbe
+internal sealed class CacheReadinessProbe(IServiceProvider services, ILogger<CacheReadinessProbe> logger) : IReadinessProbe
 {
     private const string ProbeKey = "__sharedkernel_health_probe__";
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(2);
@@ -46,6 +48,8 @@ internal sealed class CacheReadinessProbe(IServiceProvider services) : IReadines
         }
         catch (Exception ex)
         {
+            // Probes poll, so a failure is Debug: the report itself carries the status.
+            FusionCacheLog.ProbeFailed(logger, ex.GetType().FullName ?? ex.GetType().Name, ex);
             return ReadinessReport.Degraded(
                 $"Cache probe failed ({ex.GetType().Name}); fail-safe may still serve stale data.",
                 latency: Stopwatch.GetElapsedTime(started));

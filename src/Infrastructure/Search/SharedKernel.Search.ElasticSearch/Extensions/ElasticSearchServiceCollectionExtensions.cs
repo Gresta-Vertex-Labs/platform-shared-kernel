@@ -3,13 +3,14 @@ using Elastic.Clients.Elasticsearch.Serialization;
 using Elastic.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
-using SharedKernel.Search.ElasticSearch.Logging;
+using SharedKernel.Search.ElasticSearch.Diagnostics;
 using SharedKernel.Search.ElasticSearch.Options;
 using Result = SharedKernel.Primitives.Results.Result;
 
@@ -43,6 +44,10 @@ public static class ElasticSearchServiceCollectionExtensions
 
         services.AddValidatedOptions<ElasticSearchOptions>(section);
 
+        // The provider telemetry creates its meter from the host's IMeterFactory; AddMetrics is a no-op when the host already added it.
+        services.AddMetrics();
+        services.TryAddSingleton<SearchTelemetry>();
+
         var builder = new ElasticSearchBuilder(services);
 
         // ElasticsearchClient is a singleton — thread-safe and pools its own resources. Constructed
@@ -51,7 +56,7 @@ public static class ElasticSearchServiceCollectionExtensions
         services.AddSingleton(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ElasticSearchOptions>>().Value;
-            var logger = sp.GetRequiredService<ILogger<ElasticsearchClient>>();
+            var logger = sp.GetRequiredService<ILogger<ElasticSearchBuilder>>();
 
             NodePool nodePool = options.Nodes.Length == 1
                 ? new SingleNodePool(new Uri(options.Nodes[0]))
@@ -66,7 +71,7 @@ public static class ElasticSearchServiceCollectionExtensions
             }
             else
             {
-                logger.ElasticSearchSourceSerializerContextMissing(builder.RegisteredIndexCount);
+                ElasticSearchLog.SourceSerializerContextMissing(logger, builder.RegisteredIndexCount);
                 settings = new ElasticsearchClientSettings(nodePool);
             }
 
@@ -86,7 +91,7 @@ public static class ElasticSearchServiceCollectionExtensions
 
             if (options.AllowInvalidCertificates)
             {
-                logger.ElasticSearchCertificateValidationDisabled();
+                ElasticSearchLog.CertificateValidationDisabled(logger);
                 settings = settings.ServerCertificateValidationCallback((_, _, _, _) => true);
             }
 
@@ -96,7 +101,7 @@ public static class ElasticSearchServiceCollectionExtensions
 
             var client = new ElasticsearchClient(settings);
 
-            logger.ElasticSearchClientConfigured(options.Nodes.Length, builder.RegisteredIndexCount);
+            ElasticSearchLog.ClientConfigured(logger, options.Nodes.Length, builder.RegisteredIndexCount);
 
             return client;
         });
@@ -123,7 +128,7 @@ public static class ElasticSearchServiceCollectionExtensions
     /// <para>
     /// Call it from a startup task or a deployment smoke test, alongside
     /// <c>ISearchIndexProvisioner.VerifyRegisteredIndexesAsync</c>. An unreachable cluster is reported
-    /// as <see cref="SearchErrors.Unreachable"/>, distinct from a reachable cluster running an
+    /// as <see cref="SearchErrors.Unavailable"/>, distinct from a reachable cluster running an
     /// unsupported version.
     /// </para>
     /// </remarks>
@@ -134,23 +139,22 @@ public static class ElasticSearchServiceCollectionExtensions
 
         var client = services.GetRequiredService<ElasticsearchClient>();
         var options = services.GetRequiredService<IOptions<ElasticSearchOptions>>().Value;
-        var logger = services.GetRequiredService<ILogger<ElasticsearchClient>>();
+        var logger = services.GetRequiredService<ILogger<ElasticSearchBuilder>>();
 
         var info = await client.InfoAsync(cancellationToken).ConfigureAwait(false);
         if (!info.IsValidResponse)
         {
-            logger.ElasticSearchEngineVersionUnsupported("unknown", SupportedVersionRange);
-            return Result.Failure(SearchErrors.Unreachable(
-                SearchWellKnown.ElasticSearchProviderName, string.Join(",", options.Nodes)));
+            ElasticSearchLog.EngineVersionNotSupported(logger, "unknown", SupportedVersionRange);
+            return Result.Failure(SearchErrors.Unavailable(SearchWellKnown.ElasticSearchProviderName));
         }
 
         if (!IsSupportedVersion(info.Version.Number))
         {
-            logger.ElasticSearchEngineVersionUnsupported(info.Version.Number, SupportedVersionRange);
-            return Result.Failure(SearchErrors.EngineVersionUnsupported(info.Version.Number, SupportedVersionRange));
+            ElasticSearchLog.EngineVersionNotSupported(logger, info.Version.Number, SupportedVersionRange);
+            return Result.Failure(SearchErrors.EngineVersionNotSupported(info.Version.Number, SupportedVersionRange));
         }
 
-        logger.ElasticSearchEngineVersionVerified(info.Version.Number);
+        ElasticSearchLog.EngineVersionVerified(logger, info.Version.Number);
         return Result.Success();
     }
 

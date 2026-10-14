@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Messaging.MassTransit.AzureServiceBus.Diagnostics;
 
 namespace SharedKernel.Messaging.MassTransit.AzureServiceBus.DeadLetter;
 
@@ -24,7 +25,7 @@ namespace SharedKernel.Messaging.MassTransit.AzureServiceBus.DeadLetter;
 /// does not affect bus lifecycle.
 /// </para>
 /// </remarks>
-internal sealed partial class DeadLetterPolicyAdvisoryHostedService : IHostedService
+internal sealed class DeadLetterPolicyAdvisoryHostedService : IHostedService
 {
     private readonly ILogger<DeadLetterPolicyAdvisoryHostedService> _logger;
 
@@ -40,23 +41,10 @@ internal sealed partial class DeadLetterPolicyAdvisoryHostedService : IHostedSer
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        LogDeadLetterPolicyIgnoredUnderAzureServiceBus();
+        AzureServiceBusLog.DeadLetterPolicyIgnored(_logger);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    /// <summary>
-    /// Logs the advisory warning explaining that <c>DeadLetterOptions</c> has no effect under the
-    /// Azure Service Bus transport.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 7010,
-        Level = LogLevel.Warning,
-        Message = "WithDeadLetterPolicy() was called while the Azure Service Bus transport is " +
-            "configured. DeadLetterOptions is RabbitMQ-only and has no effect on Azure Service Bus " +
-            "— its dead-lettering is entirely transport-native, driven by the queue/subscription " +
-            "MaxDeliveryCount configured at the Azure resource level. This call is a no-op.")]
-    private partial void LogDeadLetterPolicyIgnoredUnderAzureServiceBus();
 }

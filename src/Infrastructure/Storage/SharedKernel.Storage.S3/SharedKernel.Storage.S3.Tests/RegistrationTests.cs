@@ -1,12 +1,13 @@
-using System.Diagnostics;
 using Amazon.S3;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage.S3.Tests.Infrastructure;
+using SharedKernel.Testing.Telemetry;
 
 namespace SharedKernel.Storage.S3.Tests;
 
@@ -88,6 +89,43 @@ public sealed class RegistrationTests(MinioFixture minio)
     }
 
     [Fact]
+    public async Task An_outage_during_listing_throws_unavailable_and_leaks_no_endpoint_bucket_or_key()
+    {
+        var logs = new CapturingLoggerProvider();
+        using ServiceProvider host = minio.CreateHost(
+            settings =>
+            {
+                settings["SharedKernel:Storage:S3:ServiceUrl"] = "http://127.0.0.1:1";
+                settings["SharedKernel:Storage:S3:MaxRetries"] = "0";
+                settings["SharedKernel:Storage:S3:RequestTimeout"] = "00:00:03";
+            },
+            configureServices: services => services.AddLogging(b => b.AddProvider(logs)));
+        IFileStorage files = host.GetRequiredKeyedService<IFileStorage>("files");
+        const string KeyPrefix = "secret-folder/";
+
+        Func<Task> enumerate = async () =>
+        {
+            await foreach (FileListItem _ in files.ListAsync(KeyPrefix))
+            {
+            }
+        };
+
+        StorageException thrown = (await enumerate.Should().ThrowAsync<StorageException>()).Which;
+
+        thrown.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
+        thrown.Error.Type.Should().Be(Primitives.Errors.ErrorType.Unavailable);
+        logs.Records.Should().NotBeEmpty("the outage is logged");
+
+        // The error and the exception name neither endpoint, port, bucket nor key. Log records may name the bucket
+        // (a name, not a host: rule 5 sends it there on purpose) but never the endpoint or the key.
+        string[] endpointAndKey = ["127.0.0.1", "http://", "secret-folder"];
+        string[] errorSurfaces = [thrown.Error.Message, thrown.Message, thrown.Error.ToString()];
+        errorSurfaces.Should().AllSatisfy(s =>
+            s.Should().NotContainAny(endpointAndKey).And.NotContain(MinioFixture.BucketA).And.NotContain(":1"));
+        logs.Records.Should().AllSatisfy(s => s.Should().NotContainAny(endpointAndKey).And.NotContain("127.0.0.1:1"));
+    }
+
+    [Fact]
     public async Task Cancellation_is_not_turned_into_an_error()
     {
         using ServiceProvider host = minio.CreateHost();
@@ -128,25 +166,19 @@ public sealed class RegistrationTests(MinioFixture minio)
     {
         using ServiceProvider host = minio.CreateHost();
         IFileStorage files = host.GetRequiredKeyedService<IFileStorage>("files");
-        var activities = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "SharedKernel.Storage",
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activities.Enqueue,
-        };
-        ActivitySource.AddActivityListener(listener);
+        using var activities = ActivityRecorder.StartRecording(StorageTelemetryNames.SourceName);
         string key = TestData.UniqueKey("secret-name.txt");
+        string missingKey = TestData.UniqueKey();
 
         await files.UploadAsync(key, new MemoryStream([1]));
-        await files.GetPropertiesAsync(TestData.UniqueKey());
+        await files.GetPropertiesAsync(missingKey);
 
-        Activity upload = activities.Should().ContainSingle(a => a.DisplayName == "storage upload").Subject;
-        upload.GetTagItem("storage.store").Should().Be("files");
-        upload.GetTagItem("storage.provider").Should().Be("S3");
-        Activity missing = activities.Should().ContainSingle(a => a.DisplayName == "storage get_properties").Subject;
-        missing.GetTagItem("error.type").Should().Be(StorageErrorCodes.NotFound);
-        activities.SelectMany(a => a.TagObjects).Select(t => t.Value?.ToString()).Should().NotContain(v => v != null && v.Contains("secret-name"));
+        activities.RecordedActivities.ShouldHaveSingleSpan("storage upload")
+            .ShouldHaveTag(StorageTagKeys.Store, "files")
+            .ShouldHaveTag(StorageTagKeys.Provider, "S3");
+        activities.RecordedActivities.ShouldHaveSingleSpan("storage get_properties")
+            .ShouldBeRecordedFailure(StorageErrors.NotFound("files", missingKey));
+        activities.RecordedActivities.ShouldNotLeak("secret-name");
     }
 }
 

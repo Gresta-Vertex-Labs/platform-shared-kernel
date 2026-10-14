@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
-using SharedKernel.Primitives.Logging;
+using SharedKernel.Caching.FusionCache.Diagnostics;
 
 namespace SharedKernel.Caching.FusionCache;
 
@@ -19,7 +19,7 @@ namespace SharedKernel.Caching.FusionCache;
 /// server, so no traffic and no readiness arrive until the cache is warm. Otherwise warmup runs in the
 /// background from <see cref="StartAsync"/> and is cancelled on shutdown.
 /// </remarks>
-internal sealed partial class CacheWarmupHostedService : IHostedLifecycleService, IDisposable
+internal sealed class CacheWarmupHostedService : IHostedLifecycleService, IDisposable
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IOptions<CachingOptions> _options;
@@ -46,7 +46,7 @@ internal sealed partial class CacheWarmupHostedService : IHostedLifecycleService
         if (!_options.Value.WaitForWarmup)
             return;
 
-        Log.WaitingForWarmupCompletion(_logger);
+        FusionCacheLog.WaitingForWarmup(_logger);
         await RunWarmupAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -93,29 +93,29 @@ internal sealed partial class CacheWarmupHostedService : IHostedLifecycleService
 
         if (strategies.Count == 0)
         {
-            Log.NoWarmupStrategiesRegistered(_logger);
+            FusionCacheLog.NoWarmupStrategies(_logger);
             return;
         }
 
         var cache = _serviceProvider.GetRequiredService<ICacheService>();
 
-        Log.WarmupStarting(_logger, strategies.Count);
+        FusionCacheLog.WarmupStarting(_logger, strategies.Count);
 
         foreach (var strategy in strategies)
         {
             if (ct.IsCancellationRequested)
             {
-                Log.WarmupCancelled(_logger, strategy.Name);
+                FusionCacheLog.WarmupCancelled(_logger, strategy.Name);
                 ct.ThrowIfCancellationRequested();
             }
 
             var sw = Stopwatch.StartNew();
-            Log.StrategyExecuting(_logger, strategy.Name, strategy.Order);
+            FusionCacheLog.StrategyExecuting(_logger, strategy.Name, strategy.Order);
 
             try
             {
                 await strategy.WarmupAsync(cache, ct).ConfigureAwait(false);
-                Log.StrategyCompleted(_logger, strategy.Name, sw.ElapsedMilliseconds);
+                FusionCacheLog.StrategyCompleted(_logger, strategy.Name, sw.ElapsedMilliseconds);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -123,45 +123,10 @@ internal sealed partial class CacheWarmupHostedService : IHostedLifecycleService
             }
             catch (Exception ex)
             {
-                Log.StrategyFailed(_logger, strategy.Name, sw.ElapsedMilliseconds, ex);
+                FusionCacheLog.StrategyFailed(_logger, strategy.Name, sw.ElapsedMilliseconds, ex);
             }
         }
 
-        Log.WarmupCompleted(_logger);
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 0, Level = LogLevel.Information,
-            Message = "Cache warmup: WaitForWarmup is on; host startup waits until warmup completes")]
-        internal static partial void WaitingForWarmupCompletion(ILogger logger);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 1, Level = LogLevel.Information,
-            Message = "Cache warmup: no strategies registered")]
-        internal static partial void NoWarmupStrategiesRegistered(ILogger logger);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 2, Level = LogLevel.Information,
-            Message = "Cache warmup starting with {StrategyCount} strategies")]
-        internal static partial void WarmupStarting(ILogger logger, int strategyCount);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 3, Level = LogLevel.Warning,
-            Message = "Cache warmup cancelled before strategy {StrategyName}")]
-        internal static partial void WarmupCancelled(ILogger logger, string strategyName);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 4, Level = LogLevel.Information,
-            Message = "Cache warmup running strategy {StrategyName} (order {Order})")]
-        internal static partial void StrategyExecuting(ILogger logger, string strategyName, int order);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 5, Level = LogLevel.Information,
-            Message = "Cache warmup strategy {StrategyName} completed in {ElapsedMs} ms")]
-        internal static partial void StrategyCompleted(ILogger logger, string strategyName, long elapsedMs);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 6, Level = LogLevel.Error,
-            Message = "Cache warmup strategy {StrategyName} failed after {ElapsedMs} ms; continuing with the next strategy")]
-        internal static partial void StrategyFailed(ILogger logger, string strategyName, long elapsedMs, Exception exception);
-
-        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 7, Level = LogLevel.Information,
-            Message = "Cache warmup completed")]
-        internal static partial void WarmupCompleted(ILogger logger);
+        FusionCacheLog.WarmupCompleted(_logger);
     }
 }

@@ -95,8 +95,11 @@ public sealed class SharedKernelLocalizationExtensionsTests
         {
             var loggerFactory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
             var inMemoryLogger = loggerFactory.GetLogger(
-                "SharedKernel.ServiceDefaults.Localization.RequestCultureResolution");
-            inMemoryLogger.Records.ShouldHaveLoggedCount(13004, 1);
+                "SharedKernel.ServiceDefaults.Localization.Diagnostics.ServiceDefaultsLocalizationLogCategory");
+            inMemoryLogger.Records.ShouldHaveLoggedCount(13400, 1);
+            inMemoryLogger.Records.ShouldHaveLogged(13400, LogLevel.Warning);
+            inMemoryLogger.Records.ShouldFollowLogConvention();
+            inMemoryLogger.Records.ShouldOnlyLogEventIdsInSubBlock(SharedKernel.Primitives.Logging.LoggingEventIdRanges.ServiceDefaults, 4);
         }
         finally
         {
@@ -117,8 +120,8 @@ public sealed class SharedKernelLocalizationExtensionsTests
         {
             var loggerFactory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
             var inMemoryLogger = loggerFactory.GetLogger(
-                "SharedKernel.ServiceDefaults.Localization.RequestCultureResolution");
-            inMemoryLogger.Records.ShouldHaveLoggedCount(13004, 0);
+                "SharedKernel.ServiceDefaults.Localization.Diagnostics.ServiceDefaultsLocalizationLogCategory");
+            inMemoryLogger.Records.ShouldHaveLoggedCount(13400, 0);
         }
         finally
         {
@@ -140,8 +143,8 @@ public sealed class SharedKernelLocalizationExtensionsTests
         {
             var loggerFactory = (InMemoryLoggerFactory)host.Services.GetRequiredService<ILoggerFactory>();
             var inMemoryLogger = loggerFactory.GetLogger(
-                "SharedKernel.ServiceDefaults.Localization.RequestCultureResolution");
-            inMemoryLogger.Records.ShouldHaveLoggedCount(13004, 0);
+                "SharedKernel.ServiceDefaults.Localization.Diagnostics.ServiceDefaultsLocalizationLogCategory");
+            inMemoryLogger.Records.ShouldHaveLoggedCount(13400, 0);
         }
         finally
         {

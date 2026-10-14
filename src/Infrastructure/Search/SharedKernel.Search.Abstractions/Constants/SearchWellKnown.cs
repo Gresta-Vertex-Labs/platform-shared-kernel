@@ -1,17 +1,19 @@
 namespace SharedKernel.Search.Abstractions.Constants;
 
 /// <summary>
-/// Domain-local well-known constants for <c>09.Search</c> — default field names, pagination
-/// ceilings, OpenTelemetry source/meter/tag names, and provider name literals.
+/// Domain-local well-known constants for <c>09.Search</c>: default field names, pagination
+/// ceilings, the OpenTelemetry source and meter name, and provider name literals. Tag keys, operation names and
+/// instrument names live in <see cref="Telemetry.SearchTagKeys"/>, <see cref="Telemetry.SearchOperations"/> and
+/// <see cref="Telemetry.SearchInstrumentNames"/>.
 /// </summary>
 /// <remarks>
 /// This is the SK0022 named-constant holder for the search domain, mirroring
 /// <c>SecurityClaimTypes</c> (<c>12.Security.Abstractions</c>), <c>WebhookSignatureHeaders</c>
 /// (<c>15.Integration</c>), and <c>HubGroupNaming</c> (<c>14.Presentation.SignalR</c>). It lives in
 /// <c>.Abstractions</c> specifically so both sibling provider packages read byte-identical
-/// <see cref="ActivitySourceName"/> / <see cref="MeterName"/> values — that identity is the whole
-/// reason <c>13.ServiceDefaults</c> can wire one string name and cover both providers with no
-/// <c>ProjectReference</c> to <c>09.Search</c>. The <c>ActivitySource</c> and <c>Meter</c>
+/// <see cref="ActivitySourceName"/> / <see cref="MeterName"/> values: the host's <c>SharedKernel.*</c> subscription
+/// covers both providers with no <c>ProjectReference</c> to <c>09.Search</c>, and a meter requested by the same name
+/// from <c>IMeterFactory</c> is shared. The <c>ActivitySource</c> and <c>Meter</c>
 /// <em>instances</em> are created per-provider; only the names live here.
 /// </remarks>
 public static class SearchWellKnown
@@ -42,8 +44,8 @@ public static class SearchWellKnown
     public const int DefaultMaxFacetValues = 100;
 
     /// <summary>
-    /// The shared OpenTelemetry <c>ActivitySource</c> name both provider packages use for their own,
-    /// separately-instantiated <c>ActivitySource</c>.
+    /// The OpenTelemetry <c>ActivitySource</c> name both provider packages use for their own,
+    /// separately-instantiated <c>ActivitySource</c> (<c>SharedKernel.Search</c>).
     /// </summary>
     public const string ActivitySourceName = "SharedKernel.Search";
 
@@ -58,31 +60,4 @@ public static class SearchWellKnown
 
     /// <summary>The provider-name value for ElasticSearch.</summary>
     public const string ElasticSearchProviderName = "elasticsearch";
-
-    /// <summary>The OpenTelemetry tag key carrying the active provider name (<c>search.provider</c>).</summary>
-    public const string ProviderTagName = "search.provider";
-
-    /// <summary>The OpenTelemetry tag key carrying the active index name (<c>search.index</c>).</summary>
-    public const string IndexTagName = "search.index";
-
-    /// <summary>
-    /// The OpenTelemetry tag key carrying the logical operation name (<c>search.operation</c>) — the
-    /// contract member being executed (<c>index</c>, <c>search</c>, <c>count</c>, …), never the
-    /// engine's own endpoint path.
-    /// </summary>
-    public const string OperationTagName = "search.operation";
-
-    /// <summary>
-    /// The name of the operation-duration histogram both providers record
-    /// (<c>search.client.operation.duration</c>, in seconds), mirroring
-    /// <c>storage.client.operation.duration</c> in <c>08.Storage</c>.
-    /// </summary>
-    public const string OperationDurationMetricName = "search.client.operation.duration";
-
-    /// <summary>
-    /// The name of the document-throughput counter both providers record
-    /// (<c>search.client.documents</c>), incremented by write and delete operations with the number of
-    /// documents the call was asked to affect.
-    /// </summary>
-    public const string DocumentsMetricName = "search.client.documents";
 }

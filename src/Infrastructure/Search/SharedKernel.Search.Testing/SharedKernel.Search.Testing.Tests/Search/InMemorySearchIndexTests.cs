@@ -497,6 +497,23 @@ public sealed class InMemorySearchIndexTests
     }
 
     [Fact]
+    public async Task EnumerateAsync_TenantScopeMissing_ThrowsASharedKernelException_CarryingTheRealSearchError()
+    {
+        var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+
+        var exception = await Assert.ThrowsAsync<SearchStreamException>(async () =>
+        {
+            await foreach (var _ in index.EnumerateAsync(null, TenantScope.Global, batchSize: 10, CancellationToken.None))
+            {
+            }
+        });
+
+        Assert.IsAssignableFrom<SharedKernel.Core.Exceptions.SharedKernelException>(exception);
+        Assert.IsAssignableFrom<IHasError>(exception);
+        Assert.Equal(SearchErrors.TenantScopeMissing(index.IndexName), exception.Error);
+    }
+
+    [Fact]
     public async Task EnumerateAsync_YieldsFullFilteredTenantScopedCorpus()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());

@@ -42,7 +42,8 @@ public sealed class RedisIdempotencyConcurrencyTests(RedisContainerFixture fixtu
             multiplexer,
             new FixedTenantAccessor(tenantId),
             MsOptions.Create(new RedisIdempotencyOptions()),
-            new InMemoryLogger<RedisIdempotencyStore>());
+            new InMemoryLogger<RedisIdempotencyStore>(),
+            TestMeterFactory.NewMetrics());
 
     private static RequestView CreateStore(IConnectionMultiplexer multiplexer, Guid? tenantId, TimeSpan? ttl = null) =>
         new(CreateRawStore(multiplexer, tenantId), ttl ?? DefaultTtl);

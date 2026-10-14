@@ -1,16 +1,18 @@
 using System.Data.Common;
-using System.Runtime.ExceptionServices;
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Execution.Context;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Idempotency.EfCore.Context;
+using SharedKernel.Idempotency.EfCore.Diagnostics;
 using SharedKernel.Idempotency.EfCore.Entities;
 using SharedKernel.Idempotency.EfCore.Internal;
-using SharedKernel.Idempotency.EfCore.Logging;
 using SharedKernel.Idempotency.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Telemetry;
 
 namespace SharedKernel.Idempotency.EfCore.Store;
 
@@ -30,6 +32,12 @@ namespace SharedKernel.Idempotency.EfCore.Store;
 /// comparing timestamps, which can collide under a coarse <see cref="IClock"/>. <see cref="CompleteAsync"/> and
 /// <see cref="ReleaseAsync"/> touch the row only while the supplied token still matches <em>and</em> the row is
 /// still <c>InProgress</c>, so a late call from a caller whose reservation was taken over is a no-op.
+/// </para>
+/// <para>
+/// <b>Outage.</b> A connectivity or timeout failure makes every member throw
+/// <see cref="IdempotencyStoreUnavailableException"/> (the database exception is its inner exception), or — with
+/// <see cref="EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable"/> — return the unprotected fallback and
+/// count it. Cancellation and every other exception propagate unchanged.
 /// </para>
 /// <para>
 /// Registered <c>Scoped</c>, matching <see cref="IdempotencyDbContext"/>'s lifetime. One class serves both
@@ -58,6 +66,7 @@ public sealed class EfCoreIdempotencyStore : IIdempotencyStore
     private readonly IClock _clock;
     private readonly IOptions<EfCoreIdempotencyOptions> _options;
     private readonly ILogger<EfCoreIdempotencyStore> _logger;
+    private readonly EfCoreIdempotencyMetrics _metrics;
 
     /// <summary>Initializes a new instance of <see cref="EfCoreIdempotencyStore"/>.</summary>
     /// <param name="context">The idempotency context.</param>
@@ -65,24 +74,28 @@ public sealed class EfCoreIdempotencyStore : IIdempotencyStore
     /// <param name="clock">The source of every reservation and expiry timestamp.</param>
     /// <param name="options">The fail-open setting.</param>
     /// <param name="logger">Logs a fail-open decision.</param>
+    /// <param name="metrics">The operation duration and fail-open instruments.</param>
     public EfCoreIdempotencyStore(
         IdempotencyDbContext context,
         IRequestContextAccessor requestContextAccessor,
         IClock clock,
         IOptions<EfCoreIdempotencyOptions> options,
-        ILogger<EfCoreIdempotencyStore> logger)
+        ILogger<EfCoreIdempotencyStore> logger,
+        EfCoreIdempotencyMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContextAccessor);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(metrics);
 
         _context = context;
         _requestContextAccessor = requestContextAccessor;
         _clock = clock;
         _options = options;
         _logger = logger;
+        _metrics = metrics;
     }
 
     /// <inheritdoc />
@@ -93,7 +106,7 @@ public sealed class EfCoreIdempotencyStore : IIdempotencyStore
         TimeSpan ttl,
         CancellationToken cancellationToken)
     {
-        EnsureDefined(purpose);
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(fingerprint);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ttl, TimeSpan.Zero);
@@ -103,57 +116,63 @@ public sealed class EfCoreIdempotencyStore : IIdempotencyStore
         var expiresAt = now + ttl;
         var token = Guid.NewGuid();
 
-        try
-        {
-            await _context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            try
+        // Nothing is written on an outage, so the fallback token identifies no row; a later Complete/Release
+        // against it hits the same outage path and follows the same fail-open/fail-closed decision.
+        return await RunAsync(
+            IdempotencyTelemetry.BeginSpanName,
+            IdempotencyTelemetry.OperationBegin,
+            purpose,
+            async () =>
             {
-                var connection = _context.Database.GetDbConnection();
-                await using var command = connection.CreateCommand();
-                command.CommandText = TryBeginSql;
-                AddParameter(command, "tenant_scope", tenantScope);
-                AddParameter(command, "purpose", purpose.ToString());
-                AddParameter(command, "key", key);
-                AddParameter(command, "fingerprint", fingerprint);
-                AddParameter(command, "reserved_at_utc", now);
-                AddParameter(command, "expires_at_utc", expiresAt);
-                AddParameter(command, "token", token);
-
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                await _context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    throw new InvalidOperationException(
-                        "The idempotency reservation upsert returned no row; this should be structurally " +
-                        "impossible for an INSERT ... ON CONFLICT DO UPDATE ... RETURNING statement.");
+                    var connection = _context.Database.GetDbConnection();
+                    await using var command = connection.CreateCommand();
+                    command.CommandText = TryBeginSql;
+                    AddParameter(command, "tenant_scope", tenantScope);
+                    AddParameter(command, "purpose", purpose.ToString());
+                    AddParameter(command, "key", key);
+                    AddParameter(command, "fingerprint", fingerprint);
+                    AddParameter(command, "reserved_at_utc", now);
+                    AddParameter(command, "expires_at_utc", expiresAt);
+                    AddParameter(command, "token", token);
+
+                    await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                    if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException(
+                            "The idempotency reservation statement returned no row. Verify the idempotency_keys schema.");
+                    }
+
+                    var storedFingerprint = reader.GetString(0);
+                    var storedStatus = reader.GetString(1);
+                    var storedResponse = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    var storedToken = reader.GetGuid(3);
+
+                    // This call won the row — a fresh insert or a reclaimed expired one.
+                    if (storedToken == token)
+                    {
+                        return IdempotencyReservation.Started(token.ToString());
+                    }
+
+                    if (!string.Equals(storedFingerprint, fingerprint, StringComparison.Ordinal))
+                    {
+                        return IdempotencyReservation.FingerprintMismatch();
+                    }
+
+                    return storedStatus == IdempotencyRecordStatusNames.Completed
+                        ? IdempotencyReservation.Completed(storedResponse)
+                        : IdempotencyReservation.InProgress();
                 }
-
-                var storedFingerprint = reader.GetString(0);
-                var storedStatus = reader.GetString(1);
-                var storedResponse = reader.IsDBNull(2) ? null : reader.GetString(2);
-                var storedToken = reader.GetGuid(3);
-
-                // This call won the row — a fresh insert or a reclaimed expired one.
-                if (storedToken == token)
-                    return IdempotencyReservation.Started(token.ToString());
-
-                if (!string.Equals(storedFingerprint, fingerprint, StringComparison.Ordinal))
-                    return IdempotencyReservation.FingerprintMismatch();
-
-                return storedStatus == IdempotencyRecordStatusNames.Completed
-                    ? IdempotencyReservation.Completed(storedResponse)
-                    : IdempotencyReservation.InProgress();
-            }
-            finally
-            {
-                await _context.Database.CloseConnectionAsync().ConfigureAwait(false);
-            }
-        }
-        catch (Exception ex) when (EfCoreStoreUnavailableClassifier.IsStoreUnavailable(ex))
-        {
-            // Nothing was written, so the token identifies no row; a later Complete/Release against it hits the
-            // same outage path and follows the same fail-open/fail-closed decision.
-            return HandleStoreUnavailable(ex, nameof(TryBeginAsync), IdempotencyReservation.Started(token.ToString()));
-        }
+                finally
+                {
+                    await _context.Database.CloseConnectionAsync().ConfigureAwait(false);
+                }
+            },
+            ResultOf,
+            () => IdempotencyReservation.Started(token.ToString()),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -165,40 +184,47 @@ public sealed class EfCoreIdempotencyStore : IIdempotencyStore
         TimeSpan retention,
         CancellationToken cancellationToken)
     {
-        EnsureDefined(purpose);
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(token);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(retention, TimeSpan.Zero);
 
-        // An unparsable token can never match a reservation_token value.
-        if (!Guid.TryParse(token, out var reservationToken))
-            return false;
-
         var tenantScope = IdempotencyTenantScope.Current(_requestContextAccessor);
         var expiresAt = _clock.UtcNow + retention;
 
-        try
-        {
-            // The token + status guard makes this affect zero rows — reported as false — when the reservation was
-            // taken over by another caller or already completed.
-            var affected = await _context.IdempotencyKeys
-                .Where(x => x.TenantScope == tenantScope
-                    && x.Purpose == purpose
-                    && x.Key == key
-                    && x.ReservationToken == reservationToken
-                    && x.Status == IdempotencyRecordStatus.InProgress)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(x => x.Status, IdempotencyRecordStatus.Completed)
-                    .SetProperty(x => x.Response, response)
-                    .SetProperty(x => x.ExpiresAtUtc, expiresAt), cancellationToken)
-                .ConfigureAwait(false);
+        return await RunAsync(
+            IdempotencyTelemetry.CompleteSpanName,
+            IdempotencyTelemetry.OperationComplete,
+            purpose,
+            async () =>
+            {
+                // An unparsable token can never match a reservation_token value.
+                if (!Guid.TryParse(token, out var reservationToken))
+                {
+                    return false;
+                }
 
-            return affected > 0;
-        }
-        catch (Exception ex) when (EfCoreStoreUnavailableClassifier.IsStoreUnavailable(ex))
-        {
-            return HandleStoreUnavailable(ex, nameof(CompleteAsync), false);
-        }
+                // The token + status guard makes this affect zero rows — reported as false — when the reservation
+                // was taken over by another caller or already completed.
+                var affected = await _context.IdempotencyKeys
+                    .Where(x => x.TenantScope == tenantScope
+                        && x.Purpose == purpose
+                        && x.Key == key
+                        && x.ReservationToken == reservationToken
+                        && x.Status == IdempotencyRecordStatus.InProgress)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(x => x.Status, IdempotencyRecordStatus.Completed)
+                            .SetProperty(x => x.Response, response)
+                            .SetProperty(x => x.ExpiresAtUtc, expiresAt),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                return affected > 0;
+            },
+            AppliedOrLost,
+            static () => false,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -208,41 +234,52 @@ public sealed class EfCoreIdempotencyStore : IIdempotencyStore
         string token,
         CancellationToken cancellationToken)
     {
-        EnsureDefined(purpose);
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(token);
 
-        if (!Guid.TryParse(token, out var reservationToken))
-            return false;
-
         var tenantScope = IdempotencyTenantScope.Current(_requestContextAccessor);
 
-        try
-        {
-            // The status guard is what makes this "delete only if not completed".
-            var affected = await _context.IdempotencyKeys
-                .Where(x => x.TenantScope == tenantScope
-                    && x.Purpose == purpose
-                    && x.Key == key
-                    && x.ReservationToken == reservationToken
-                    && x.Status == IdempotencyRecordStatus.InProgress)
-                .ExecuteDeleteAsync(cancellationToken)
-                .ConfigureAwait(false);
+        // Swallowing under fail-open is safe: an unreleased row expires with its TTL.
+        return await RunAsync(
+            IdempotencyTelemetry.ReleaseSpanName,
+            IdempotencyTelemetry.OperationRelease,
+            purpose,
+            async () =>
+            {
+                if (!Guid.TryParse(token, out var reservationToken))
+                {
+                    return false;
+                }
 
-            return affected > 0;
-        }
-        catch (Exception ex) when (EfCoreStoreUnavailableClassifier.IsStoreUnavailable(ex))
-        {
-            // Swallowing under fail-open is safe: an unreleased row expires with its TTL.
-            return HandleStoreUnavailable(ex, nameof(ReleaseAsync), false);
-        }
+                // The status guard is what makes this "delete only if not completed".
+                var affected = await _context.IdempotencyKeys
+                    .Where(x => x.TenantScope == tenantScope
+                        && x.Purpose == purpose
+                        && x.Key == key
+                        && x.ReservationToken == reservationToken
+                        && x.Status == IdempotencyRecordStatus.InProgress)
+                    .ExecuteDeleteAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                return affected > 0;
+            },
+            AppliedOrLost,
+            static () => false,
+            cancellationToken).ConfigureAwait(false);
     }
 
-    private static void EnsureDefined(IdempotencyPurpose purpose)
+    private static string ResultOf(IdempotencyReservation reservation) => reservation.Status switch
     {
-        if (!Enum.IsDefined(purpose))
-            throw new ArgumentOutOfRangeException(nameof(purpose), purpose, "Unknown idempotency purpose.");
-    }
+        IdempotencyReservationStatus.Started => IdempotencyTelemetry.ResultStarted,
+        IdempotencyReservationStatus.InProgress => IdempotencyTelemetry.ResultInProgress,
+        IdempotencyReservationStatus.Completed => IdempotencyTelemetry.ResultCompleted,
+        IdempotencyReservationStatus.FingerprintMismatch => IdempotencyTelemetry.ResultFingerprintMismatch,
+        _ => throw new UnreachableException(),
+    };
+
+    private static string AppliedOrLost(bool applied) =>
+        applied ? IdempotencyTelemetry.ResultApplied : IdempotencyTelemetry.ResultLost;
 
     private static void AddParameter(DbCommand command, string name, object value)
     {
@@ -252,12 +289,71 @@ public sealed class EfCoreIdempotencyStore : IIdempotencyStore
         command.Parameters.Add(parameter);
     }
 
-    private T HandleStoreUnavailable<T>(Exception exception, string operation, T fallback)
+    /// <summary>
+    /// Runs one statement inside the operation's span and duration measurement. Argument validation happens before it.
+    /// </summary>
+    private async Task<T> RunAsync<T>(
+        string spanName,
+        string operation,
+        IdempotencyPurpose purpose,
+        Func<Task<T>> statement,
+        Func<T, string> resultOf,
+        Func<T> fallback,
+        CancellationToken cancellationToken)
     {
-        if (!_options.Value.AllowExecutionOnStoreUnavailable)
-            ExceptionDispatchInfo.Capture(exception).Throw();
+        var purposeTag = EfCoreIdempotencyTelemetry.PurposeTag(purpose);
+        using var activity = EfCoreIdempotencyTelemetry.Source.StartActivity(spanName, ActivityKind.Client);
+        activity?.SetTag(IdempotencyTagKeys.Operation, operation);
+        activity?.SetTag(IdempotencyTagKeys.Purpose, purposeTag);
+        activity?.SetTag(IdempotencyTagKeys.Provider, EfCoreIdempotencyTelemetry.ProviderName);
 
-        EfCoreIdempotencyLog.StoreUnavailableFailOpen(_logger, operation, exception);
-        return fallback;
+        var started = Stopwatch.GetTimestamp();
+        var outcome = WellKnownOutcomes.Success;
+        string? result = null;
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var value = await statement().ConfigureAwait(false);
+            result = resultOf(value);
+            return value;
+        }
+        catch (OperationCanceledException exception)
+        {
+            outcome = activity.RecordException(exception);
+            throw;
+        }
+        catch (Exception exception) when (EfCoreStoreUnavailableClassifier.IsStoreUnavailable(exception))
+        {
+            // The span records the classified outage without the provider exception: database exception text can
+            // carry statement parameters, and traces share the trust level of logs.
+            var unavailable = new IdempotencyStoreUnavailableException(exception);
+            outcome = EfCoreIdempotencyTelemetry.RecordOutage(activity, unavailable);
+            if (!_options.Value.AllowExecutionOnStoreUnavailable)
+            {
+                throw unavailable;
+            }
+
+            activity?.SetTag(IdempotencyTagKeys.FailOpen, true);
+            result = IdempotencyTelemetry.ResultFailOpen;
+            _metrics.RecordFailOpen(operation, purposeTag);
+            EfCoreIdempotencyLog.StoreUnavailableFailOpen(_logger, operation, purposeTag, exception);
+            return fallback();
+        }
+        catch (Exception exception)
+        {
+            outcome = activity.RecordException(exception);
+            throw;
+        }
+        finally
+        {
+            if (result is not null)
+            {
+                activity?.SetTag(IdempotencyTagKeys.Result, result);
+            }
+
+            _metrics.RecordDuration(operation, purposeTag, outcome, result, started);
+        }
     }
 }

@@ -19,9 +19,9 @@ public class SingleValueObjectTests
         protected override IEnumerable<Error>? Validate()
         {
             if (string.IsNullOrWhiteSpace(Value))
-                yield return Error.Validation("Email.Required", "Email address is required.");
+                yield return Error.Validation("email.required", "Email address is required.");
             else if (!Value.Contains('@'))
-                yield return Error.Validation("Email.InvalidFormat", "Email address is invalid.");
+                yield return Error.Validation("email.invalid_format", "Email address is invalid.");
         }
     }
 
@@ -50,7 +50,7 @@ public class SingleValueObjectTests
         protected override IEnumerable<Error>? Validate()
         {
             if (Value <= 0)
-                yield return Error.Validation("Int.NotPositive", "Value must be positive.");
+                yield return Error.Validation("int.not_positive", "Value must be positive.");
         }
     }
 

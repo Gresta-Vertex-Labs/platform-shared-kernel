@@ -31,6 +31,11 @@ namespace SharedKernel.Persistence.EfCore.Exceptions;
 /// classified by the entry that actually failed.
 /// </para>
 /// <para>
+/// A query canceled by <c>statement_timeout</c> (<c>57014</c>) is thrown as a <see cref="DomainException"/> whose
+/// <see cref="Error"/> is <see cref="ErrorType.Timeout"/>: Core has no dedicated timeout exception and edges map by
+/// <c>Error.Type</c>. Npgsql's retrying strategy does not replay a timed-out statement, so it reaches this classifier with retry on or off.
+/// </para>
+/// <para>
 /// The violated constraint's name is logged (EventId <c>6010</c>) rather than returned: it names internal schema
 /// objects, and <see cref="Error"/> has no metadata bag to carry it.
 /// </para>
@@ -40,10 +45,11 @@ internal sealed class PostgresDbUpdateExceptionClassifier : IDbUpdateExceptionCl
     private readonly ILogger<PostgresDbUpdateExceptionClassifier> _logger;
 
     /// <summary>Initialises the classifier.</summary>
-    /// <param name="logger">Logger for the classified constraint; <see cref="NullLogger{T}"/> when omitted.</param>
-    public PostgresDbUpdateExceptionClassifier(ILogger<PostgresDbUpdateExceptionClassifier>? logger = null)
+    /// <param name="logger">Logger for the classified constraint.</param>
+    public PostgresDbUpdateExceptionClassifier(ILogger<PostgresDbUpdateExceptionClassifier> logger)
     {
-        _logger = logger ?? NullLogger<PostgresDbUpdateExceptionClassifier>.Instance;
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -61,7 +67,7 @@ internal sealed class PostgresDbUpdateExceptionClassifier : IDbUpdateExceptionCl
         if (PostgresExceptionClassifier.Classify(postgresException, foreignKeyKind) is not { } classification)
             return null;
 
-        PersistenceLog.DatabaseErrorClassified(
+        EfCoreLog.DatabaseErrorClassified(
             _logger,
             classification.SqlState,
             classification.Error.Code,
@@ -72,6 +78,8 @@ internal sealed class PostgresDbUpdateExceptionClassifier : IDbUpdateExceptionCl
         {
             ErrorType.Validation => new ValidationException(classification.Error, exception),
             ErrorType.Forbidden => new ForbiddenException(classification.Error, exception),
+            // Core has no dedicated timeout exception; edges map by Error.Type, so a DomainException carries it.
+            ErrorType.Timeout => new DomainException(classification.Error, exception),
             _ => new ConflictException(classification.Error, exception),
         };
     }

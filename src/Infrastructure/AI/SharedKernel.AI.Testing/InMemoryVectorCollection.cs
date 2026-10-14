@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using SharedKernel.AI.Abstractions.Abstractions;
@@ -109,11 +110,11 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorWriteReceipt>.Failure(
-                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure is enabled.")));
         }
 
         var validationError = ValidateRecord(record);
-        if (validationError is not null)
+        if (validationError.Type != SharedKernel.Primitives.Errors.ErrorType.None)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorWriteReceipt>.Failure(validationError));
         }
@@ -134,7 +135,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorBulkReceipt>.Failure(
-                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure is enabled.")));
         }
 
         var failures = new List<VectorItemFailure>();
@@ -143,7 +144,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         foreach (var record in records)
         {
             var validationError = ValidateRecord(record);
-            if (validationError is not null)
+            if (validationError.Type != SharedKernel.Primitives.Errors.ErrorType.None)
             {
                 failures.Add(new VectorItemFailure { RecordId = record.Id, Error = validationError });
                 continue;
@@ -175,7 +176,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorWriteReceipt>.Failure(
-                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure is enabled.")));
         }
 
         var affected = 0;
@@ -199,7 +200,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorBulkReceipt>.Failure(
-                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure is enabled.")));
         }
 
         var affected = 0;
@@ -232,7 +233,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorWriteReceipt>.Failure(
-                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure enabled")));
+                IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure is enabled.")));
         }
 
         if (_definition.TenantField is not null && tenantScope.IsGlobal)
@@ -416,7 +417,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
 
         if (string.IsNullOrWhiteSpace(record.Id))
         {
-            throw new ArgumentException(IntelligenceErrors.InvalidRecordId(record.Id).Message, nameof(record));
+            throw new ArgumentException("The record id must not be empty or whitespace.", nameof(record));
         }
 
         _store[record.Id] = record;
@@ -431,7 +432,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         _queriedVectors.Clear();
     }
 
-    private SharedKernel.Primitives.Errors.Error? ValidateRecord(TRecord record)
+    private SharedKernel.Primitives.Errors.Error ValidateRecord(TRecord record)
     {
         if (string.IsNullOrWhiteSpace(record.Id))
         {
@@ -448,7 +449,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
             return IntelligenceErrors.DimensionMismatch(CollectionName, _definition.Dimension, record.Vector.Length);
         }
 
-        return null;
+        return SharedKernel.Primitives.Errors.Error.None;
     }
 
     private VectorWriteReceipt BuildReceipt(int affectedCount) => new()
@@ -479,7 +480,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
             VectorDistanceMetric.Cosine => CosineSimilarity(query.Span, candidate.Span),
             VectorDistanceMetric.DotProduct => DotProduct(query.Span, candidate.Span),
             VectorDistanceMetric.Euclidean => EuclideanDistance(query.Span, candidate.Span),
-            _ => throw new NotSupportedException($"Unsupported distance metric '{_definition.DistanceMetric}'."),
+            _ => throw new UnreachableException($"Unknown VectorDistanceMetric '{_definition.DistanceMetric}'."),
         };
 
     private static float DotProduct(ReadOnlySpan<float> a, ReadOnlySpan<float> b)

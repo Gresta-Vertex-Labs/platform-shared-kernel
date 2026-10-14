@@ -38,6 +38,8 @@ public sealed class RateLimitingTests
         second.Headers.RetryAfter!.Delta.Should().BePositive().And.BeLessThanOrEqualTo(TimeSpan.FromMinutes(10));
         logs.GetLogger(typeof(RateLimitRejectionPostConfigure).FullName!).Records
             .Should().Contain(record => record.EventId.Id == LoggingEventIdRanges.Presentation + 5);
+        logs.GetLogger(typeof(RateLimitRejectionPostConfigure).FullName!).Records.ShouldFollowLogConvention().ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Presentation, 0);
+        logs.ShouldHaveCategory(typeof(RateLimitRejectionPostConfigure));
     }
 
     [Fact]

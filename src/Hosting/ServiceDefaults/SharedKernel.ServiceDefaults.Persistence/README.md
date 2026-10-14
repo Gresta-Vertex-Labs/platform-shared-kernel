@@ -65,7 +65,7 @@ Variants: `.AddDapperDatabaseReadinessCheck()` for a Dapper-only service (`IDbCo
 
 - Each check resolves what `AddSharedKernelPostgres` (or `AddSharedKernelNpgsql`) registers, when the check first runs.
 - The names differ, so the EF Core and Dapper checks can both be added; pass `name` to add one per context.
-- Registration is logged through `HealthCheckRegistrationLogging` (EventId 13002).
+- Registration is logged through `HealthCheckRegistrationLogging` (EventId 13000).
 - Field encryption and the audit sealer need nothing from this package: `UseFieldEncryption()` and `UseAuditTrail()`
   register the `field-encryption` and `audit-sealing` readiness probes, which `AddSharedKernelReadiness()` maps.
 
@@ -91,7 +91,7 @@ builder.Services.AddHealthChecks()
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13002 | Information | Health check registered (name, tags) — from the base's `HealthCheckRegistrationLogging` |
+| 13000 | Information | Registered the health check (name, tags), from the base's `HealthCheckRegistrationLogging`; the id belongs to the base package's sub-block (was 13002) |
 
 ## Testing
 

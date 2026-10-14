@@ -117,6 +117,7 @@ public sealed class OutboxRoundTripTests : IDisposable
     private static ServiceProvider BuildProviderForRowInsertionTest(SqliteConnection connection)
     {
         var services = new ServiceCollection();
+        services.AddLogging();
 
         services.AddDbContext<OutboxTestDbContext>(opts =>
             opts.UseSqlite(connection));
@@ -139,6 +140,7 @@ public sealed class OutboxRoundTripTests : IDisposable
     private static ServiceProvider BuildProviderWithoutOutbox()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
 
         services.Configure<MessagingOptions>(o => o.ServiceName = "outbox-test-service");
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();

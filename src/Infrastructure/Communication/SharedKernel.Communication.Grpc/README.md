@@ -99,9 +99,9 @@ public sealed class StockReader(Inventory.InventoryClient client)
   | A platform rich status (`AddSharedKernelGrpc()` in `SharedKernel.Presentation.Grpc`) | The service's error: `ErrorInfo.reason` → `Code`, status message → `Message` |
   | `InvalidArgument` with a `BadRequest` detail | `Error.Validation` of the field violations |
   | No `ErrorInfo` | `grpc.{status}` (`grpc.failed_precondition`) with the status's `ErrorType` |
-  | Never reached the service (refused, reset, TLS) | `communication.unreachable` |
+  | Never reached the service (refused, reset, TLS) | `communication.unavailable` |
   | Its deadline passed | `communication.timeout` |
-  | No access token | `communication.access_token_unavailable` |
+  | No access token | `communication.access_token_unavailable` (the channel reports it as `Internal`, so the channel retry policy does not repeat it) |
   | The caller's own cancellation | Thrown (`OperationCanceledException`) |
 
   Status → `ErrorType`: InvalidArgument and OutOfRange → Validation, Unauthenticated → Unauthorized, PermissionDenied
@@ -156,13 +156,13 @@ For `google.protobuf.Timestamp` use Google.Protobuf's own `Timestamp.FromDateTim
 
 The `communication.*` codes are listed in
 [`SharedKernel.Communication`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication/README.md#errors);
-an uncoded failure is `grpc.{status}`.
+an uncoded failure is `grpc.{status}` (`CommunicationErrorCodes.GrpcStatus`). A malformed `google.type.Money` message is `communication.grpc.invalid_money` (Validation), whose message never repeats the amounts.
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 11100 | Error | The caller could not be written onto the gRPC call `{GrpcMethod}`; it goes out without the caller's metadata |
+| 11100 | Error | The caller could not be written onto the gRPC call `'{GrpcMethod}'`, so it goes out without the caller's metadata (the exception is logged) |
 
 Credential events (11000–11004) come from `SharedKernel.Communication`. Client spans come from
 `WithCommunicationTelemetry()` in

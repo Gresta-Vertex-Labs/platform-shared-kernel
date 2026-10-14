@@ -51,6 +51,11 @@ public abstract class AnalyzerBase : DiagnosticAnalyzer
     /// The README anchor fragment for the rule, e.g., <c>"sk0001-directdatetimeusage"</c>.
     /// The final URI is <c>{HelpLinkBase}#{readmeAnchor}</c>.
     /// </param>
+    /// <param name="isEnabledByDefault">
+    /// <see langword="false"/> for a rule that encodes the kernel's own convention and is opt-in for a consuming
+    /// service (SK0044); a consumer enables it with <c>dotnet_diagnostic.SKnnnn.severity</c>. Defaults to
+    /// <see langword="true"/>.
+    /// </param>
     /// <returns>A fully configured <see cref="DiagnosticDescriptor"/>.</returns>
     protected static DiagnosticDescriptor CreateDescriptor(
         string id,
@@ -58,7 +63,8 @@ public abstract class AnalyzerBase : DiagnosticAnalyzer
         string messageFormat,
         string category,
         DiagnosticSeverity defaultSeverity,
-        string readmeAnchor
+        string readmeAnchor,
+        bool isEnabledByDefault = true
     ) =>
         new DiagnosticDescriptor(
             id: id,
@@ -66,7 +72,7 @@ public abstract class AnalyzerBase : DiagnosticAnalyzer
             messageFormat: messageFormat,
             category: category,
             defaultSeverity: defaultSeverity,
-            isEnabledByDefault: true,
+            isEnabledByDefault: isEnabledByDefault,
             helpLinkUri: $"{HelpLinkBase}#{readmeAnchor}"
         );
 }

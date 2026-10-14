@@ -1,3 +1,5 @@
+using SharedKernel.Security.Oidc.Diagnostics;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
 using Microsoft.IdentityModel.JsonWebTokens;
 using SharedKernel.Security.Abstractions;
@@ -73,7 +75,7 @@ public sealed class TokenRevocationEnforcerTests
 
         await IsRevokedAsync(new TokenRevocationEnforcer(_check, _cache), Expiry.AddMinutes(-10));
 
-        _logger.Records.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", true);
+        _logger.Records.ShouldHaveLoggedWithoutException(new(OidcLoggingEventIds.TokenRevoked));
     }
 
     [Fact]
@@ -148,7 +150,11 @@ public sealed class TokenRevocationEnforcerTests
 
         Assert.True(revoked);
         Assert.Empty(_cache.Writes);
-        _logger.Records.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", false);
+        var failure = _logger.Records.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCheckFailed), typeof(TimeoutException));
+        Assert.Same(_check.Failure, failure.Exception);
+        Assert.Equal(LogLevel.Error, failure.LogLevel);
+        _logger.Records.ShouldHaveLoggedCount(new(OidcLoggingEventIds.RevocationCheckFailed), 1);
+        _logger.Records.ShouldNotHaveLogged(new(OidcLoggingEventIds.TokenRevoked));
     }
 
     [Fact]
@@ -171,7 +177,7 @@ public sealed class TokenRevocationEnforcerTests
 
         Assert.Equal(checkAnswer, revoked);
         Assert.Single(_check.Requests);
-        _logger.Records.ShouldHaveLogged(new(12106));
+        _logger.Records.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCacheFailed), typeof(InvalidOperationException));
     }
 
     [Theory]
@@ -185,7 +191,7 @@ public sealed class TokenRevocationEnforcerTests
         bool revoked = await IsRevokedAsync(new TokenRevocationEnforcer(_check, _cache), Expiry.AddMinutes(-10));
 
         Assert.Equal(checkAnswer, revoked);
-        _logger.Records.ShouldHaveLogged(new(12106));
+        _logger.Records.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCacheFailed), typeof(InvalidOperationException));
     }
 
     [Fact]

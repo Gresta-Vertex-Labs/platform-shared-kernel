@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
@@ -149,7 +150,7 @@ public sealed class PdfReportExporterTests
     {
         var options = new PdfExportOptions();
         configure?.Invoke(options);
-        return new PdfReportExporter<TestRow>(new ReportingDependencies(storageFactory: storageFactory), Options.Create(options));
+        return new PdfReportExporter<TestRow>(new ReportingDependencies(NullLogger<ReportingDependencies>.Instance, storageFactory: storageFactory), Options.Create(options));
     }
 
     private static async IAsyncEnumerable<TestRow> Rows(int count)

@@ -127,7 +127,7 @@ static async Task Surface4_ResultsNotExceptions()
     });
     await unreachable.StartAsync();
     Result<StockLevel> down = await unreachable.Services.GetRequiredService<IInventoryClient>().GetStockAsync("sku-1", CancellationToken.None);
-    Verify(down.Error.Code == CommunicationErrorCodes.Unreachable, "a refused connection is communication.unreachable, not an exception");
+    Verify(down.Error.Code == CommunicationErrorCodes.Unavailable, "a refused connection is communication.unavailable, not an exception");
 
     await host.StopAsync();
     await unreachable.StopAsync();

@@ -31,7 +31,7 @@ internal sealed class EfAuditCheckpointService : IAuditCheckpointService
     public Task<AuditChainCheckpoint> CreateCheckpointAsync(string resourceType, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
-        var tenantId = _scope.ResolveCallerTenant("Creating an audit checkpoint");
+        var tenantId = _scope.ResolveCallerTenant();
         return CreateAsync(new ChainId(tenantId, resourceType), cancellationToken);
     }
 
@@ -39,7 +39,7 @@ internal sealed class EfAuditCheckpointService : IAuditCheckpointService
     public Task<AuditChainCheckpoint> CreateCheckpointForChainAsync(TenantId? tenantId, string resourceType, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
-        _scope.RequireAccess(tenantId, nameof(CreateCheckpointForChainAsync));
+        _scope.RequireAccess(tenantId);
         return CreateAsync(new ChainId(tenantId, resourceType), cancellationToken);
     }
 
