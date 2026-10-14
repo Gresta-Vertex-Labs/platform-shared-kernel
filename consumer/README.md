@@ -41,10 +41,34 @@ same routing; the two change together.
 script copies `skill/sharedkernel/`, replaces `{{SharedKernelVersion}}` with the release version, drops
 the maintainer-only recipe frontmatter, and zips it as `sharedkernel-skill-v<version>.zip` with
 `sharedkernel/` at the archive root. The zip is attached to the GitHub Release for the tag. A
-pre-release tag ships a pre-release skill. **The contract is the asset name, the archive layout and the
-stamped version**; how a service syncs it belongs to the service template.
+pre-release tag ships a pre-release skill. How a service syncs it belongs to the service template; what
+it can rely on is the distribution contract below.
 
 Try it locally: `bash eng/pack-consumer-skill.sh 0.0.0-local artifacts/skill`.
+
+## Distribution contract
+
+This is a **public contract** with every consuming service and the service template that syncs the
+skill. Changing any point below is a breaking change for every service: it needs a major version, a
+note in the release, and a matching change in the service template before the tag.
+
+| Point | Guarantee |
+| --- | --- |
+| Where | One asset on the GitHub Release of each `v<version>` tag of `Gresta-Vertex-Labs/platform-shared-kernel`. A tag with a pre-release part (`v1.0.0-rc.4`) is a pre-release on GitHub; a plain `vX.Y.Z` is not. |
+| Asset name | `sharedkernel-skill-v<version>.zip`, where `<version>` is the tag without its `v` (`sharedkernel-skill-v1.0.0-rc.4.zip`). Exactly one such asset per release. |
+| Version | `<version>` equals the version of every SharedKernel package published by the same tag, built from the same commit. A service pins one `SharedKernelVersion` and downloads the skill of that same version. |
+| Layout | The archive root is one folder, `sharedkernel/`, holding `SKILL.md` and `recipes/*.md`. Unzipped into a service's `.claude/skills/`, it becomes `.claude/skills/sharedkernel/`. Nothing else is at the root. |
+| Stamping | Every `{{SharedKernelVersion}}` placeholder is replaced by `<version>`; no `{{` is left in any shipped file. |
+| Content | Markdown only, LF line endings, consumer vocabulary only, no repository paths (no `samples/`, `src/`, `eng/`, `CLAUDE.md`, `state-map`). Recipe frontmatter (`proven-by`, `unproven`) is removed. |
+
+Download (the [GitHub CLI](https://cli.github.com/), authenticated with read access to the repository):
+
+```bash
+gh release download v<version> --repo Gresta-Vertex-Labs/platform-shared-kernel --pattern 'sharedkernel-skill-v*.zip'
+unzip -o sharedkernel-skill-v<version>.zip -d .claude/skills/
+```
+
+Re-syncing replaces `.claude/skills/sharedkernel/` as a whole; a service never edits files inside it.
 
 ## Recipe standard
 
@@ -94,10 +118,28 @@ Rules:
 `eval/tasks.md` lists task prompts with the expected packages, projects and recipe. Run the set before
 each release and after any large change to `SKILL.md`:
 
-1. Copy a Shop service (for example `samples/Shop/Ordering`) to a scratch folder outside the repo.
-2. Unzip a locally packed skill into its `.claude/skills/`.
-3. Run each prompt in a fresh Claude Code session.
-4. Score three things per task: the package choice, the project placement, and whether the build stays
-   clean. Record the date, version and score at the bottom of `eval/tasks.md`.
+1. **Stage a workspace** with `eng/stage-consumer-skill-eval.sh`:
+
+   ```bash
+   bash samples/Shop/build.sh                                 # once: packs the kernel into nupkgs/
+   bash eng/stage-consumer-skill-eval.sh Ordering /c/Temp/sk-eval   # any Shop service; Ordering by default
+   ```
+
+   The folder must be outside the repository. The script copies the service and the Shop projects it
+   references, removes repository-only material (`CLAUDE.md`, `state-map*.md`, `.claude/` folders and
+   Markdown lines pointing into them), and writes consumer-shaped build files: a local `packages/` feed,
+   `NuGet.Config`, `global.json`, a `Directory.Packages.props` pinning one `SharedKernelVersion`, and a
+   `<Service>.slnx`. It packs the skill at that same version into `.claude/skills/sharedkernel/` and
+   commits a git baseline. The **scoring sheet** goes next to the folder (`/c/Temp/sk-eval-scoring.md`),
+   never inside it, because it holds the expected answers: the task table with empty *Picked packages*,
+   *Projects*, *Recipe opened*, *Build clean* and *Notes* columns. On Windows, set `PYTHON` to a real
+   interpreter.
+2. **Baseline build:** `dotnet build <Service>.slnx` in the workspace. Note its warnings (today: NU1903
+   audit warnings for a transitive test dependency); "build clean" means no new diagnostic against them.
+3. **Run each prompt in a fresh Claude Code session** started in the workspace. After scoring it, return to
+   the baseline with `git reset --hard && git clean -fdx`.
+4. **Score** three things per task: the package choice, the project placement, and whether the build stays
+   clean (`git diff` shows what the assistant changed). Record the date, version and score in the Runs
+   table of `eval/tasks.md`.
 
 Automating the run is a later, separate decision.
