@@ -472,9 +472,10 @@ static HashSet<string> RecipeNames(string text) =>
         .Select(m => m.Groups[1].Value)
         .ToHashSet(StringComparer.Ordinal);
 
-// Removes fenced code blocks; `using` lines and namespaces in snippets are not package references.
+// Removes fenced code blocks, including fences indented under a list item; `using` lines and
+// namespaces in snippets are not package references.
 static string StripCode(string text) =>
-    Regex.Replace(text, @"^(`{3,}|~{3,}).*?^\1\s*$", "", RegexOptions.Multiline | RegexOptions.Singleline);
+    Regex.Replace(text, @"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", "", RegexOptions.Multiline | RegexOptions.Singleline);
 
 static string StripFrontmatter(string text) => Regex.Replace(text, @"\A---\n.*?\n---\n", "", RegexOptions.Singleline);
 

@@ -29,7 +29,8 @@ The README wins over anything you remember: names and options change between ver
 - **Four projects, fixed references.** Domain → `SharedKernel.Domain`. Application →
   `SharedKernel.Application` plus the `.Abstractions` packages it needs. Infrastructure → the provider
   (adapter) packages. Api/Worker → the host packages, plus its own Application and Infrastructure. A
-  package's README Install table names its project; the build rejects a wrong placement.
+  package's README Install table names its project; the service's architecture tests catch a wrong
+  placement (write-tests.md).
 - **Expected failures are values.** Return `Result`/`Result<T>` with an `Error`; throw only for bugs and
   misconfiguration. Wrap throwing third-party calls with `ResultTry.TryAsync`.
 - **Logging is `[LoggerMessage]` only**, with an explicit `EventId` and PascalCase placeholders. Never
