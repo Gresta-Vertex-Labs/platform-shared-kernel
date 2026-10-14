@@ -95,7 +95,7 @@ A Claude Code skill, `consumer/skill/sharedkernel/`, shipped with every release 
 | P-621 | `generate-package-index.cs`: catalog region and skill checks under `--check` | ● |
 | P-622 | The 17 recipes, each with `proven-by` | ○ |
 | P-623 | Release asset `sharedkernel-skill-v<version>.zip` (`eng/pack-consumer-skill.sh`, `release.yml` job `skill`, packed on every CI run) | ● |
-| P-624 | Maintenance rules (`_common.md`, root `CLAUDE.md`, `/sync-brain`, README standard) | ○ |
+| P-624 | Maintenance rules (`_common.md`, root `CLAUDE.md`, `/sync-brain`, README standard) | ● |
 | P-625 | Evaluation set; the first scored run is manual (needs fresh sessions) | ○ |
 
 **Acceptance**

@@ -156,6 +156,7 @@ Domain `CLAUDE.md` headings, in this order: `## Packages`, `## Public Entry Poin
 - Every packable project has a `README.md` next to its `.csproj` (packing fails without it) following `docs/package-readme-standard.md`: fixed section order, absolute GitHub links, snippets that compile against the current public API, a Configuration table with full section paths, and never a link to `CLAUDE.md`, `state-map.md` or `docs/`.
 - Update the package README in the same change as any public API, configuration key, error code, EventId or readiness-probe change. Where a `ReadmeSample*Tests.cs` exists, keep it in step with the snippets.
 - The domain `README.md` keeps its package list and counts true.
+- The consumer skill (`consumer/skill/sharedkernel/`) is updated in the same change when a phase adds, removes or renames a packable package, or changes a registration entry point or a flow a recipe covers: the `SKILL.md` needs table, and the affected recipes with their `proven-by` paths. Consumer vocabulary only (no domain ids, `CLAUDE.md`, `state-map` or phase keys); the recipe standard is in `consumer/README.md`. `dotnet run eng/generate-package-index.cs` regenerates the catalog and fails on an unrouted package.
 
 ---
 

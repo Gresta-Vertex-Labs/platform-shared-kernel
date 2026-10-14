@@ -19,7 +19,10 @@ all of them consistent, scannable and correct. `PackageReadmeStandardTests` (in
 5. **Length follows substance.** A small package is 80–150 lines; a large one stays under about 500 (the test fails
    above 550). End-to-end walkthroughs belong in the domain README or a `samples/` service, linked from here.
 6. **Write for the reader who has 30 seconds.** The callout and the "You get / So that" table must answer "what is
-   this and why would I use it" on their own.
+   this and why would I use it" on their own. The callout's **first sentence** is quoted verbatim (Markdown
+   stripped) as the package's purpose in the consumer skill's catalog, so it must stand alone: no "It", "This" or
+   link that needs the rest of the callout to make sense. `dotnet run eng/generate-package-index.cs -- --list-purposes`
+   prints them all.
 7. **Name capabilities, not domain ids.** Write "Persistence" or "the Caching packages" and link the folder. Domain
    ids (`06.Persistence`) are maintainer vocabulary and the test rejects them outside code blocks.
 8. **Write for AI assistants too.** Copilot, Claude and other assistants read this file to use the package. Use exact
