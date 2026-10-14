@@ -354,11 +354,15 @@ jobs:
 
       # Every csproj outside the .slnx consumes SharedKernel through PackageReference: the
       # consumer-verify harnesses and samples/. Listed once here for the steps below.
+      # SelfAnalysisProbe is not a consumer: it holds one deliberate violation per kernel rule and
+      # must FAIL to build (tools/Governance/SelfAnalysis/verify-self-analysis.sh asserts that);
+      # the Unit lane's KernelGlobalConfigFiringTests prove the same severities in CI.
       - name: Discover packed-package consumers
         run: |
           set -euo pipefail
           grep -oE 'Path="[^"]*\.csproj"' Platform.SharedKernel.slnx | sed -E 's/^Path="//; s/"$//' | sort > "$RUNNER_TEMP/solution.txt"
-          git ls-files '*.csproj' | sort | comm -23 - "$RUNNER_TEMP/solution.txt" > "$RUNNER_TEMP/consumers.txt"
+          git ls-files '*.csproj' | sort | comm -23 - "$RUNNER_TEMP/solution.txt" \
+            | grep -v '^tools/Governance/_verification/SelfAnalysisProbe/' > "$RUNNER_TEMP/consumers.txt"
           xargs grep -l 'Microsoft.NET.Test.Sdk' < "$RUNNER_TEMP/consumers.txt" | sort > "$RUNNER_TEMP/consumer-tests.txt" || true
           echo "Packed-package consumers:"; sed 's/^/  /' "$RUNNER_TEMP/consumers.txt"
           echo "Of which test projects:"; sed 's/^/  /' "$RUNNER_TEMP/consumer-tests.txt"
