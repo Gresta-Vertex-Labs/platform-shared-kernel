@@ -10,8 +10,8 @@
 
 | Counter | Next free | Note |
 | --- | --- | --- |
-| Next phase id | P-619 | Highest used: P-618 (WO-087) |
-| Next work order | WO-088 | Highest used: WO-087 |
+| Next phase id | P-626 | Highest used: P-625 (WO-088) |
+| Next work order | WO-089 | Highest used: WO-088 |
 
 Phases written by `arch-lead` take the next phase id; a user-directed phase without a work order still takes one, so no id is ever reused.
 
@@ -77,6 +77,31 @@ After P-577 is on the feed, delete the package IDs that WO-086 and the pre-publi
 
 - Every retired ID is either deleted from the feed or explicitly kept by the user's decision.
 - No retired ID is still referenced by any project, sample or README.
+
+### WO-088 — Ship the `sharedkernel` consumer skill
+
+**Status:** `◐` In progress
+**Domain:** root (`consumer/`), with `eng/` and `.github/` changes
+**Design:** [`docs/proposals/consumer-skill.md`](docs/proposals/consumer-skill.md); maintainer notes in [`consumer/README.md`](consumer/README.md)
+
+**What is needed**
+
+A Claude Code skill, `consumer/skill/sharedkernel/`, shipped with every release at the package version, that routes a consuming service's needs to packages, projects and entry points, and gives recipes for multi-package tasks. Decisions: owned at the root; recipes may declare `unproven:` flows (today only the Azure Service Bus transport); no consumer `.globalconfig` yet.
+
+| Phase | What | Status |
+| --- | --- | --- |
+| P-619 | Scaffold: `consumer/README.md`, `SKILL.md` index and needs table | ● |
+| P-620 | README callout audit (first sentence stands alone) | ○ |
+| P-621 | `generate-package-index.cs`: catalog region and skill checks under `--check` | ○ |
+| P-622 | The 17 recipes, each with `proven-by` | ○ |
+| P-623 | Release asset `sharedkernel-skill-v<version>.zip` | ○ |
+| P-624 | Maintenance rules (`_common.md`, root `CLAUDE.md`, `/sync-brain`, README standard) | ○ |
+| P-625 | Evaluation set; the first scored run is manual (needs fresh sessions) | ○ |
+
+**Acceptance**
+
+- One tag gives one package version and one skill version from the same commit.
+- `generate-package-index.cs --check` fails on a stale catalog, an unrouted package, a dangling id, a broken recipe link, a missing `proven-by` path or maintainer vocabulary.
 
 ## Blocked
 
