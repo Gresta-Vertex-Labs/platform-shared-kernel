@@ -39,4 +39,4 @@ Packages are named without the `SharedKernel.` prefix. Projects: **D** Domain ·
 
 | Date | Skill version | Packages | Placement | Build | Notes |
 | --- | --- | ---: | ---: | ---: | --- |
-| _not run yet_ | | | | | |
+| 2026-10-14 | 1.0.0-rc.4 | 4/6 | 4/6 | 6/6 | Ordering, tasks 4, 6, 8, 11, 14, 19 only, headless `claude -p`. 6 and 8 stopped to ask (the prompts name shipments; Ordering has none). Details on the root board, P-625. |

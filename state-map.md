@@ -80,9 +80,29 @@ After P-577 is on the feed, delete the package IDs that WO-086 and the pre-publi
 
 ### P-625 — First scored run of the consumer-skill evaluation set (WO-088)
 
-**Status:** `○` Not started — needs fresh Claude Code sessions, so it is run by hand
+**Status:** `◐` In progress — first partial run 2026-10-14: 4 of 6 pass, no routing fault; below the 5-of-6 bar, so open
 **Domain:** root (`consumer/`)
 **Depends on:** WO-088 (the skill, its recipes, the release asset and the task set are in place)
+
+**Run 2026-10-14: skill v1.0.0-rc.4, Ordering, 6 of 19 tasks, headless `claude -p`, one fresh process each**
+
+Staged with `eng/stage-consumer-skill-eval.sh Ordering`. The baseline build has 8 NU1903 lines (transitive SSH.NET); "build clean" means nothing beyond them.
+
+| Task | Skill loaded | Recipe opened | Packages → project | Build | Result | Fault |
+| --- | --- | --- | --- | --- | --- | --- |
+| 4 messaging + outbox | yes | add-messaging.md | already wired in Ordering (`Messaging.MassTransit`, `.RabbitMq`, `.EfCore` → I); correctly found, nothing added | clean | pass | eval set: the task is already done in Ordering |
+| 6 caching | yes | add-caching.md | none: stopped to ask (no `GetShipment` in Ordering); named `ICacheableQuery<T>`, `IInvalidatesCache`, `WithCaching()` and the missing `AddSharedKernelCaching` correctly | clean (no change) | fail | eval set: the prompt names a concept the staged service lacks |
+| 8 authentication | no | none | none: stopped to ask (no shipments; OIDC already wired) | clean (no change) | fail | eval set; the skill never loaded because the run stopped at the domain question, so triggering is untested |
+| 11 background job | yes | add-background-job.md (+ the `Scheduling` README from the NuGet cache) | `Scheduling`, `Caching.Redis.DistributedLocking` → I; command in A | clean | pass | — |
+| 14 file storage | yes | add-file-storage.md (+ the `Storage.Abstractions` and `Storage.S3` READMEs) | `Storage.Abstractions` → A; `Storage.S3` → I; tenant store | clean | pass (rubric); intent missed: streamed through the API instead of a presigned direct upload | recipe: presigned uploads are `unproven` (Shop presigns downloads only), so there is no snippet to follow |
+| 19 write-tests | yes | write-tests.md, add-persistence.md (+ the `Persistence.Testing` README) | already referenced (`Testing`, `Persistence.Testing`, … → T); `FakeRepository`, `TestRequestContext`, `FakeClock`, `PostgresTestServer` | clean | pass | — |
+
+Also seen: in 3 runs the first read of a recipe went to `.claude/skills/sharedkernel/<recipe>.md` and missed, because `SKILL.md` names recipes by bare file name without saying they are in `recipes/`. That costs one failed read; the skill index's wording is at fault, not its routing.
+
+Proposed fixes, not applied:
+1. **Eval set (main cause of both failures):** the prompts assume a fresh "Shipping" service. Either stage a service where the capability is missing and phrase the prompts in its vocabulary (Ordering: "Cache `GetOrderQuery`…"), or add a per-task "staged service" column and skip tasks already done there (4 and 8 on Ordering). Run headless with an instruction to assume and proceed instead of asking.
+2. **`SKILL.md` index:** title the recipe list "Recipes (in `recipes/` next to this file)". Writing `recipes/<file>` instead would need `RecipeNames` in `eng/generate-package-index.cs` to accept the prefix.
+3. **add-file-storage.md:** add a presigned-upload step to Shop (`CreateUploadUrlAsync` on Catalog's product images) and prove it, or add one "Use when the client uploads directly: `CreateUploadUrlAsync`, read the README" line to the recipe body.
 
 **What is needed**
 
