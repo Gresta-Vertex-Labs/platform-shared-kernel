@@ -30,5 +30,7 @@
     <PackageReference Include="Testcontainers" />
     <!-- An independent reader: every PDF Gotenberg returns is opened back with PDFsharp. -->
     <PackageReference Include="PDFsharp" />
+    <!-- Overrides PDFsharp's vulnerable Pkcs 8.0.1 (CVE-2026-84008); see Directory.Packages.props. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 </Project>

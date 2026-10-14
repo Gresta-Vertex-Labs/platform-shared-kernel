@@ -45,7 +45,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project |
-| Depends on | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Configuration`, PDFsharp + PDFsharp-MigraDoc (MIT) |
+| Depends on | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Configuration`, PDFsharp + PDFsharp-MigraDoc (MIT), and System.Security.Cryptography.Pkcs 10.0.13 or later (overrides the vulnerable version PDFsharp brings) |
 | Namespaces | `SharedKernel.Reporting` (`AddPdf`), `SharedKernel.Reporting.Pdf` (`IPdfReportExporter<T>`, `PdfExportOptions`, `PdfPaperSize`) |
 
 ## Quick start

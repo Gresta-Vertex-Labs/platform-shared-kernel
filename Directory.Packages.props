@@ -266,6 +266,13 @@
     -->
     <PackageVersion Include="PDFsharp" Version="6.2.4" />
     <PackageVersion Include="PDFsharp-MigraDoc" Version="6.2.4" />
+    <!--
+      PDFsharp 6.2.4 depends on System.Security.Cryptography.Pkcs 8.0.1, vulnerable to CVE-2026-84008
+      (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7). It reaches the build only through
+      SharedKernel.Reporting.Pdf, so that project references the patched version explicitly (and its
+      .nuspec carries it to consumers). Drop the reference once PDFsharp itself depends on a patched Pkcs.
+    -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <PackageVersion Include="Polly.Core" Version="8.7.0" />
     <PackageVersion Include="Polly.Extensions" Version="8.7.0" />
     <PackageVersion Include="Qdrant.Client" Version="1.18.1" />
