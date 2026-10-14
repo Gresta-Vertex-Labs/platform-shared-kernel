@@ -78,30 +78,19 @@ After P-577 is on the feed, delete the package IDs that WO-086 and the pre-publi
 - Every retired ID is either deleted from the feed or explicitly kept by the user's decision.
 - No retired ID is still referenced by any project, sample or README.
 
-### WO-088 — Ship the `sharedkernel` consumer skill
+### P-625 — First scored run of the consumer-skill evaluation set (WO-088)
 
-**Status:** `◐` In progress
-**Domain:** root (`consumer/`), with `eng/` and `.github/` changes
-**Design:** [`docs/proposals/consumer-skill.md`](docs/proposals/consumer-skill.md); maintainer notes in [`consumer/README.md`](consumer/README.md)
+**Status:** `○` Not started — needs fresh Claude Code sessions, so it is run by hand
+**Domain:** root (`consumer/`)
+**Depends on:** WO-088 (the skill, its recipes, the release asset and the task set are in place)
 
 **What is needed**
 
-A Claude Code skill, `consumer/skill/sharedkernel/`, shipped with every release at the package version, that routes a consuming service's needs to packages, projects and entry points, and gives recipes for multi-package tasks. Decisions: owned at the root; recipes may declare `unproven:` flows (today only the Azure Service Bus transport); no consumer `.globalconfig` yet.
-
-| Phase | What | Status |
-| --- | --- | --- |
-| P-619 | Scaffold: `consumer/README.md`, `SKILL.md` index and needs table | ● |
-| P-620 | README callout audit (first sentence stands alone): all 104 callouts parse and stand alone; no README changed | ● |
-| P-621 | `generate-package-index.cs`: catalog region and skill checks under `--check` | ● |
-| P-622 | The 17 recipes, each with `proven-by` | ○ |
-| P-623 | Release asset `sharedkernel-skill-v<version>.zip` (`eng/pack-consumer-skill.sh`, `release.yml` job `skill`, packed on every CI run) | ● |
-| P-624 | Maintenance rules (`_common.md`, root `CLAUDE.md`, `/sync-brain`, README standard) | ● |
-| P-625 | Evaluation set; the first scored run is manual (needs fresh sessions) | ○ |
+Run the 19 prompts in `consumer/eval/tasks.md` as `consumer/README.md` ("Evaluation") describes: a copy of a Shop service with a locally packed skill (`eng/pack-consumer-skill.sh`), one fresh session per prompt. Score packages, placement and build per task, record the run in the file's Runs table, and fix the needs table or recipes where the assistant went wrong.
 
 **Acceptance**
 
-- One tag gives one package version and one skill version from the same commit.
-- `generate-package-index.cs --check` fails on a stale catalog, an unrouted package, a dangling id, a broken recipe link, a missing `proven-by` path or maintainer vocabulary.
+- One recorded run with a score per task; every miss either fixed in the skill or written down as a known gap.
 
 ## Blocked
 
