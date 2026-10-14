@@ -10,8 +10,8 @@
 
 | Counter | Next free | Note |
 | --- | --- | --- |
-| Next phase id | P-619 | Highest used: P-618 (WO-087) |
-| Next work order | WO-088 | Highest used: WO-087 |
+| Next phase id | P-626 | Highest used: P-625 (WO-088) |
+| Next work order | WO-089 | Highest used: WO-088 |
 
 Phases written by `arch-lead` take the next phase id; a user-directed phase without a work order still takes one, so no id is ever reused.
 
@@ -77,6 +77,20 @@ After P-577 is on the feed, delete the package IDs that WO-086 and the pre-publi
 
 - Every retired ID is either deleted from the feed or explicitly kept by the user's decision.
 - No retired ID is still referenced by any project, sample or README.
+
+### P-625 — First scored run of the consumer-skill evaluation set (WO-088)
+
+**Status:** `○` Not started — needs fresh Claude Code sessions, so it is run by hand
+**Domain:** root (`consumer/`)
+**Depends on:** WO-088 (the skill, its recipes, the release asset and the task set are in place)
+
+**What is needed**
+
+Run the 19 prompts in `consumer/eval/tasks.md` as `consumer/README.md` ("Evaluation") describes: a copy of a Shop service with a locally packed skill (`eng/pack-consumer-skill.sh`), one fresh session per prompt. Score packages, placement and build per task, record the run in the file's Runs table, and fix the needs table or recipes where the assistant went wrong.
+
+**Acceptance**
+
+- One recorded run with a score per task; every miss either fixed in the skill or written down as a known gap.
 
 ## Blocked
 

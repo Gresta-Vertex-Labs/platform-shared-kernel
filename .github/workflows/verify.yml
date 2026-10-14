@@ -142,9 +142,14 @@ jobs:
         run: bash eng/verify-markdown-links.sh
 
       # docs/packages.md, docs/dependency-graph.md and eng/solution-filters/ are generated from the
-      # csproj files (tiers and ProjectReferences); a stale copy fails here.
+      # csproj files (tiers and ProjectReferences); a stale copy fails here. The same run rewrites the
+      # consumer skill's package catalog and validates the skill (routing coverage, recipes, vocabulary).
       - name: Check generated package views
         run: dotnet run eng/generate-package-index.cs -- --check
+
+      # The release attaches this archive; packing it on every run keeps release day boring.
+      - name: Pack the consumer skill
+        run: bash eng/pack-consumer-skill.sh 0.0.0-ci "$RUNNER_TEMP/consumer-skill"
 
       # MinVer overwrites $(Version) unconditionally, so a hand-written <Version> is dead XML that
       # disagrees with the packed artifact. Versions come from the v* tag only.

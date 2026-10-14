@@ -314,7 +314,9 @@ git push origin v1.2.0
 
 [`release.yml`](.github/workflows/release.yml) checks the tag is well formed and on `main`, runs
 every gate (both test lanes included), packs **all** packages at that version, verifies the set is
-complete, and publishes them together to GitHub Packages. There is no per-package publish.
+complete, and publishes them together to GitHub Packages. There is no per-package publish. It then
+attaches the consumer skill, `sharedkernel-skill-v<version>.zip`, to the GitHub Release for the tag:
+the same commit and version as the packages (see [`consumer/README.md`](consumer/README.md)).
 
 ### Consuming the packages
 

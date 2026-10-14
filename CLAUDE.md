@@ -63,6 +63,7 @@ Other top-level locations:
 | `samples/` | `Shop`: one reference platform on the packed packages under a .NET Aspire AppHost — Catalog and Ordering (the four-project shape, architecture tests over `Shop.TestSupport`'s `ServiceShape`), Inventory, Billing, Merchant, Notify, Reports; `Shop.E2E` flows against real containers; `Shop.Coverage.Tests` keeps every package referenced. `samples/README.md` is the "how to consume the kernel" guide. |
 | `eng/` | Build internals: `SharedKernelTiers.targets` (tier check), `PackageInventory.proj`, `verify-*.sh` scripts, test settings. See [`eng/README.md`](eng/README.md). |
 | `docs/` | [`packages.md`](docs/packages.md) (generated: every package by tier and the service project that references it), [`dependency-graph.md`](docs/dependency-graph.md) (generated Mermaid graphs), `package-readme-standard.md` (the shape every package `README.md` follows). |
+| `consumer/` | The `sharedkernel` Claude Code skill that ships with every release for consuming services: `skill/sharedkernel/SKILL.md` (needs table + generated package catalog) and `recipes/`, each proven by a Shop file. Consumer vocabulary only. Rules, release and eval in [`consumer/README.md`](consumer/README.md). |
 | `.claude/` | Commands, agents and settings for Claude Code (see "Working in This Repo with Claude Code"). |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: build, test lanes, CI, release. |
 
@@ -188,7 +189,7 @@ One version for every package, derived from a git tag by MinVer — no `<Version
 
 ## What Goes Where
 
-Routing only — the domain `CLAUDE.md` holds the rules and details.
+Routing only — the domain `CLAUDE.md` holds the rules and details. The consumer skill's needs table (`consumer/skill/sharedkernel/SKILL.md`) is the consumer view of this same routing; a row added, renamed or removed here changes there in the same change.
 
 | I need… | Package / entry point | Domain |
 | --- | --- | --- |

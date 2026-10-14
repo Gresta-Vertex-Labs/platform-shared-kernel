@@ -1,6 +1,6 @@
 ---
 name: sync-brain
-description: Reconcile the CLAUDE.md files, README package lists, counts and badges, and the state-map boards with the code, which is the truth. Use after a change that added, moved or removed a package, edge, rule or entry point, or when docs look out of date.
+description: Reconcile the CLAUDE.md files, README package lists, counts and badges, the consumer skill's routing, and the state-map boards with the code, which is the truth. Use after a change that added, moved or removed a package, edge, rule or entry point, or when docs look out of date.
 disable-model-invocation: true
 argument-hint: "[domain: NN | change summary]"
 ---
@@ -60,6 +60,13 @@ For each domain in scope, the headings must be exactly: `## Packages`, `## Publi
 - Root `README.md`: its package badge and counts match the total; its analyzer-rule count matches the active rules (`AnalyzerReleases.Shipped.md` + `Unshipped.md`, minus removed).
 - Every public README (package, domain, sample, root): no domain id such as `06.Persistence` outside code blocks — name the capability instead (enforced by `PackageReadmeStandardTests`).
 
+## Step 4b — Consumer skill (`consumer/skill/sharedkernel/`)
+
+- Run `dotnet run eng/generate-package-index.cs`: it regenerates the `SKILL.md` package catalog and lists every unrouted package, dangling id, broken recipe link, missing `proven-by` path and maintainer word. Fix each one.
+- `SKILL.md` needs table: every entry point named exists as public API (grep the `PublicAPI.*.txt` files); a renamed or removed one is corrected; the row's "Reference from" matches the package tier.
+- Recipes: a snippet that no longer matches the `proven-by` Shop file it mirrors is corrected to the file; a recipe whose flow changed shape beyond a name is reported, not rewritten.
+- The root `CLAUDE.md` "What Goes Where" table and the needs table route the same needs; a row in one without its counterpart is reported.
+
 ## Step 5 — State-map boards
 
 For each domain in scope:
@@ -89,6 +96,6 @@ No drift
 
 ## Format contract
 
-- Writes only `CLAUDE.md` files, `README.md` package lists/counts/badges, and board-level `state-map.md` fields. Never code, project files, tests, `eng/` or CI files.
+- Writes only `CLAUDE.md` files, `README.md` package lists/counts/badges, the files under `consumer/skill/sharedkernel/` (Step 4b), and board-level `state-map.md` fields. Never code, project files, tests, `eng/` or CI files.
 - Every edit is justified by something found on disk in Step 1; nothing from memory.
 - Surgical edits: never rewrite a section that is correct, never change heading text or table columns.

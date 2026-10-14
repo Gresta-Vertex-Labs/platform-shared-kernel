@@ -7,28 +7,43 @@
 //                                                        project that references it and its SharedKernel deps
 //   docs/dependency-graph.md                             Mermaid graphs: folders, then one graph per folder
 //   eng/solution-filters/Platform.SharedKernel.{Tier}.slnf   one IDE view per tier (packages + their tests)
+//   consumer/skill/sharedkernel/SKILL.md                 the generated package-catalog region of the consumer skill
+//
+//   dotnet run eng/generate-package-index.cs -- --list-purposes   prints each package's catalog purpose (README audit)
 //
 // Inputs are only what the build already enforces: each tracked .csproj's <SharedKernelTier>, <IsPackable>
-// and ProjectReferences. Analyzer-only references (ReferenceOutputAssembly="false") are not dependencies.
+// and ProjectReferences, plus the first sentence of each package README's callout for the skill catalog.
+// Analyzer-only references (ReferenceOutputAssembly="false") are not dependencies.
 // Output is deterministic and LF-terminated; --check ignores CR so a Windows checkout compares equal.
+//
+// The consumer skill is also validated, in both modes (consumer/README.md lists the rules): every
+// Model/Abstractions/Adapter/Host package is routed by the needs table or a not-routed comment, every
+// SharedKernel id outside code is a real package, recipes and the recipe list match, proven-by paths
+// exist, and no shipped file uses maintainer vocabulary.
 
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 var check = args.Contains("--check");
 var root = FindRepositoryRoot();
 
-var tiers = new (string Name, string ReferenceFrom, string MayReference)[]
+var tiers = new (string Name, string ReferenceFrom, string MayReference, string ServiceProject)[]
 {
-    ("Foundation", "any project", "Foundation"),
-    ("Model", "the Domain project", "Foundation, Model"),
-    ("Abstractions", "the Application project", "Foundation, Model, Abstractions"),
-    ("Adapter", "the Infrastructure project", "Foundation, Model, Abstractions, declared adapter edges"),
-    ("Host", "the Api / Worker project", "everything except Testing and Tooling"),
-    ("Testing", "test projects only", "everything except Tooling"),
-    ("Tooling", "the build (analyzers, architecture tests, linter)", "nothing"),
+    ("Foundation", "any project", "Foundation", "any"),
+    ("Model", "the Domain project", "Foundation, Model", "Domain"),
+    ("Abstractions", "the Application project", "Foundation, Model, Abstractions", "Application"),
+    ("Adapter", "the Infrastructure project", "Foundation, Model, Abstractions, declared adapter edges", "Infrastructure"),
+    ("Host", "the Api / Worker project", "everything except Testing and Tooling", "Api / Worker"),
+    ("Testing", "test projects only", "everything except Tooling", "Tests"),
+    ("Tooling", "the build (analyzers, architecture tests, linter)", "nothing", "the build"),
 };
+var routedTiers = new[] { "Model", "Abstractions", "Adapter", "Host" };
+const string SkillDirectory = "consumer/skill/sharedkernel";
+const string CatalogBegin = "<!-- BEGIN GENERATED: package-catalog -->";
+const string CatalogEnd = "<!-- END GENERATED: package-catalog -->";
+var problems = new List<string>();
 
 var projects = TrackedFiles(root, "*.csproj")
     .Select(path => ReadProject(root, path))
@@ -59,6 +74,32 @@ foreach (var tier in tiers)
     outputs[$"eng/solution-filters/Platform.SharedKernel.{tier.Name}.slnf"] = SolutionFilter(tier.Name);
 }
 
+var purposes = packages.ToDictionary(p => p.Name, Purpose, StringComparer.Ordinal);
+if (args.Contains("--list-purposes"))
+{
+    foreach (var package in packages)
+    {
+        Console.WriteLine($"{package.Name}: {purposes[package.Name] ?? "(no callout)"}");
+    }
+
+    return 0;
+}
+
+var skillPath = $"{SkillDirectory}/SKILL.md";
+if (File.Exists(Path.Combine(root, skillPath)))
+{
+    var skill = SkillWithCatalog(File.ReadAllText(Path.Combine(root, skillPath)).Replace("\r", ""));
+    if (skill is not null)
+    {
+        outputs[skillPath] = skill;
+        ValidateSkill(skill);
+    }
+}
+else
+{
+    problems.Add($"{skillPath} is missing.");
+}
+
 var stale = new List<string>();
 foreach (var (relative, content) in outputs)
 {
@@ -77,10 +118,21 @@ foreach (var (relative, content) in outputs)
     }
 }
 
+if (problems.Count > 0)
+{
+    Console.Error.WriteLine("::error::The consumer skill is invalid (consumer/README.md lists the rules):");
+    problems.ForEach(problem => Console.Error.WriteLine($"  {problem}"));
+}
+
 if (check && stale.Count > 0)
 {
     Console.Error.WriteLine("::error::Generated package views are out of date. Run: dotnet run eng/generate-package-index.cs");
     stale.ForEach(file => Console.Error.WriteLine($"  {file}"));
+    return 1;
+}
+
+if (problems.Count > 0)
+{
     return 1;
 }
 
@@ -209,6 +261,223 @@ string SolutionFilter(string tier)
     json.Append("\n    ]\n  }\n}\n");
     return json.ToString();
 }
+
+// The first sentence of the README callout (the first blockquote after the title), Markdown stripped.
+string? Purpose(Project package)
+{
+    var readme = Path.Combine(root, package.Directory, "README.md");
+    if (!File.Exists(readme))
+    {
+        return null;
+    }
+
+    var quote = File.ReadAllLines(readme)
+        .SkipWhile(line => !line.StartsWith('>'))
+        .TakeWhile(line => line.StartsWith('>'))
+        .Select(line => line.TrimStart('>').Trim())
+        .ToList();
+    if (quote.Count == 0)
+    {
+        return null;
+    }
+
+    var text = Regex.Replace(string.Join(' ', quote), @"\[([^\]]*)\]\([^)]*\)", "$1");
+    text = text.Replace("**", "").Replace("__", "");
+    var sentence = FirstSentence(text).Replace("`", "").Replace("|", "\\|").Trim();
+    return sentence.Length == 0 ? null : sentence;
+}
+
+// Ends at the first '.', '!' or '?' followed by whitespace or the end, ignoring code spans ("Result<T>.Value").
+static string FirstSentence(string text)
+{
+    var inCode = false;
+    for (var i = 0; i < text.Length; i++)
+    {
+        var c = text[i];
+        if (c == '`')
+        {
+            inCode = !inCode;
+        }
+        else if (!inCode && c is '.' or '!' or '?' && (i + 1 == text.Length || char.IsWhiteSpace(text[i + 1])))
+        {
+            return text[..(i + 1)];
+        }
+    }
+
+    return text;
+}
+
+string? SkillWithCatalog(string skill)
+{
+    var begin = skill.IndexOf(CatalogBegin, StringComparison.Ordinal);
+    var end = skill.IndexOf(CatalogEnd, StringComparison.Ordinal);
+    if (begin < 0 || end < begin)
+    {
+        problems.Add($"{skillPath}: the '{CatalogBegin}' / '{CatalogEnd}' markers are missing.");
+        return null;
+    }
+
+    var table = new StringBuilder();
+    table.Append("| Package | Tier | Reference from | Purpose |\n| --- | --- | --- | --- |\n");
+    foreach (var tier in tiers)
+    {
+        foreach (var package in packages.Where(p => p.Tier == tier.Name))
+        {
+            var purpose = purposes[package.Name];
+            if (purpose is null)
+            {
+                problems.Add($"{package.Directory}/README.md has no callout ('> **…**' after the title) to take the catalog purpose from.");
+            }
+
+            table.Append($"| `{package.Name}` | {tier.Name} | {tier.ServiceProject} | {purpose ?? "—"} |\n");
+        }
+    }
+
+    return skill[..(begin + CatalogBegin.Length)] + "\n" + table + skill[end..];
+}
+
+void ValidateSkill(string skill)
+{
+    var directory = Path.Combine(root, SkillDirectory);
+    var files = Directory.EnumerateFiles(directory, "*.md", SearchOption.AllDirectories)
+        .Select(path => (Relative: Path.GetRelativePath(root, path).Replace('\\', '/'), Text: File.ReadAllText(path).Replace("\r", "")))
+        .Select(file => file.Relative == skillPath ? (file.Relative, Text: skill) : file)
+        .OrderBy(file => file.Relative, StringComparer.Ordinal)
+        .ToList();
+    var names = packages.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+
+    // Routing coverage: the needs table (section "Needs") or a not-routed comment names every routed package.
+    var needs = Regex.Match(skill, @"^## [^\n]*Needs[^\n]*\n(.*?)(?=^## )", RegexOptions.Multiline | RegexOptions.Singleline).Groups[1].Value;
+    var routed = Regex.Matches(string.Join('\n', needs.Split('\n').Where(line => line.StartsWith('|'))), @"`(SharedKernel(?:\.[A-Za-z0-9]+)+)`")
+        .Select(m => m.Groups[1].Value)
+        .ToHashSet(StringComparer.Ordinal);
+    foreach (Match notRouted in Regex.Matches(skill, @"<!--\s*not-routed:\s*([A-Za-z0-9.]+)\s*(?:—|-)+\s*(.*?)\s*-->"))
+    {
+        if (notRouted.Groups[2].Value.Length == 0)
+        {
+            problems.Add($"{skillPath}: not-routed '{notRouted.Groups[1].Value}' gives no reason.");
+        }
+
+        routed.Add(notRouted.Groups[1].Value);
+    }
+
+    foreach (var package in packages.Where(p => routedTiers.Contains(p.Tier)))
+    {
+        if (!routed.Contains(package.Name))
+        {
+            problems.Add($"{skillPath}: {package.Tier} package '{package.Name}' is in no needs-table row; add a row or a '<!-- not-routed: {package.Name} — reason -->' comment.");
+        }
+    }
+
+    // Recipes: the list in SKILL.md and the files in recipes/ match, and recipes name only existing recipes.
+    var recipeFiles = files.Where(f => f.Relative.StartsWith($"{SkillDirectory}/recipes/", StringComparison.Ordinal))
+        .ToDictionary(f => Path.GetFileName(f.Relative), f => f, StringComparer.Ordinal);
+    var recipeList = Regex.Match(skill, @"^## [^\n]*Recipes[^\n]*\n(.*?)(?=^## |\z)", RegexOptions.Multiline | RegexOptions.Singleline).Groups[1].Value;
+    var listed = RecipeNames(recipeList);
+    foreach (var name in listed.Where(n => !recipeFiles.ContainsKey(n)))
+    {
+        problems.Add($"{skillPath}: recipe '{name}' is listed but recipes/{name} does not exist.");
+    }
+
+    foreach (var name in recipeFiles.Keys.Where(n => !listed.Contains(n)))
+    {
+        problems.Add($"{SkillDirectory}/recipes/{name} is not in the recipe list of SKILL.md.");
+    }
+
+    foreach (var file in files.Where(f => f.Relative != skillPath || !listed.SetEquals(RecipeNames(StripCode(f.Text)))))
+    {
+        foreach (var name in RecipeNames(StripCode(file.Text)).Where(n => !recipeFiles.ContainsKey(n) && !(file.Relative == skillPath && listed.Contains(n))))
+        {
+            problems.Add($"{file.Relative}: names recipe '{name}', which does not exist.");
+        }
+    }
+
+    foreach (var file in recipeFiles.Values)
+    {
+        ValidateRecipeFrontmatter(file.Relative, file.Text);
+    }
+
+    foreach (var file in files)
+    {
+        // No dangling ids: a SharedKernel token outside code is a package or a namespace inside one.
+        foreach (Match id in Regex.Matches(StripCode(StripFrontmatter(file.Text)), @"(?<![\w.])SharedKernel(?:\.[A-Za-z0-9]+)+"))
+        {
+            var value = id.Value;
+            if (!names.Contains(value) && !names.Any(n => value.StartsWith(n + ".", StringComparison.Ordinal)))
+            {
+                problems.Add($"{file.Relative}: '{value}' is not a SharedKernel package.");
+            }
+        }
+
+        // Consumer vocabulary, everywhere in the shipped files.
+        foreach (var pattern in new[] { @"(?<![\w.])\d{2}\.[A-Z][A-Za-z]+", @"CLAUDE\.md", @"state-map", @"\bP-\d{3,}\b", @"\bWO-\d{3,}\b" })
+        {
+            foreach (Match hit in Regex.Matches(file.Text, pattern))
+            {
+                problems.Add($"{file.Relative}: '{hit.Value}' is maintainer vocabulary; consumers never see it.");
+            }
+        }
+    }
+}
+
+void ValidateRecipeFrontmatter(string relative, string text)
+{
+    var frontmatter = Regex.Match(text, @"\A---\n(.*?)\n---\n", RegexOptions.Singleline);
+    if (!frontmatter.Success)
+    {
+        problems.Add($"{relative}: has no frontmatter with 'proven-by'.");
+        return;
+    }
+
+    string? key = null;
+    var proven = 0;
+    foreach (var line in frontmatter.Groups[1].Value.Split('\n'))
+    {
+        var keyMatch = Regex.Match(line, @"^([a-z-]+):\s*$");
+        if (keyMatch.Success)
+        {
+            key = keyMatch.Groups[1].Value;
+            continue;
+        }
+
+        var item = Regex.Match(line, @"^\s+-\s+(.+?)\s*$");
+        if (!item.Success)
+        {
+            continue;
+        }
+
+        if (key == "proven-by")
+        {
+            proven++;
+            var path = item.Groups[1].Value.Split(' ', 2)[0];
+            if (!File.Exists(Path.Combine(root, path)) && !Directory.Exists(Path.Combine(root, path)))
+            {
+                problems.Add($"{relative}: proven-by path '{path}' does not exist.");
+            }
+        }
+        else if (key == "unproven" && !Regex.IsMatch(item.Groups[1].Value, @":\s*\S"))
+        {
+            problems.Add($"{relative}: unproven entry '{item.Groups[1].Value}' needs ': reason'.");
+        }
+    }
+
+    if (proven == 0)
+    {
+        problems.Add($"{relative}: lists no proven-by path.");
+    }
+}
+
+static HashSet<string> RecipeNames(string text) =>
+    Regex.Matches(text, @"(?<![\w/.-])([a-z][a-z0-9]*(?:-[a-z0-9]+)+\.md)\b")
+        .Select(m => m.Groups[1].Value)
+        .ToHashSet(StringComparer.Ordinal);
+
+// Removes fenced code blocks, including fences indented under a list item; `using` lines and
+// namespaces in snippets are not package references.
+static string StripCode(string text) =>
+    Regex.Replace(text, @"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", "", RegexOptions.Multiline | RegexOptions.Singleline);
+
+static string StripFrontmatter(string text) => Regex.Replace(text, @"\A---\n.*?\n---\n", "", RegexOptions.Singleline);
 
 static string ShortName(string name) => name.StartsWith("SharedKernel.", StringComparison.Ordinal) ? name["SharedKernel.".Length..] : name;
 

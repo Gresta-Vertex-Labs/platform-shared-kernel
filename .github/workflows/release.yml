@@ -14,6 +14,8 @@ name: Release
 #              The verified .nupkg files are uploaded as the "packages" artifact.
 #   publish    downloads exactly those files, re-checks the set against the expected-package list
 #              the verified run produced (so a partial download can never be published), and pushes.
+#   skill      packs the consumer skill at the verified version (eng/pack-consumer-skill.sh) and
+#              attaches sharedkernel-skill-v<version>.zip to the GitHub Release for the tag.
 #
 # The expected set is derived from the repository, not kept by hand: eng/PackageInventory.proj asks
 # every csproj on disk whether it packs (its evaluated IsPackable/PackageId). A packable project
@@ -164,5 +166,77 @@ jobs:
               sed 's/^/- /' release-packages/expected-packages.txt
             else
               echo "The verified package set was not downloaded; nothing was pushed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The consumer skill (consumer/README.md, "How it ships") at the same version as the packages, from
+  # the same commit, attached to the GitHub Release for the tag. It runs only after every package is
+  # on the feed, so a release never advertises guidance for packages that are not there. The asset
+  # name, the archive layout (sharedkernel/ at the root) and the stamped version are the contract
+  # consuming services sync against. contents: write is needed on this job only, to create the
+  # release and upload the asset.
+  skill:
+    name: Attach the consumer skill
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pack the skill
+        id: pack
+        env:
+          SK_VERSION: ${{ needs.verify.outputs.version }}
+        run: bash eng/pack-consumer-skill.sh "$SK_VERSION" release-skill
+
+      # A tag with a SemVer pre-release part (v1.0.0-rc.4) is a pre-release; a plain vX.Y.Z is not.
+      # Re-runnable on its own ("Re-run failed jobs" after publish has pushed the packages): an
+      # existing release is reused and its pre-release flag corrected, an existing asset replaced.
+      - name: Attach to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET: ${{ steps.pack.outputs.asset }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          case "$tag" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag exists: replacing the asset, prerelease=$prerelease."
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --prerelease="$prerelease"
+            gh release upload "$tag" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "Creating release $tag, prerelease=$prerelease."
+            gh release create "$tag" "$ASSET" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+              --prerelease="$prerelease"
+          fi
+          actual="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+          if [ "$actual" != "$prerelease" ]; then
+            echo "::error::Release $tag has isPrerelease=$actual, expected $prerelease."
+            exit 1
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | grep -qx "$(basename "$ASSET")" \
+            || { echo "::error::$(basename "$ASSET") is not attached to release $tag."; exit 1; }
+
+      - name: Job summary
+        if: always()
+        env:
+          ASSET: ${{ steps.pack.outputs.asset }}
+        run: |
+          {
+            echo "## Consumer skill"
+            echo ""
+            if [ -n "${ASSET:-}" ]; then
+              echo "- \`$(basename "$ASSET")\` attached to release \`${GITHUB_REF_NAME}\`"
+            else
+              echo "The skill was not packed; nothing was attached."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
