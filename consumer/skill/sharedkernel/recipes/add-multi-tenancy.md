@@ -124,8 +124,15 @@ builder.AddSharedKernelPostgres<OrderingDbContext>(
    Dapper sessions bind the caller's tenant for row-level security too; `session.RequireTenantId()` gives it to
    an `INSERT` that must write the column.
 
-4. **Api/Worker.** The request context comes first, then tenant resolution. The middleware runs after
-   authentication, so the signed claim is available, and before authorization.
+4. **Api/Worker: a tenant source first.** `IRequestContext.TenantId` is the authenticated caller's tenant claim
+   (`IUserContext.TenantId`). **Wire an authentication scheme before anything else (add-authentication.md):** with
+   no authentication, every request has no tenant and every tenanted command, query and row-level-security read
+   fails closed with `Forbidden`. Multi-tenancy is not done until a request carries a tenant, so add the
+   authentication in the same change when the service has none (OIDC by default, add-authentication.md), even when
+   the task only names persistence or row-level security. `SharedKernel.MultiTenancy` is optional on top: it refines the tenant (header,
+   tenant directory, a service's own strategy) and rejects inactive tenants. The request context comes first,
+   then tenant resolution. The middleware runs after authentication, so the signed claim is available, and before
+   authorization.
 
 ```csharp
 using SharedKernel.MultiTenancy.Extensions;
@@ -181,6 +188,8 @@ app.UseSharedKernelWebApi(pipeline =>
   `IRequestContext`.
 - With row-level security on, the database privilege check fails the host at startup when the application
   role can bypass the policy.
+- Nothing flags a host with no authentication: it builds and starts, and every tenanted request then fails with
+  `Forbidden`. Check `Program.cs` calls an `Add…Authentication` before `AddSharedKernelRequestContext()`.
 
 ## Read next
 

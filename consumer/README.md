@@ -134,6 +134,13 @@ each release and after any large change to `SKILL.md`:
    never inside it, because it holds the expected answers: the task table with empty *Picked packages*,
    *Projects*, *Recipe opened*, *Build clean* and *Notes* columns. On Windows, set `PYTHON` to a real
    interpreter.
+   **Greenfield** (the service template's situation): `bash eng/stage-consumer-skill-eval.sh --empty /c/Temp/sk-green`
+   stages a folder with only the skill, a `Directory.Packages.props` pinning `SharedKernelVersion` to the newest
+   published version (or `--version <v>`), and a `NuGet.Config` on GitHub Packages that reads its token from
+   `GITHUB_PACKAGES_TOKEN` (`export GITHUB_PACKAGES_TOKEN=$(gh auth token)`, `read:packages`). Run the four
+   "Greenfield" steps of `eval/tasks.md` in order without resetting between them; commit after each step so its
+   diff can be scored. Purge that version from the NuGet cache first if you packed it locally, so the restore
+   really comes from the feed.
 2. **Baseline build:** `dotnet build <Service>.slnx` in the workspace. Note its warnings (today: NU1903
    audit warnings for a transitive test dependency); "build clean" means no new diagnostic against them.
 3. **Run each prompt in a fresh Claude Code session** started in the workspace, using the staged service's variant
