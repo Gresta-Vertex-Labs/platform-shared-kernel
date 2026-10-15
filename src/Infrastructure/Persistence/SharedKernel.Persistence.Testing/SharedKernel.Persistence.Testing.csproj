@@ -23,6 +23,13 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <!--
+      Testcontainers 4.13.0 depends on SSH.NET 2025.1.0 (CVE-2026-48798, GHSA-q939-rpr3-3284, GHSA-mggc-4xg6-vcxf).
+      The repo-wide SSH.NET GlobalPackageReference (Directory.Packages.props) is PrivateAssets="all" and never reaches
+      a consumer; this project, the one packable project that brings Testcontainers to consumers, is excluded from it
+      and ships the patched version as a real .nuspec dependency instead.
+    -->
+    <PackageReference Include="SSH.NET" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>

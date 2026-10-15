@@ -84,6 +84,22 @@ Pins SDK `10.0.300` with `rollForward: latestFeature` and `allowPrerelease: fals
   explicit dependency of every packed package that touches it. A vulnerable transitive is fixed
   with an explicit reference in the owning project, or, when many unrelated projects reach it, a
   `<GlobalPackageReference>` (currently `SSH.NET` and `SQLitePCLRaw.bundle_e_sqlite3`).
+- **A `GlobalPackageReference` never ships**: it is `PrivateAssets="all"`, so it fixes this repo's own
+  builds while consumers of a packable project still restore the vulnerable version. When a packable
+  project brings a vulnerable transitive to consumers, that project references the patched version
+  itself, so its `.nuspec` carries it. Current shipped overrides:
+
+  | Override | Owning packable project | Why |
+  | --- | --- | --- |
+  | `System.Security.Cryptography.Pkcs` 10.0.13 | `SharedKernel.Reporting.Pdf` (and the non-packed `Reporting.Gotenberg.Tests`) | PDFsharp 6.2.4 depends on Pkcs 8.0.1, CVE-2026-84008 (#42) |
+  | `SSH.NET` `$(SshNetVersion)` | `SharedKernel.Persistence.Testing` | Testcontainers 4.13.0 depends on SSH.NET 2025.1.0, CVE-2026-48798. This project is excluded from the SSH.NET `GlobalPackageReference` (a second item would be a duplicate, NU1504) and references it through a `PackageVersion` limited to it; `Application.Testing` gets the fix through it |
+
+  Check what consumers see, not what the repo restores: pack with
+  `dotnet pack Platform.SharedKernel.slnx -c Release -o <feed> -p:MinVerVersionOverride=0.0.0-check.1`, then
+  restore a project outside the repo referencing each package alone from `<feed>` with `NuGetAuditMode=all`
+  (`eng/stage-consumer-skill-eval.sh --empty <dir> --version 0.0.0-check.1` gives the consumer-shaped
+  folder; point its `sharedkernel` source at `<feed>`). Drop an override once the upstream package
+  depends on a patched version.
 - `CentralPackageVersionOverrideEnabled=false`: no per-project overrides.
 - `GlobalPackageReference` **MinVer** applies to every project with `PrivateAssets="all"`, so it
   never appears in a `.nuspec`.

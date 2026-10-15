@@ -43,6 +43,8 @@
       version with -p:SharedKernelPackageVersion=<ver>.
     -->
     <SharedKernelPackageVersion Condition="'$(SharedKernelPackageVersion)' == ''">*-*</SharedKernelPackageVersion>
+    <!-- One SSH.NET version for the repo-wide GlobalPackageReference and Persistence.Testing's shipped reference. -->
+    <SshNetVersion>2026.0.0</SshNetVersion>
   </PropertyGroup>
 
   <!--
@@ -62,8 +64,14 @@
     -->
     <GlobalPackageReference Include="MinVer" Version="7.0.0" />
     <GlobalPackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
-    <!-- GHSA-q939-rpr3-3284 / CVE-2026-48798 (SSH.NET ScpClient path traversal, <= 2025.1.0) -->
-    <GlobalPackageReference Include="SSH.NET" Version="2026.0.0" />
+    <!--
+      GHSA-q939-rpr3-3284 / CVE-2026-48798 (SSH.NET ScpClient path traversal, <= 2025.1.0), reached through
+      Testcontainers. A GlobalPackageReference is PrivateAssets="all": it fixes this repo's builds but never ships.
+      SharedKernel.Persistence.Testing, the one packable project that brings Testcontainers to consumers, is
+      excluded here and references SSH.NET itself (PackageVersion below), so its .nuspec carries the patched version.
+    -->
+    <GlobalPackageReference Include="SSH.NET" Version="$(SshNetVersion)"
+                            Condition="'$(MSBuildProjectName)' != 'SharedKernel.Persistence.Testing'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -273,6 +281,8 @@
       .nuspec carries it to consumers). Drop the reference once PDFsharp itself depends on a patched Pkcs.
     -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <!-- Only SharedKernel.Persistence.Testing references it directly; every other project gets the GlobalPackageReference. -->
+    <PackageVersion Include="SSH.NET" Version="$(SshNetVersion)" Condition="'$(MSBuildProjectName)' == 'SharedKernel.Persistence.Testing'" />
     <PackageVersion Include="Polly.Core" Version="8.7.0" />
     <PackageVersion Include="Polly.Extensions" Version="8.7.0" />
     <PackageVersion Include="Qdrant.Client" Version="1.18.1" />
