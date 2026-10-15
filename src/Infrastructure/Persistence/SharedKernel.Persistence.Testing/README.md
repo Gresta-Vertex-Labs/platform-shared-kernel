@@ -50,7 +50,7 @@ references a testing package.
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Testing — reference it from your **test projects** only |
-| Depends on | `SharedKernel.Testing`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.EfCore.Auditing`, `SharedKernel.Persistence.EfCore.Encryption`, `Testcontainers.PostgreSql`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| Depends on | `SharedKernel.Testing`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.EfCore.Auditing`, `SharedKernel.Persistence.EfCore.Encryption`, `Testcontainers.PostgreSql`, `SSH.NET` 2026.0.0 or later (overrides the vulnerable version Testcontainers brings), `Microsoft.Extensions.DependencyInjection.Abstractions` |
 | Namespaces | `SharedKernel.Persistence.Testing`; `TestRequestContext` is in `SharedKernel.Testing.Execution` |
 | Docker | Only for `PostgresTestServer.StartAsync()`; `FromExistingServer` uses a running server |
 
