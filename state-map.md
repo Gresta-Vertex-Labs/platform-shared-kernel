@@ -46,32 +46,15 @@ Every package ships at one repo-wide version through the release train (`CONTRIB
 
 ## Open Work
 
-### P-577 — First release train (WO-086)
-
-**Status:** `○` Not started
-**Domain:** cross-domain (every packable project)
-**Depends on:** P-562–P-576, P-579 (all ●), P-580–P-618 (WO-087: wire-visible renames land before the first release)
-
-**What is needed**
-
-Cut the first release of the WO-086 package set: `git tag vX.Y.Z` on `main`, letting `release.yml` run every gate (tier check, full build, Unit and Integration suites, every consumer-verify harness and sample), pack all packages at that one version, check the set against every packable project, and publish them together to GitHub Packages.
-
-**Acceptance**
-
-- One tag, one version on every published package; no `<Version>` in any `.csproj`.
-- The published set equals the set of packable projects (including the per-capability `*.Testing` packages and the Tooling packages).
-- `06.Persistence` and the other never-published or re-shaped packages (`SharedKernel.Execution`, `Application.Pipeline`/`.Pipeline.Caching`/`.Mediator.MediatR`, the MassTransit satellites, `Presentation.Core`, `Idempotency.*`) appear on the feed for the first time.
-- This supersedes every per-package "publish pending" task left in older records (P-557's P-17, P-563's PUB, P-544's cross-domain follow-ups).
-
 ### P-578 — Retire old package IDs (WO-086)
 
-**Status:** `○` Not started — approved by the user 2026-09-26: delete them after the release
+**Status:** `○` Not started — ready: v1.0.0 is on the feed (2026-10-21); approved by the user 2026-09-26: delete them after the release
 **Domain:** cross-domain (feed housekeeping)
-**Depends on:** P-577
+**Depends on:** P-577 (done: v1.0.0, 2026-10-21)
 
 **What is needed**
 
-After P-577 is on the feed, delete the package IDs that WO-086 and the pre-publish passes replaced (for example `SharedKernel.Application.Abstractions`, `SharedKernel.Application.Behaviors`, `SharedKernel.Application.Behaviors.Caching`, `SharedKernel.Guards`, `SharedKernel.Persistence.PostgreSQL`, the probe-only `SharedKernel.ServiceDefaults.*` packages). Confirm the exact list with the user before deleting anything.
+Now that v1.0.0 is on the feed, delete the package IDs that WO-086 and the pre-publish passes replaced (for example `SharedKernel.Application.Abstractions`, `SharedKernel.Application.Behaviors`, `SharedKernel.Application.Behaviors.Caching`, `SharedKernel.Guards`, `SharedKernel.Persistence.PostgreSQL`, the probe-only `SharedKernel.ServiceDefaults.*` packages). Confirm the exact list with the user before deleting anything.
 
 **Acceptance**
 
