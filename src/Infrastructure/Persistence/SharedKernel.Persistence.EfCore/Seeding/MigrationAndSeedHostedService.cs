@@ -64,96 +64,59 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
         _logger = logger;
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken) =>
+        StartupSequenceRunner.RunAsync(
+            _serviceProvider, typeof(TContext), _options.LockTimeout, _logger, _startupSignal, RunAsync, cancellationToken);
+
+    private async Task RunAsync(CancellationToken cancellationToken)
     {
         var contextTypeName = typeof(TContext).Name;
-        var lockKey = typeof(TContext).FullName ?? typeof(TContext).Name;
-        var migrationLock = _serviceProvider.GetService<IMigrationLock>();
 
-        IAsyncDisposable? lockHandle = null;
-
-        EfCoreLog.MigrationAndSeedStarted(_logger, contextTypeName);
-
-        try
+        if (_options.MigrateOnStartup)
         {
-            if (migrationLock is not null)
+            await using var scope = _serviceProvider.CreateAsyncScope();
+            var migrationDataSource = scope.ServiceProvider.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.Migration);
+            await using var context = await CreateContextAsync(
+                scope.ServiceProvider, AnonymousRequestContext.Instance, dedicated: migrationDataSource is not null, cancellationToken);
+
+            // Behind a transaction-mode pooler the migration needs a direct connection (one server session for
+            // EF Core's migration lock and the DDL); the configured migration data source provides it.
+            if (migrationDataSource is not null)
+                context.Database.SetDbConnection(migrationDataSource.CreateConnection(), contextOwnsConnection: true);
+
+            await context.Database.MigrateAsync(cancellationToken);
+        }
+
+        foreach (var (seederTypeName, invoke) in _seedSteps)
+        {
+            await using var scope = _serviceProvider.CreateAsyncScope();
+            var seeder = new SystemRequestContext([], $"seeder:{seederTypeName}");
+            var tenanted = typeof(TenantedDbContext).IsAssignableFrom(typeof(TContext));
+            var rowLevelSecurity = tenanted
+                && scope.ServiceProvider.GetService<RowLevelSecurityCommandInterceptor>() is not null;
+
+            await using var context = await CreateContextAsync(
+                scope.ServiceProvider, seeder, dedicated: rowLevelSecurity, cancellationToken);
+
+            if (tenanted)
             {
-                lockHandle = await migrationLock.AcquireAsync(lockKey, _options.LockTimeout, cancellationToken);
-                EfCoreLog.AdvisoryLockAcquired(_logger, contextTypeName);
+                // The context's own scope, attributed to the seeder (created by ICallerDbContextFactory).
+                using (context.CrossTenantScope.Enter($"startup seeder {seederTypeName} for {contextTypeName}"))
+                {
+                    // Under row-level security the application role only sees the bound tenant: a seeder that
+                    // writes across tenants runs on the cross-tenant role's connection.
+                    if (rowLevelSecurity)
+                        context.Database.UseCrossTenantConnection();
+
+                    await invoke(scope.ServiceProvider, context, cancellationToken);
+                }
             }
             else
             {
-                EfCoreLog.NoMigrationLockRegistered(_logger, contextTypeName);
+                await invoke(scope.ServiceProvider, context, cancellationToken);
             }
 
-            if (_options.MigrateOnStartup)
-            {
-                await using var scope = _serviceProvider.CreateAsyncScope();
-                var migrationDataSource = scope.ServiceProvider.GetKeyedService<NpgsqlDataSource>(NpgsqlDataSourceKeys.Migration);
-                await using var context = await CreateContextAsync(
-                    scope.ServiceProvider, AnonymousRequestContext.Instance, dedicated: migrationDataSource is not null, cancellationToken);
-
-                // Behind a transaction-mode pooler the migration needs a direct connection (one server session for
-                // EF Core's migration lock and the DDL); the configured migration data source provides it.
-                if (migrationDataSource is not null)
-                    context.Database.SetDbConnection(migrationDataSource.CreateConnection(), contextOwnsConnection: true);
-
-                await context.Database.MigrateAsync(cancellationToken);
-            }
-
-            foreach (var (seederTypeName, invoke) in _seedSteps)
-            {
-                await using var scope = _serviceProvider.CreateAsyncScope();
-                var seeder = new SystemRequestContext([], $"seeder:{seederTypeName}");
-                var tenanted = typeof(TenantedDbContext).IsAssignableFrom(typeof(TContext));
-                var rowLevelSecurity = tenanted
-                    && scope.ServiceProvider.GetService<RowLevelSecurityCommandInterceptor>() is not null;
-
-                await using var context = await CreateContextAsync(
-                    scope.ServiceProvider, seeder, dedicated: rowLevelSecurity, cancellationToken);
-
-                if (tenanted)
-                {
-                    // The context's own scope, attributed to the seeder (created by ICallerDbContextFactory).
-                    using (context.CrossTenantScope.Enter($"startup seeder {seederTypeName} for {contextTypeName}"))
-                    {
-                        // Under row-level security the application role only sees the bound tenant: a seeder that
-                        // writes across tenants runs on the cross-tenant role's connection.
-                        if (rowLevelSecurity)
-                            context.Database.UseCrossTenantConnection();
-
-                        await invoke(scope.ServiceProvider, context, cancellationToken);
-                    }
-                }
-                else
-                {
-                    await invoke(scope.ServiceProvider, context, cancellationToken);
-                }
-
-                EfCoreLog.SeederApplied(_logger, seederTypeName, contextTypeName);
-            }
-
-            EfCoreLog.MigrationAndSeedCompleted(_logger, contextTypeName);
-            _startupSignal?.Complete(typeof(TContext));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _startupSignal?.Cancel(typeof(TContext));
-            throw;
-        }
-        catch (Exception ex)
-        {
-            EfCoreLog.MigrationAndSeedFailed(_logger, contextTypeName, ex);
-            _startupSignal?.Fail(typeof(TContext), ex);
-            throw;
-        }
-        finally
-        {
-            if (lockHandle is not null)
-            {
-                await lockHandle.DisposeAsync();
-                EfCoreLog.AdvisoryLockReleased(_logger, contextTypeName);
-            }
+            EfCoreLog.SeederApplied(_logger, seederTypeName, contextTypeName);
         }
     }
 

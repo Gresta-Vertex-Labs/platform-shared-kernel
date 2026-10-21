@@ -279,6 +279,32 @@ public sealed class OrderDbContextFactory() : PostgresDesignTimeDbContextFactory
 factory reads `--connection "…"`, then `SharedKernel:Persistence:{name}:MigrationConnectionString`, then
 `ConnectionStrings:{name}`. In CI you can instead apply `dotnet ef migrations script --idempotent` as the owner role.
 
+#### A context a package ships
+
+A kernel package that owns its own plain `DbContext` (for example the EF Core idempotency store) cannot use
+`MigrateOnStartup()`, which belongs to `AddSharedKernelPostgres`. Register that context for migration instead:
+
+```csharp
+services.AddDbContext<PackageDbContext>((sp, options) =>
+    options.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>(),
+        npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history_package")));   // a history table of its own
+
+services.AddMigrationOnStartup<PackageDbContext>(lockTimeout: TimeSpan.FromMinutes(5));
+```
+
+It uses the same lock as `MigrateOnStartup()` (keyed by the context's full type name; default wait 2 minutes), so one
+replica migrates at a time, and the same `IPersistenceStartup`, so readiness waits for it. The migrations run over the
+migration data source (`MigrationConnectionString`), never over the runtime connection; without one they run over the
+context's own connection, so a single-role deployment keeps working. A lock timeout or a failed migration fails host
+start. Start fails, naming the remedy, when the context is pooled, derives `SharedKernelDbContext`, or still uses the
+default `__EFMigrationsHistory` table (that table is the service's own context's); registering the same context twice
+throws. A service that never calls the method behaves exactly as before.
+
+Grants are the canonical role script's: the migrator needs `CREATE` on the target schema and owns what it creates; the
+runtime role gets `USAGE` on the schema plus `ALTER DEFAULT PRIVILEGES FOR ROLE app_migrator`, and nothing extra for a
+package context. In a non-public schema repeat both statements for that schema. Tables created before the defaults
+existed need an explicit `GRANT`.
+
 ### 7. Several contexts, background work
 
 Call `AddSharedKernelPostgres` once per context; inject `IUnitOfWork<TContext>` or
@@ -334,6 +360,7 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
 | Method / type | Does |
 | --- | --- |
 | `IHostApplicationBuilder.AddSharedKernelPostgres<TContext>(name, configure)` | The registration; also on `IServiceCollection` with `(configuration, name, configure)`. Registering a context twice throws |
+| `IServiceCollection.AddMigrationOnStartup<TContext>(lockTimeout?)` | Migrates a plain, non-pooled `DbContext` a package ships, on the migration data source under the migration lock; needs its own history table |
 | `EfCorePersistenceBuilder<TContext>` | `ConfigureProvider`, `ConfigureDataSource`, `UseDataSource`, `ConfigureDbContext`, `UseDbContextPooling`, `UseServiceName`, `UseUuidV7Keys`, `MigrateOnStartup(lockTimeout?)`, `AddSeeder<T>`, `AddInterceptor<T>`, `UseMultiTenancy(...)` |
 | `SharedKernelDbContext`, `TenantedDbContext` | Context bases, constructor `(DbContextOptions<T>, PersistenceContextDependencies)` |
 | `ConcurrencyVersion` | `Get(db, entity)`, `SetExpected(db, entity, version)`, `TryGetCurrentVersion(exception, out version)` |

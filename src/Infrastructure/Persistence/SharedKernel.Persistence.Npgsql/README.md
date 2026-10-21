@@ -156,6 +156,11 @@ ALTER DEFAULT PRIVILEGES FOR ROLE app_migrator IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO app_runtime, app_cross_tenant;
 ```
 
+A context a kernel package ships (registered with `AddMigrationOnStartup<TContext>()`) needs no grants beyond these
+defaults: `app_migrator` creates its tables and `ALTER DEFAULT PRIVILEGES FOR ROLE app_migrator` reaches them to the
+runtime role. A table created before the defaults existed needs an explicit `GRANT SELECT, INSERT, UPDATE, DELETE ON
+… TO app_runtime`.
+
 | Role | Connection | Can | Cannot |
 | --- | --- | --- | --- |
 | `app_migrator` | `MigrationConnectionString` | Own and change the schema | — (never used at runtime) |

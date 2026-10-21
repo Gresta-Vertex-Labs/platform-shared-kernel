@@ -99,7 +99,7 @@ The caching recipe of the consumer skill wires caching without the service name 
 - [ ] The `proven-by` Shop path still builds and still matches the recipe's wiring; consumer-skill checks stay green.
 
 #### P-630 — Migrations of another package's DbContext on the migrator connection (B7, persistence side)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 06.Persistence
 **Depends on:** None
 **Phase key:** SK.06.PackageContextMigration
