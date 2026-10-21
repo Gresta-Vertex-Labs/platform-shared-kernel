@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -38,8 +39,22 @@ namespace SharedKernel.Contracts.Pagination;
 /// </example>
 public sealed record PagedList<T>
 {
+    /// <summary>
+    /// The serializer entry point: creates a page from a JSON document. Not for application code; use
+    /// <see cref="Create(IReadOnlyList{T}, PageRequest, long)"/> or <see cref="Create(IReadOnlyList{T}, int, int, long)"/>.
+    /// </summary>
+    /// <param name="items">The items on the page.</param>
+    /// <param name="page">The 1-based page number.</param>
+    /// <param name="pageSize">The maximum number of items per page.</param>
+    /// <param name="totalCount">The total number of items across all pages.</param>
+    /// <remarks>
+    /// Public only so a source-generated <see cref="JsonSerializerContext"/> declared in another assembly can call it.
+    /// It applies the same rules as the factories and throws <see cref="JsonException"/> instead.
+    /// </remarks>
+    /// <exception cref="JsonException">The values break a paging rule.</exception>
     [JsonConstructor]
-    internal PagedList(IReadOnlyList<T> items, int page, int pageSize, long totalCount)
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public PagedList(IReadOnlyList<T> items, int page, int pageSize, long totalCount)
     {
         if (FindProblem(items, page, pageSize, totalCount) is { } problem)
             throw new JsonException($"Invalid paged list: {problem.Message}");

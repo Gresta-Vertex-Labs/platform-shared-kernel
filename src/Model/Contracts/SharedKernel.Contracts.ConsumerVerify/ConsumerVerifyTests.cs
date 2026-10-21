@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Contracts.Pagination;
 using Xunit;
@@ -9,6 +10,14 @@ namespace SharedKernel.Contracts.ConsumerVerify;
 public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId, decimal Total) : IIntegrationEvent;
 
 public sealed record Row(DateTimeOffset CreatedOn, Guid Id);
+
+public sealed record Item(Guid Id, string Name);
+
+/// <summary>A service's own source-generated context: the generator runs in this assembly, not in the package.</summary>
+[JsonSerializable(typeof(PagedList<Item>))]
+[JsonSerializable(typeof(CursorPagedList<Item>))]
+[JsonSerializable(typeof(EventEnvelope<OrderPlaced>))]
+internal sealed partial class ServiceJsonContext : JsonSerializerContext;
 
 /// <summary>Exercises the packed public API of SharedKernel.Contracts the way a consuming service would.</summary>
 public sealed class ConsumerVerifyTests
@@ -93,5 +102,44 @@ public sealed class ConsumerVerifyTests
 
         var forged = PageCursor.Decode<DateTimeOffset, Guid>("v1.not-a-cursor");
         Assert.Equal(PaginationErrorCodes.CursorInvalid, forged.Error.Code);
+    }
+
+    [Fact]
+    public void SourceGeneratedContext_RoundTripsPagesAndEnvelopes()
+    {
+        var context = ServiceJsonContext.Default;
+        var items = new[] { new Item(Guid.NewGuid(), "a"), new Item(Guid.NewGuid(), "b") };
+
+        var page = PagedList<Item>.Create(items, 2, 2, 5);
+        var pageJson = JsonSerializer.Serialize(page, context.PagedListItem);
+        Assert.Equal(page, JsonSerializer.Deserialize(pageJson, context.PagedListItem));
+        Assert.Contains("\"totalCount\":5", pageJson);
+
+        var cursorPage = CursorPagedList<Item>.Create(items, "v1.abc");
+        var cursorJson = JsonSerializer.Serialize(cursorPage, context.CursorPagedListItem);
+        Assert.Equal(cursorPage, JsonSerializer.Deserialize(cursorJson, context.CursorPagedListItem));
+        Assert.Contains("\"hasMore\":true", cursorJson);
+
+        var envelope = EventEnvelope.Wrap(
+            new OrderPlaced(Guid.CreateVersion7(), DateTimeOffset.UtcNow, Guid.NewGuid(), 9m), source: "orders-service");
+        var envelopeJson = JsonSerializer.Serialize(envelope, context.EventEnvelopeOrderPlaced);
+        Assert.Equal(envelope, JsonSerializer.Deserialize(envelopeJson, context.EventEnvelopeOrderPlaced));
+    }
+
+    [Fact]
+    public void SourceGeneratedContext_RejectsInvalidDocuments()
+    {
+        var context = ServiceJsonContext.Default;
+
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize("{\"items\":[],\"page\":0,\"pageSize\":2,\"totalCount\":0}", context.PagedListItem));
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize("{\"items\":[],\"nextCursor\":\" \"}", context.CursorPagedListItem));
+
+        var json = JsonSerializer.Serialize(
+            EventEnvelope.Wrap(new OrderPlaced(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid(), 1m), source: "s"),
+            context.EventEnvelopeOrderPlaced);
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize(json.Replace("verify.order-placed", "verify.other"), context.EventEnvelopeOrderPlaced));
     }
 }

@@ -78,7 +78,7 @@ Behavior methods that return `Result` need a way to evaluate a business rule wit
 - [ ] The testing fakes and the consumer skill mention it only if they reference the throwing check today.
 
 #### P-628 — Paged lists deserializable through a source-generated JSON context (B2)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 04.Contracts
 **Depends on:** None
 **Phase key:** SK.04.PagedListSourceGen
