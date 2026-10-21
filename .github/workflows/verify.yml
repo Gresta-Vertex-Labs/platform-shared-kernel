@@ -357,6 +357,18 @@ jobs:
           set -euo pipefail
           echo "version=$SK_VERSION" >> "$GITHUB_OUTPUT"
 
+      # The consumer's view of vulnerabilities (P-636). Every packed package is restored alone from
+      # a folder outside the repository, with NuGetAuditMode=all and none of this repository's build
+      # files, so a vulnerable transitive that a GlobalPackageReference or a CPM pin hides from the
+      # in-repo audit (unit-test job) still fails here, naming the package and the advisory. The set
+      # is the inventory verify-packages.sh just wrote; a negative control proves the audit is live.
+      # A release tag runs this too (release.yml calls this workflow). The published feed is audited
+      # on a schedule by feed-health.yml.
+      - name: Consumer-view NuGet audit (each packed package restored alone)
+        env:
+          EXPECTED_PACKAGES_FILE: nupkgs/expected-packages.txt
+        run: bash eng/verify-consumer-audit.sh nupkgs "$SK_VERSION"
+
       # Every csproj outside the .slnx consumes SharedKernel through PackageReference: the
       # consumer-verify harnesses and samples/. Listed once here for the steps below.
       # SelfAnalysisProbe is not a consumer: it holds one deliberate violation per kernel rule and

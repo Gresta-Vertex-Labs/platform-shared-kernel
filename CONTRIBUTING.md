@@ -72,6 +72,7 @@ bash eng/verify-tier-errors.sh          # the tier check still rejects violation
 
 dotnet pack Platform.SharedKernel.slnx -c Release --no-build   # writes to ./nupkgs
 bash eng/verify-packages.sh nupkgs      # the packed set is complete and at one version
+bash eng/verify-consumer-audit.sh nupkgs <version>   # each packed package restored alone, as a consumer, audited for known vulnerabilities
 ```
 
 Build output goes to `artifacts/{bin,obj}/{project}/`, never next to the sources; packages go to `nupkgs/`.
@@ -248,6 +249,13 @@ visible diff in review. Public members need XML documentation comments.
 
 6. **Test it.** Add the nested `.Tests` project; a name ending in `.Tests` can never pack (`SKPKG004`).
 
+7. **Make it public after its first release (maintainers).** A package id that has never been published
+   starts **private** on GitHub Packages, and a consuming service's CI reads the feed with its job token,
+   which sees public packages only. After the release that first publishes the package: open it on GitHub
+   (Packages of the organization, the package, Package settings, Change visibility, Public), then re-run the
+   failed `feed-check` job of that release. GitHub has no API to change visibility, so this step is manual;
+   `feed-check` fails the release, naming the package, until it is done.
+
 ## Package READMEs
 
 Every package README follows the
@@ -288,7 +296,7 @@ complete; it re-runs when you edit the description.
 
 | Check | What it covers |
 |-------|----------------|
-| **CI Gate** | tier-violation probes, solution-filter, path-length, Markdown-link and generated-view checks, full build, Unit lane, consumer-verify harnesses, pack + package-set check, packed-package consumers and samples, workflow lint, PR title lint |
+| **CI Gate** | tier-violation probes, solution-filter, path-length, Markdown-link and generated-view checks, full build, Unit lane, consumer-verify harnesses, pack + package-set check, consumer-view vulnerability audit of every packed package, packed-package consumers and samples, workflow lint, PR title lint |
 | **PR template** | the description is complete |
 
 The Integration lane does not run on pull requests. It runs on every push to `main`, nightly and on
@@ -314,7 +322,9 @@ git push origin v1.2.0
 
 [`release.yml`](.github/workflows/release.yml) checks the tag is well formed and on `main`, runs
 every gate (both test lanes included), packs **all** packages at that version, verifies the set is
-complete, and publishes them together to GitHub Packages. There is no per-package publish. It then
+complete, and publishes them together to GitHub Packages. There is no per-package publish. The `feed-check` job then confirms that every package is on the feed at that
+version and **public**; a release is not complete until it passes (a new package starts private and needs the
+manual visibility change in [Adding a package](#adding-a-package)). The release also
 attaches the consumer skill, `sharedkernel-skill-v<version>.zip`, to the GitHub Release for the tag:
 the same commit and version as the packages (see [`consumer/README.md`](consumer/README.md)).
 

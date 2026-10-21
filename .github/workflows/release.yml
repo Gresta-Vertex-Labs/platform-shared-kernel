@@ -14,6 +14,9 @@ name: Release
 #              The verified .nupkg files are uploaded as the "packages" artifact.
 #   publish    downloads exactly those files, re-checks the set against the expected-package list
 #              the verified run produced (so a partial download can never be published), and pushes.
+#   feed-check every package of the set is on the feed at this version and PUBLIC (a new package
+#              id starts private; consumers' CI reads public packages only). The release is not
+#              complete until it passes; the remedy for a private package is manual.
 #   skill      packs the consumer skill at the verified version (eng/pack-consumer-skill.sh) and
 #              attaches sharedkernel-skill-v<version>.zip to the GitHub Release for the tag.
 #
@@ -168,6 +171,41 @@ jobs:
               echo "The verified package set was not downloaded; nothing was pushed."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # A package created by the first publish of a new id starts PRIVATE, and a consuming service's CI
+  # reads the feed with its own job token, which sees public packages only. This check (P-637) fails
+  # the run, naming each package, when any package of the verified set is missing at the released
+  # version or is not public. GitHub offers no API to change visibility: the remedy is manual
+  # (Package settings > Change visibility > Public), then "Re-run failed jobs". A release is not
+  # complete until this job is green. It reads with packages: read only (the publish job holds the
+  # write permission), and reads the package list the verified run produced. The skill job does not
+  # wait for it, so repairing a visibility never blocks the skill asset. feed-health.yml repeats the
+  # check on a schedule.
+  feed-check:
+    name: Every package is on the feed and public
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the verified package list
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: packages
+          path: release-packages
+
+      - name: Check every package is on the feed at this version and public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_PACKAGES_FILE: release-packages/expected-packages.txt
+        run: bash eng/verify-feed-visibility.sh "$GITHUB_REF_NAME"
 
   # The consumer skill (consumer/README.md, "How it ships") at the same version as the packages, from
   # the same commit, attached to the GitHub Release for the tag. It runs only after every package is
