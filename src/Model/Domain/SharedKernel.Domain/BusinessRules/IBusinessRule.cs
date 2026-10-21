@@ -6,7 +6,7 @@ namespace SharedKernel.Domain.BusinessRules;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Usage.</b> Enforce a rule with <c>CheckRule</c> from an aggregate, value object or domain service. A
+/// <b>Usage.</b> Enforce a rule with <c>CheckRule</c> (throws) or <c>TryCheckRule</c> (returns a <c>Result</c>) from an aggregate, value object or domain service. A
 /// broken rule throws <see cref="Exceptions.BusinessRuleViolationException"/>, whose error carries this rule's
 /// <see cref="Code"/> and <see cref="Message"/> and maps to HTTP 422. Compose rules with
 /// <see cref="BusinessRuleExtensions"/>; to enforce a decision about an arbitrary subject, write an

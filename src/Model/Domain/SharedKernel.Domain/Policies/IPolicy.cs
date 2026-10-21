@@ -20,7 +20,7 @@ namespace SharedKernel.Domain.Policies;
 /// </item>
 /// <item>
 /// <term><see cref="BusinessRules.IBusinessRule"/></term>
-/// <description>An invariant bound to its data, enforced with <c>CheckRule</c>, which throws when broken.</description>
+/// <description>An invariant bound to its data, enforced with <c>CheckRule</c>, which throws when broken, or <c>TryCheckRule</c>, which returns a failure.</description>
 /// </item>
 /// <item>
 /// <term><see cref="Specifications.Specification{T}"/></term>
@@ -29,7 +29,7 @@ namespace SharedKernel.Domain.Policies;
 /// </list>
 /// <para>
 /// <b>Enforcement.</b> To enforce a decision rather than report it, convert it with
-/// <see cref="PolicyExtensions.ToRule{T}(IPolicy{T}, T, string)"/> and pass the result to <c>CheckRule</c>.
+/// <see cref="PolicyExtensions.ToRule{T}(IPolicy{T}, T, string)"/> and pass the result to <c>CheckRule</c> or <c>TryCheckRule</c>.
 /// Compose policies with <see cref="PolicyExtensions"/>.
 /// </para>
 /// <para>

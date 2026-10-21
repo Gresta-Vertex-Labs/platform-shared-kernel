@@ -7,6 +7,7 @@ using SharedKernel.Domain.Exceptions;
 using SharedKernel.Domain.Internal;
 using SharedKernel.Guards;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Domain.Aggregates;
@@ -165,6 +166,23 @@ public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot<TId>, IHa
     /// <paramref name="rule"/> is broken; the exception's error carries the rule's code and message.
     /// </exception>
     protected static void CheckRule(IBusinessRule rule) => DomainInvariants.CheckRule(rule);
+
+    /// <summary>
+    /// Returns a failed <see cref="Result"/> when <paramref name="rule"/> is broken; otherwise a successful one.
+    /// The non-throwing counterpart of <see cref="CheckRule"/>.
+    /// </summary>
+    /// <param name="rule">The business rule to enforce. Must not be <see langword="null"/>.</param>
+    /// <returns>
+    /// A successful result when the rule holds; otherwise a failure whose <see cref="Error"/> equals the one a
+    /// <see cref="BusinessRuleViolationException"/> for the rule carries
+    /// (<see cref="ErrorType.BusinessRule"/>, the rule's code and message).
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="rule"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Constructors and factories use <see cref="CheckRule"/>; behavior methods that return a
+    /// <see cref="Result"/> use this method and return its failure instead of throwing.
+    /// </remarks>
+    protected static Result TryCheckRule(IBusinessRule rule) => DomainInvariants.TryCheckRule(rule);
 
     /// <summary>
     /// Runs <paramref name="factory"/> and returns a domain failure during construction as a failed

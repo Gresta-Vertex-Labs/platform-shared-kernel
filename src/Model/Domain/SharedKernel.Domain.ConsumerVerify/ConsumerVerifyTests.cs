@@ -215,6 +215,33 @@ public sealed class ConsumerVerifyTests
         Assert.ThrowsAny<Exception>(() => order.PublicCheckRule(new AlwaysFailRule()));
     }
 
+    [Fact]
+    public void TryCheckRule_OnAggregateValueObjectAndDomainService_ReturnsResult_ResolvedFromPackage()
+    {
+        var order = new OrderAggregate(Guid.NewGuid(), new SystemClock());
+        var quantity = Quantity.Create(1).Value;
+        var service = new ConsumerDomainService();
+
+        Assert.True(order.PublicTryCheckRule(new AlwaysPassRule()).IsSuccess);
+        Assert.True(quantity.PublicTryCheckRule(new AlwaysPassRule()).IsSuccess);
+        Assert.True(service.PublicTryCheckRule(new AlwaysPassRule()).IsSuccess);
+
+        var expected = Assert.Throws<Exceptions.BusinessRuleViolationException>(
+            () => order.PublicCheckRule(new AlwaysFailRule())).Error;
+
+        foreach (var result in new[]
+        {
+            order.PublicTryCheckRule(new AlwaysFailRule()),
+            quantity.PublicTryCheckRule(new AlwaysFailRule()),
+            service.PublicTryCheckRule(new AlwaysFailRule()),
+        })
+        {
+            Assert.True(result.IsFailure);
+            Assert.Equal(expected, result.Error);
+            Assert.Equal(SharedKernel.Primitives.Errors.ErrorType.BusinessRule, result.Error.Type);
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // IPolicy<T> — compliance evaluation
     // ──────────────────────────────────────────────────────────────────────────
@@ -437,6 +464,16 @@ internal sealed class OrderAggregate : AggregateRoot<Guid>
 
     public void PublicCheckRule(IBusinessRule rule) =>
         CheckRule(rule);
+
+    public SharedKernel.Primitives.Results.Result PublicTryCheckRule(IBusinessRule rule) =>
+        TryCheckRule(rule);
+}
+
+// Domain service
+internal sealed class ConsumerDomainService : SharedKernel.Domain.DomainServices.DomainService
+{
+    public SharedKernel.Primitives.Results.Result PublicTryCheckRule(IBusinessRule rule) =>
+        TryCheckRule(rule);
 }
 
 // Value object
@@ -540,6 +577,9 @@ internal sealed class Quantity : ValueObject
 
     public static SharedKernel.Primitives.Results.ValidationResult<Quantity> Create(int amount) =>
         TryCreate(() => new Quantity(amount));
+
+    public SharedKernel.Primitives.Results.Result PublicTryCheckRule(IBusinessRule rule) =>
+        TryCheckRule(rule);
 
     protected override IEnumerable<object?> GetEqualityComponents()
     {

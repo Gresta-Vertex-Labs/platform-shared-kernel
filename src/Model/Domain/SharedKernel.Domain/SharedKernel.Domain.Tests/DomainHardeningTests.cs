@@ -7,6 +7,7 @@ using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.BusinessRules;
+using SharedKernel.Domain.DomainServices;
 using SharedKernel.Domain.Entities;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Exceptions;
@@ -17,6 +18,7 @@ using SharedKernel.Domain.StronglyTypedIds.Serialization;
 using SharedKernel.Domain.ValueObjects;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Domain.Tests;
 
@@ -288,6 +290,27 @@ public sealed class DomainHardeningTests
         var act = () => new BusinessRuleViolationException(null!);
 
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    private sealed class RuleChecker : DomainService
+    {
+        public Result Try(IBusinessRule rule) => TryCheckRule(rule);
+
+        public void Throw(IBusinessRule rule) => CheckRule(rule);
+    }
+
+    [Fact]
+    public void TryCheckRule_FailureError_IsTheErrorTheViolationExceptionCarries()
+    {
+        // Before: no non-throwing check existed; callers wrapped CheckRule in ResultTry or hand-mapped the rule,
+        // so the result path could drift from the exception's code, message or type.
+        var rule = new Rule("order.not_paid", true).And(new Rule("order.no_lines", true));
+        var checker = new RuleChecker();
+
+        var thrown = FluentActions.Invoking(() => checker.Throw(rule))
+            .Should().Throw<BusinessRuleViolationException>().Which.Error;
+
+        checker.Try(rule).Error.Should().Be(thrown);
     }
 
     [Fact]

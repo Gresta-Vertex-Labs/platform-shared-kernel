@@ -311,13 +311,48 @@ A rule has a stable `Code`, a human-readable `Message` and `IsBroken()`. `CheckR
 `BusinessRuleViolationException` when the rule is broken. Its error has type `ErrorType.BusinessRule`
 (HTTP 422 at the API boundary) and the rule's own code.
 
+`TryCheckRule(rule)` is the non-throwing counterpart: it returns `Result.Success()` when the rule holds and
+`Result.Failure(error)` when it is broken, where `error` is exactly the `Error` the exception would carry.
+Constructors and factories use `CheckRule`; behavior methods that return `Result` use `TryCheckRule` instead of
+wrapping `CheckRule` in `ResultTry` or mapping the rule to an error by hand. A `null` rule throws
+`ArgumentNullException` in both.
+
+```csharp
+public sealed class InvoiceMustNotBePaid(Invoice invoice) : IBusinessRule
+{
+    public string Code => "invoice.already_paid";
+    public string Message => "A paid invoice cannot be voided.";
+    public bool IsBroken() => invoice.IsPaid;
+}
+
+// inside Invoice : AggregateRoot<InvoiceId>
+public Result Void()
+{
+    var check = TryCheckRule(new InvoiceMustNotBePaid(this));
+    if (check.IsFailure)
+        return check;
+
+    IsVoided = true;
+    return Result.Success();
+}
+```
+
+```csharp
+var result = paidInvoice.Void();
+
+result.IsFailure;       // true
+result.Error.Code;      // "invoice.already_paid" (the rule's own Code)
+result.Error.Message;   // "A paid invoice cannot be voided."
+result.Error.Type;      // ErrorType.BusinessRule
+```
+
 | Composition | Broken when | Reports |
 | --- | --- | --- |
 | `a.And(b)` | Either operand is broken | The first broken operand's code; the broken operands' messages, separated by semicolons |
 | `a.Or(b)` | Both operands are broken | `a`'s code; both messages |
 | `a.Not(code, message)` | `a` holds | The code and message you supply |
 
-`CheckRule` is available on `AggregateRoot<TId>`, `ValueObject` and `DomainService`.
+`CheckRule` and `TryCheckRule` are available on `AggregateRoot<TId>`, `ValueObject` and `DomainService`.
 
 ### TryCreate
 
@@ -420,7 +455,7 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 
 | Code | Constant | ErrorType | Raised by |
 | --- | --- | --- | --- |
-| The rule's own `Code` | — | `BusinessRule` | `BusinessRuleViolationException` from `CheckRule` |
+| The rule's own `Code` | — | `BusinessRule` | `BusinessRuleViolationException` from `CheckRule`; the failed `Result` from `TryCheckRule` |
 | `money.currency_mismatch` | `DomainErrorCodes.Money.CurrencyMismatch` | `BusinessRule` | Money operations across currencies (`BusinessRuleViolationException`) |
 | `money.stored_precision_exceeded` | `DomainErrorCodes.Money.StoredPrecisionExceeded` | `Unexpected` | Materializing a stored amount with more decimals than the currency's minor unit (`DomainException`: corrupt data, not a caller error) |
 | `currency.code.invalid_format` | `DomainErrorCodes.Currency.InvalidFormat` | `Validation` | `Currency.Create` with input that is not three letters |

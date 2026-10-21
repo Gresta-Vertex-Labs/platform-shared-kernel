@@ -48,7 +48,7 @@ public static class PolicyExtensions
 
     /// <summary>
     /// Binds <paramref name="policy"/> to <paramref name="subject"/> as a business rule that is broken when the
-    /// subject does not comply, so the decision can be enforced with <c>CheckRule</c>.
+    /// subject does not comply, so the decision can be enforced with <c>CheckRule</c> or <c>TryCheckRule</c>.
     /// </summary>
     /// <typeparam name="T">The type of subject the policy evaluates.</typeparam>
     /// <param name="policy">The policy to enforce. Must not be null.</param>
