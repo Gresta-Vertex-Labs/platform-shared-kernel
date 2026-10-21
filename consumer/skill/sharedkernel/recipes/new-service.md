@@ -42,6 +42,7 @@ capability: open that capability's recipe (add-persistence.md, add-http-endpoint
 | Tests | `SharedKernel.Testing`, `SharedKernel.Application.Testing`, `SharedKernel.ArchitectureTests` | write-tests.md |
 
 References: Domain ← Application ← Infrastructure; the Api references Application and Infrastructure; nothing references the Api.
+Recipes decide packages and APIs; the service's own project guidance decides folders and file placement.
 
 ## Steps
 
@@ -238,8 +239,7 @@ Application no adapter, host package or MediatR, Infrastructure no host package,
 
 ## Check
 
-- A wrong placement (a Host package in Infrastructure, an adapter in Application) is caught by the architecture
-  tests in the Tests project: write them on day one.
+- A wrong placement (a Host package in Infrastructure, an adapter in Application) is caught by the architecture tests: write them on day one.
 - `SK0001` flags `DateTime.UtcNow` (inject `IClock`); `SK0020`/`SK0021` flag `ILogger.LogXxx` and
   `LoggerMessage.Define`; `SK0030` flags a `Result` nobody reads; `SK0003` a raw `throw new Exception`.
 - `/health/ready` stays unhealthy until `StartupGate.MarkReady()` runs and every probe passes.

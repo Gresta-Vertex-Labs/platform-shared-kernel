@@ -18,7 +18,8 @@ as a `Result<T>`, with the caller's tenant and correlation id carried along.
 **Not when:** the other service should react to something that already happened (add-messaging.md); the call is one
 step of a multi-step process that must survive crashes or compensate (add-long-running-workflow.md); you are
 exposing your own endpoint (add-http-endpoint.md); you are sending a webhook to an external subscriber
-(add-notifications-webhooks.md).
+(add-notifications-webhooks.md); you are publishing your own contracts and client, or consuming another service's
+events (add-service-contracts.md).
 
 ## Packages
 

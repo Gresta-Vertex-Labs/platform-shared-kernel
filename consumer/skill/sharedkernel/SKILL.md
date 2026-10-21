@@ -43,6 +43,8 @@ The README wins over anything you remember: names and options change between ver
 - **Options** are bound with `AddValidatedOptions<TOptions>(configuration)` on a type that implements
   `ISectionBoundOptions`; never `services.Configure`.
 - **No magic strings** for header names, claim types, configuration or cache keys: use a named constant.
+- **Recipes decide packages and APIs; the service's own project guidance decides folders and file
+  placement.** Follow a recipe's package choices and calls, not its folder names.
 - **Never hand-roll what a package covers.** If a need is not in the table below, say so and ask; do not
   invent a package or an API.
 - **Analyzers.** Reference `SharedKernel.Analyzers` in every project (it ships every rule at Warning) and
@@ -102,6 +104,8 @@ file is in the `recipes/` folder next to this file.
 | The authenticated principal (host code only) | `SharedKernel.Security.Abstractions` | Api | `IUserContext` (application code reads `IRequestContext`) | add-authentication.md |
 | Outbound REST client | `SharedKernel.Communication`, `SharedKernel.Communication.Rest` | Infrastructure | `AddSharedKernelCommunication(configuration).AddRestClient<IClient, Client>("name")` | add-outbound-call.md |
 | Outbound gRPC client | `SharedKernel.Communication.Grpc` | Infrastructure | `AddGrpcClient<TClient>("name")` | add-outbound-call.md |
+| Publish my service's contracts and client | `SharedKernel.Contracts`, `SharedKernel.Communication.Rest` | A shared contracts project; Infrastructure | `[IntegrationEvent("{context}.{name}", Version = n)]`, `AddRestClient<IClient, Client>("name")` | add-service-contracts.md |
+| Call or consume another service | `SharedKernel.Communication.Rest`, `SharedKernel.Communication.Grpc`, `SharedKernel.Messaging.Abstractions` | Application (port); Infrastructure (client, `ConsumerBase<T>`) | A port in Application, `AddRestClient<IClient, Client>("name")` or `AddGrpcClient<TClient>("name")`, `ConsumerBase<T>` | add-service-contracts.md |
 | Recurring or one-shot job, once across replicas | `SharedKernel.Scheduling` | Infrastructure | `AddSharedKernelScheduling()`, `AddRecurring<TCommand>(…)`, `IScheduledJobRegistry` | add-background-job.md |
 | Durable multi-step process with compensation | `SharedKernel.Workflows.Temporal` | Infrastructure | `AddSharedKernelTemporalWorkflows(…)`, `IWorkflowDispatcher`, `WorkflowBase` | add-long-running-workflow.md |
 | Files in S3 or an S3-compatible store | `SharedKernel.Storage.Abstractions`, `SharedKernel.Storage.S3` | Application; Infrastructure | `IFileStorage`, `AddSharedKernelStorage().AddS3(configuration).AddStore("name")` | add-file-storage.md |
@@ -260,6 +264,7 @@ Open the one that matches the task, for example `recipes/add-caching.md`, then r
 | add-background-job.md | cron or one-shot jobs that run once across replicas |
 | add-long-running-workflow.md | multi-step processes with retries, timers and compensation |
 | add-outbound-call.md | calling another service over REST or gRPC |
+| add-service-contracts.md | publishing a service's events, DTOs and client, or consuming another service's client or events behind a port |
 | add-file-storage.md | uploading, downloading or presigning files, per tenant |
 | add-search.md | full-text search indexes |
 | add-ai.md | embeddings, vector search and chat models |

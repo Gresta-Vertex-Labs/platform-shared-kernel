@@ -110,7 +110,7 @@ A kernel package that ships its own `DbContext` (the Idempotency EF Core store) 
 - [ ] Anything Idempotency needs from this is stated in the phase so P-632 can depend on it.
 
 #### P-631 — Recipe: publish and consume a service's Contracts and Client (B4)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 11.Communication
 **Depends on:** P-629
 **Phase key:** SK.11.ServiceContractsRecipe
