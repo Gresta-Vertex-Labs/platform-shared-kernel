@@ -21,4 +21,30 @@ public sealed class EfCoreIdempotencyOptions
     /// at all. It applies to every purpose this registration serves.
     /// </remarks>
     public bool AllowExecutionOnStoreUnavailable { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, the package creates its own <c>idempotency_keys</c> table on startup by applying its
+    /// shipped migration through <c>AddMigrationOnStartup&lt;IdempotencyDbContext&gt;</c>
+    /// (<c>SharedKernel.Persistence.EfCore</c>). Defaults to <see langword="false"/>: the consumer creates the table.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The migration runs on the migration data source (<c>SharedKernel:Persistence:{name}:MigrationConnectionString</c>)
+    /// when one is configured, else on the context's own connection, under the cross-replica migration lock; the store
+    /// itself keeps using the connection passed to <c>AddEfCoreIdempotency</c>. The host needs
+    /// <c>AddSharedKernelPostgres</c> or <c>AddSharedKernelNpgsql</c> for the lock.
+    /// </para>
+    /// <para>
+    /// Turning this on records the migration in the history table <c>__ef_migrations_history_idempotency</c>. The
+    /// migration does nothing when <c>idempotency_keys</c> already exists. This option is read once, when
+    /// <c>AddEfCoreIdempotency</c> runs; it cannot be flipped later by configuration binding.
+    /// </para>
+    /// </remarks>
+    public bool MigrateOnStartup { get; set; }
+
+    /// <summary>
+    /// How long startup waits for the cross-replica migration lock when <see cref="MigrateOnStartup"/> is on.
+    /// <see langword="null"/> (the default) uses the persistence default of 2 minutes. Must be positive when set.
+    /// </summary>
+    public TimeSpan? MigrationLockTimeout { get; set; }
 }

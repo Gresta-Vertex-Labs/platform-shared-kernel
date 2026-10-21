@@ -45,7 +45,7 @@ backed by Redis or PostgreSQL.**
 | --- | --- | --- | --- |
 | [SharedKernel.Idempotency.Abstractions](SharedKernel.Idempotency.Abstractions/README.md) | Abstractions | Application | `IIdempotencyStore`, `IdempotencyPurpose`, `IdempotencyTenantScope`, keyed registration — and a custom store |
 | [SharedKernel.Idempotency.Redis](SharedKernel.Idempotency.Redis/README.md) | Adapter | Infrastructure | You already run Redis (`AddRedisConnection`); entries expire on their own |
-| [SharedKernel.Idempotency.EfCore](SharedKernel.Idempotency.EfCore/README.md) | Adapter | Infrastructure | You run PostgreSQL and want deduplication next to your data or outbox, without Redis |
+| [SharedKernel.Idempotency.EfCore](SharedKernel.Idempotency.EfCore/README.md) | Adapter | Infrastructure | You run PostgreSQL and want deduplication next to your data or outbox, without Redis; it can create its own table on startup (opt-in) |
 | [SharedKernel.Idempotency.Testing](SharedKernel.Idempotency.Testing/README.md) | Testing | test projects | `FakeIdempotencyStore`, `AddFakeIdempotencyStore()` |
 
 Pick one store per purpose: requests and messages may live in different stores. The callers bring the Abstractions

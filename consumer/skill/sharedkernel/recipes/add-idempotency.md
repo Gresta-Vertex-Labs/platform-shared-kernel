@@ -6,6 +6,8 @@ proven-by:
   - samples/Shop/Ordering/Shop.Ordering.Infrastructure/Fulfilment/OrderFulfilment.cs
   - samples/Shop/Ordering/Shop.Ordering.Api/Program.cs
   - samples/Shop/Ordering/Shop.Ordering.Tests/OrderingTests.cs
+unproven:
+  - MigrateOnStartup on the PostgreSQL store (a table created by the package's own migration on the migrator connection): the reference platform creates the table itself and does not opt in, so there is no snippet; read the package README
 ---
 # Add idempotency
 
@@ -84,6 +86,16 @@ services.AddEfCoreIdempotency(
 
    One store can serve both: `purposes => purposes.ForRequests().ForMessages()`. Dispose a data source you
    create yourself with the host (the reference platform registers a small `IAsyncDisposable` owner for it).
+
+   The PostgreSQL store needs its `idempotency_keys` table. By default the package creates nothing: create the
+   table yourself, with your own migration or the DDL in the package README. The package can also create it:
+   set `MigrateOnStartup = true` in the `AddEfCoreIdempotency` options delegate and it applies its shipped
+   migration at host start, on the migration connection (`MigrationConnectionString` of the Postgres
+   registration), so the runtime role needs no DDL rights. The runtime role still needs `SELECT, INSERT, UPDATE,
+   DELETE` on the table: the role script's default privileges for the migrator role cover a table the migrator
+   creates, a table made any other way needs an explicit grant. Opting in on a database that already has the
+   table changes nothing but one history row. This option is not exercised by the reference platform; the
+   package README has the details.
 
    **Consumers.** `WithIdempotency()` on the bus builder deduplicates every consumer through the `Message`
    store (the rest of the chain is in add-messaging.md):

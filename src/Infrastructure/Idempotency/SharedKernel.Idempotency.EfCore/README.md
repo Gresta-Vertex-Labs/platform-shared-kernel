@@ -68,7 +68,7 @@ builder.Services.AddEfCoreIdempotency(
     purposes: p => p.ForRequests().ForMessages());
 ```
 
-Then create the table with a migration (recipe 1). Nothing else calls the store directly: `app.WithIdempotency()` on
+Then create the table: set `o.MigrateOnStartup = true` (recipe 1) or create it yourself (recipe 2). Nothing else calls the store directly: `app.WithIdempotency()` on
 `AddSharedKernelApplication` and `MessagingBusBuilder.WithIdempotency()` resolve it by purpose. To call it yourself,
 inject `[FromKeyedServices(IdempotencyPurpose.Request)] IIdempotencyStore` — see the
 [contract README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md).
@@ -116,9 +116,64 @@ Primary key `(tenant_scope, purpose, key)` — the constraint the upsert conflic
 
 ## Recipes
 
-### 1. Create the table with a migration
+### 1. Let the package create the table on startup (supported)
 
-The package ships no migrations. Add a design-time factory to your migrations project:
+The package ships its own initial migration. Opt in and it creates `idempotency_keys` when the host starts, on the
+migration connection, so the application's runtime role never needs DDL rights:
+
+```csharp
+builder.Services.AddSharedKernelPostgres<OrdersDbContext>(builder.Configuration, "orders");   // the lock and the migration data source
+builder.Services.AddEfCoreIdempotency(
+    db => db.UsePostgres(runtimeDataSource),
+    p => p.ForRequests().ForMessages(),
+    o => o.MigrateOnStartup = true);
+```
+
+```json
+{ "SharedKernel": { "Persistence": { "orders": { "MigrationConnectionString": "Host=…;Username=app_migrator;…" } } } }
+```
+
+- **Where it runs.** On the migration data source when `MigrationConnectionString` is configured, otherwise on the
+  context's own connection (a single-role host works). The store itself keeps using the connection you passed to
+  `UsePostgres`.
+- **Once across replicas.** Startup takes the cross-replica migration lock; a replica that waits finds the migration
+  applied. `MigrationLockTimeout` (default 2 minutes) bounds the wait and fails start with a `TimeoutException`.
+  Readiness (`IPersistenceStartup`) completes only after the migration. The host needs `AddSharedKernelPostgres` or
+  `AddSharedKernelNpgsql` in the same container; without it the migration still runs but takes no lock.
+- **History table.** Opting in records the migration in `__ef_migrations_history_idempotency` (default schema), never
+  in `__EFMigrationsHistory`, so it cannot collide with your own context's migrations.
+- **A table that exists already.** The migration does nothing when `idempotency_keys` exists, whoever created it and
+  whoever owns it: no `ALTER`, no row change, no index statement. Only the history row is added. The shape of a
+  hand-made table is not inspected, so it must follow the columns above exactly.
+- **Grants.** The table is owned by the migrator. The canonical role script's `ALTER DEFAULT PRIVILEGES FOR ROLE
+  app_migrator` gives the runtime role `SELECT, INSERT, UPDATE, DELETE` on it (the cleanup job in recipe 3 needs
+  `DELETE`). The package grants nothing itself.
+- **Revert.** The migration's `Down` drops the table and every row in it; run it only deliberately.
+
+### 2. Create the table yourself (manual fallback)
+
+Without the opt-in the package creates nothing. Create the table once as the owning role, with exactly this DDL:
+
+```sql
+CREATE TABLE idempotency_keys (
+    tenant_scope character varying(36) NOT NULL,
+    purpose character varying(16) NOT NULL,
+    key character varying(512) NOT NULL,
+    fingerprint character varying(128) NOT NULL,
+    status character varying(20) NOT NULL,
+    reservation_token uuid NOT NULL,
+    reserved_at_utc timestamp with time zone NOT NULL,
+    expires_at_utc timestamp with time zone NOT NULL,
+    response text,
+    CONSTRAINT pk_idempotency_keys PRIMARY KEY (tenant_scope, purpose, key)
+);
+CREATE INDEX ix_idempotency_keys_expires_at_utc ON idempotency_keys (expires_at_utc);
+GRANT SELECT, INSERT, UPDATE, DELETE ON idempotency_keys TO app_runtime;
+```
+
+The grant is needed for a table that `app_migrator` did not create (the role script's default privileges only cover
+tables the migrator creates). Or generate a migration of your own with a design-time factory in your migrations
+project, which keeps working next to a service that does not opt in:
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -138,9 +193,11 @@ public sealed class IdempotencyDbContextFactory : IDesignTimeDbContextFactory<Id
 }
 ```
 
-Then run `dotnet ef migrations add InitialIdempotency --context IdempotencyDbContext`.
+Then run `dotnet ef migrations add InitialIdempotency --context IdempotencyDbContext`. This migration lives in your
+assembly and uses EF Core's default history table; do not also set `MigrateOnStartup`, or the shipped migration would
+run next to it (harmlessly: it finds the table and does nothing).
 
-### 2. Bound table growth with a cleanup job
+### 3. Bound table growth with a cleanup job
 
 The store never prunes rows. Run a periodic delete — a `BackgroundService`, or a
 [`SharedKernel.Scheduling`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Scheduling/SharedKernel.Scheduling/README.md) job:
@@ -170,12 +227,17 @@ public sealed class IdempotencyCleanupService(IServiceScopeFactory scopes, ICloc
 
 ## Configuration
 
-Options are set through the `configureOptions` delegate; the registration does not bind a configuration section (the
-`EfCoreIdempotencyOptions.SectionName` constant, `SharedKernel:Idempotency:EfCore`, is reserved for that).
+Options are set through the `configureOptions` delegate, which runs once, when `AddEfCoreIdempotency` is called (the
+migration flag decides what gets registered). The registration does not bind a configuration section (the
+`EfCoreIdempotencyOptions.SectionName` constant, `SharedKernel:Idempotency:EfCore`, is reserved for that), so
+`SharedKernel:Idempotency:EfCore:MigrateOnStartup` in `appsettings.json` has no effect; set it in code.
 
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable` | `bool` | `false` | On a PostgreSQL connectivity or timeout failure, `TryBeginAsync` returns `Started` and `CompleteAsync`/`ReleaseAsync` return `false`, instead of throwing, and a Warning is logged. **Duplicate-execution risk while PostgreSQL is down.** Applies to every purpose of the registration |
+| `EfCoreIdempotencyOptions.MigrateOnStartup` | `bool` | `false` | Create `idempotency_keys` at host start through the shipped migration, on the migration connection, under the cross-replica lock (recipe 1). Uses the history table `__ef_migrations_history_idempotency` |
+| `EfCoreIdempotencyOptions.MigrationLockTimeout` | `TimeSpan?` | `null` (2 minutes) | How long startup waits for the migration lock when `MigrateOnStartup` is on. Must be positive |
+| `SharedKernel:Persistence:{name}:MigrationConnectionString` | string | unset | Read by `SharedKernel.Persistence.Npgsql`, not by this package: the connection the migration runs on. Unset: the context's own connection |
 
 ## Reference
 
@@ -238,6 +300,10 @@ The fail-closed path logs nothing; the caller that receives the exception logs t
 - The `EfCoreIdempotencyStore` constructor takes an `EfCoreIdempotencyMetrics`; resolve the store through DI.
 - The log message text changed (event id 18100 did not), and the exception text for an impossible empty `RETURNING`
   result is reworded. The `idempotency_keys` schema is unchanged: no migration is needed.
+- `MigrateOnStartup` is additive and off by default. A service that created the table by hand or with its own
+  migration keeps working unchanged; `AddEfCoreIdempotency` now runs the `configureOptions` delegate when it is called
+  rather than when the options are first resolved. Opting in later on a database with the table already in place adds
+  only the history row.
 
 ### Health
 
@@ -254,8 +320,12 @@ same protocol. Concurrency, tenant isolation and expiry reclaim need a real Post
 
 | Don't | Do | Why |
 | --- | --- | --- |
-| Forget the migration | Add the design-time factory and a migration (recipe 1) | The package ships none; the first call fails on a missing table |
-| Forget cleanup | Schedule the delete in recipe 2 | Expired rows are only reclaimed when the same key returns; the rest accumulate |
+| Forget the table | Set `MigrateOnStartup` (recipe 1) or create it (recipe 2) | Without the opt-in nothing creates it; the first call fails on a missing table |
+| Run the migration on the runtime role | Configure `MigrationConnectionString` | The runtime role has no `CREATE`; start fails with permission denied |
+| Set your own `MigrationsAssembly` on the context and expect the shipped migration | Leave it unset, or use recipe 2 | The shipped migration is found through the package's own assembly; a caller-set assembly replaces it |
+| Create the table by hand with different columns, then opt in | Follow the DDL in recipe 2 exactly | An existing table is never inspected or altered; a drifted shape fails in the store |
+| Call `Down` casually | Treat it as a drop of every entry | It drops `idempotency_keys` |
+| Forget cleanup | Schedule the delete in recipe 3 | Expired rows are only reclaimed when the same key returns; the rest accumulate |
 | Forget `AddClock()` | Register `IClock` | Every timestamp comes from it |
 | Turn on `AllowExecutionOnStoreUnavailable` by default | Leave it off unless running twice is safer than not running | While the database is down every call — duplicates included — is treated as new |
 | Expect settings under `SharedKernel:Idempotency:EfCore` | Use the `configureOptions` delegate | The section is not bound |

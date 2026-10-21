@@ -122,7 +122,7 @@ No consumer-skill recipe covers the pattern every service follows: publish a `Co
 - [ ] Consumer vocabulary only; the catalog regenerates without an unrouted package.
 
 #### P-632 — Idempotency EF Core store: a supported way to create its schema (B7)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 18.Idempotency
 **Depends on:** P-630
 **Phase key:** SK.18.EfCoreSchemaMigration
