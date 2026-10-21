@@ -84,6 +84,9 @@ implements the interfaces, which is all persistence reads):
     requires its own code and message.
 13. `CheckRule`/`TryCreate` on `AggregateRoot`, `ValueObject` and (`CheckRule` only) `DomainService` delegate to
     `Internal.DomainInvariants`. Never reimplement them.
+    *(planned, SK.03.RuleResult)* `TryCheckRule` on the same three bases returns `Result` carrying the same `Error` as the
+    `BusinessRuleViolationException` for that rule; it delegates to `DomainInvariants` and shares the exception's error
+    builder. Constructors and factories use `CheckRule`; `Result`-returning behavior methods use `TryCheckRule`.
 14. `TryCreate<T>` returns `ValidationResult<T>`: `ValidationException` → all its errors; any `DomainException` → its
     single error; anything else rethrows. Never catch broader.
 15. `DomainNotFoundException` message is `"{TypeName} '{id}' was not found."`, both arguments null-checked, code

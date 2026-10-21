@@ -154,6 +154,12 @@ README. The canonical composition is compiled by
     methods taking the `ILogger` first and the exception last, one-sentence templates, closed-set placeholders). Loggers are
     required constructor dependencies; categories are kernel types (`SharedKernelDbContext`), never a consumer type.
 
+24. **A kernel package's own `DbContext` migrates through `AddMigrationOnStartup<TContext>`, never through a
+    hand-written startup migration** *(planned, SK.06.PackageContextMigration)*. It runs on the migration data source
+    under the same `IMigrationLock` and joins `IPersistenceStartup`; it is migrations only (no seeders, no scope), the
+    context is non-pooled and not a `SharedKernelDbContext`, and it owns a non-default history table so it never shares
+    history rows with the service's context.
+
 AOT is not a design constraint here (EF Core, Npgsql and Dapper are reflection-based), but expression trees are built
 once and cached, and canonical encodings (AUDITv3, AAD, key canonicalization, advisory-lock hashing) are pure
 `Span<byte>` code.
@@ -186,6 +192,7 @@ once and cached, and canonical encodings (AUDITv3, AAD, key canonicalization, ad
 | `PersistenceContextDependencies.Create(...)` keeps an optional `loggerFactory` | A context built outside the container (a test, a tool, the design-time factory) has none; null becomes `NullLoggerFactory`. Every DI-built type takes a required `ILogger<T>` and the EF Core registration calls `AddLogging()` so it resolves |
 | Recorded C3 exceptions: `persistence.postgresql.lock_timeout` and `persistence.audit_chain_not_intact` stay `Conflict` | 55P03 also covers `NOWAIT`/`SKIP LOCKED` contention; a broken chain is a state conflict, not an outage |
 | One suppression of SK0020, in `NpgsqlCommandLogLevel` | The decorator re-levels Npgsql's own `Command` entries and has to call `ILogger.Log` on the wrapped logger; it authors no log statement |
+| Another package's context migrates through a separate opt-in registration, not through `AddSharedKernelPostgres` *(planned, SK.06.PackageContextMigration)* | `MigrateOnStartup()` is bound to `SharedKernelDbContext` and the service's own context; a package such as `Idempotency.EfCore` registers a plain `DbContext`, and a migration on the runtime connection fails under the role split. The new registration reuses the lock, the migration data source and the startup signal rather than a second mechanism |
 | The tenant data key id keeps the compact `skt:{32 hex}` form, built with `TryFormat("N")` | It is stored inside encrypted payloads (a wire format); SK0011 protects audit column values, which this is not |
 
 ## Logging
@@ -237,7 +244,7 @@ commands). Npgsql's per-command Information log is lowered to Debug.
 - **14.Presentation:** a `statement_timeout` expiry answers `Timeout` (504), audit not-found 404, no tenant 403 (`persistence.tenant_required`); it maps by `Error.Type`. `IfMatch<EntityVersion>` binds through `IParsable`; a version conflict is 412 on a conditional
   request (the 412 rule in `14.Presentation`), 409 otherwise; the default precondition-failed codes are pinned by
   `PresentationPreconditionCodesTests`.
-- **18.Idempotency:** `Idempotency.EfCore` builds on `Persistence.EfCore` (declared edge).
+- **18.Idempotency:** `Idempotency.EfCore` builds on `Persistence.EfCore` (declared edge); its context is migrated through `AddMigrationOnStartup<TContext>` *(planned, SK.06.PackageContextMigration; P-632 depends on it)*.
 - **00.Governance:** `PersistenceNamespaceConventionRules`, `PersistenceInterfaceOwnershipRules`,
   `UnitOfWorkSeamRules`, `TestingNeverReferencedByProduction`, SK0042, SK0201.
 - Reference services: the Shop (`samples/Shop`) — Ordering (EF Core, RLS, field encryption, audit ledger), Billing (EF Core, RLS), Inventory and Reports (Dapper).

@@ -58,6 +58,9 @@ No DI registration and no configuration section. Members, factories and samples:
 17. Every public API change goes in `PublicAPI.Unshipped.txt` with XML docs (`CS1591` and the PublicAPI analyzer rules are
     errors). XML comments never contain work-order ids or change history.
 18. Keep `README.md` sample outputs real — produced by running the snippets.
+19. *(planned, SK.04.PagedListSourceGen)* **The JSON constructors of `PagedList<T>` and `CursorPagedList<T>` are public**
+    (`[EditorBrowsable(Never)]`, same parameters and same validation as the factories, throwing `JsonException`), because
+    a source-generated context in a consumer assembly cannot call an internal constructor. Their wire shape is unchanged.
 
 ## Decisions
 
@@ -72,6 +75,7 @@ No DI registration and no configuration section. Members, factories and samples:
 | `TotalCount` is `long` | Large tables and search engines exceed `int` |
 | Cursor is unsigned, versioned, strictly decoded | Signing would need key management in every service; queries must still apply tenant and authorization filters |
 | No `MoneyDto` or other domain-value DTOs | Added only when a real cross-service need appears; services map `Money` themselves |
+| *(planned, SK.04.PagedListSourceGen)* Paged lists expose a public JSON constructor | An internal `[JsonConstructor]` makes a consumer-assembly source-generated context throw `NotSupportedException` on read; a public one is additive and keeps one rule set. A `[JsonConverter]` was rejected: it would re-implement member matching and change the reflection path. `EventEnvelope` keeps internal constructors (rule 5) |
 | Propagation header/baggage constants never live here | `Presentation.Grpc`/`Communication.Grpc` may not reference Contracts; they are `WellKnownHeaders` in `SharedKernel.Primitives` |
 
 ## Logging
@@ -108,6 +112,8 @@ EventId block `4000`–`4999` (`LoggingEventIdRanges.Contracts`) is reserved but
 ## Known Limitations
 
 - Reflection-based serialization: the package is not trimming- or native-AOT-safe for generic envelopes and pages.
+  Until SK.04.PagedListSourceGen ships, the paged lists cannot be read (only written) through a source-generated
+  context in a consumer assembly: reading throws `NotSupportedException`.
 - Cursors are not signed; a client can forge a position, so every keyset query must still apply its own tenant and
   authorization filters.
 - `PagedList<T>.TotalCount` may disagree with the items under concurrent writes; this is tolerated by design.

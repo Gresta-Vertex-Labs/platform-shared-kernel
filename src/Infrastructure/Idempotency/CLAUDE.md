@@ -93,6 +93,12 @@ API detail and recipes: each package's `README.md`.
     outage as a stackless `IdempotencyStoreUnavailableException` copy (the provider text names the key).
 16. **One purpose guard.** `IdempotencyPurposes.ThrowIfUndefined` runs first in every provider and fake member; no
     provider validates the purpose lazily.
+17. *(planned, SK.18.EfCoreSchemaMigration)* **Schema creation is opt-in and never the store's.** The EF Core provider
+    creates its table only through the shipped migration applied by `06.Persistence`'s `AddMigrationOnStartup<IdempotencyDbContext>`
+    behind `EfCoreIdempotencyOptions.MigrateOnStartup` (default `false`); it never calls `Database.MigrateAsync`, never
+    migrates on the runtime connection and never adds DDL grants for the runtime role. The migration's `Up` is a no-op when
+    `idempotency_keys` already exists, and its table shape equals the rule 3 layout; changing that layout is a stored-format
+    change with its own migration.
 
 ## Decisions
 
@@ -109,6 +115,10 @@ API detail and recipes: each package's `README.md`.
 | One code, `idempotency.store_unavailable`, for connectivity and timeout; no `IdempotencyErrorCodes` class | The caller's remedy is the same (retry); `ErrorCodes.Idempotency` in Primitives is already the shared public home |
 | A fail-open outage is counted and recorded on the span, not only logged | The `fail_open` counter is the alert signal for duplicate-execution risk |
 | The metrics singleton is a public class (`RedisIdempotencyMetrics`, `EfCoreIdempotencyMetrics`) | The public store constructor takes it, and a per-scope instrument set would leak instruments on the shared meter; a public `MeterName` const is also what the observability scanner needs per assembly |
+| *(planned, SK.18.EfCoreSchemaMigration)* The history table `__ef_migrations_history_idempotency` is applied only when `MigrateOnStartup` is on | A 1.0.0 consumer may run its own migration for this context against EF's default history table; forcing the new name unconditionally would make that migration run twice. The name is a stored format of an opted-in database |
+| *(planned, SK.18.EfCoreSchemaMigration)* The opt-in is an option read at registration, not a separate extension | The flag decides whether a hosted service is registered, so `AddEfCoreIdempotency` evaluates `configureOptions` once on a snapshot; configuration binding (a Known Limitation) cannot flip it |
+| *(planned, SK.18.EfCoreSchemaMigration)* The shipped initial migration guards with `to_regclass`, not `CREATE ... IF NOT EXISTS` | PostgreSQL checks schema `CREATE` and table ownership before the existence test, so a hand-made table owned by another role would fail the migrator; the guard touches nothing when the table exists. A drifted hand-made shape is not inspected |
+| *(planned, SK.18.EfCoreSchemaMigration)* The design-time factory is internal and maintainer-only (connection from `SK_IDEMPOTENCY_DESIGN_CONNECTION`); regenerate with `dotnet ef migrations add {Name} --context IdempotencyDbContext` from the package folder | The migration is part of the package; consumers keep the README's own-factory recipe only as the manual fallback |
 | The span source and meter are shared by both providers, not per provider | Rule 10 duplicates the helper, not the names; identical instrument definitions plus the `idempotency.provider` tag keep a host that registers both unambiguous (proven by `MixedProviderTelemetryTests`) |
 
 ## Logging
@@ -164,6 +174,7 @@ class under `Diagnostics/`, and uses one single-sentence template with quoted `'
   command and key in it; sinks that print exceptions must be trusted like the store itself. Spans and metrics never carry
   it (rule 15).
 - `.EfCore` ships no migrations and no cleanup job; expired rows accumulate until the consumer runs the README recipe.
+  *(Migrations planned, SK.18.EfCoreSchemaMigration: opt-in shipped migration; the cleanup job stays a consumer recipe.)*
 - A multi-tenant service that skips the inbound adapters (`UseSharedKernelRequestContext()`, the MassTransit consume
   filter, the job runner) puts every entry in the `no-tenant` scope; anonymous callers of one tenant share a scope, so
   Request keys must be unguessable.
