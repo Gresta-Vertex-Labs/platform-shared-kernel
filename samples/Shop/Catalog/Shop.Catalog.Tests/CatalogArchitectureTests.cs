@@ -1,11 +1,11 @@
 using System.Reflection;
 using SharedKernel.ArchitectureTests.Helpers;
 using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using Shop.Catalog.Api;
 using Shop.Catalog.Application.Products;
 using Shop.Catalog.Domain;
 using Shop.Catalog.Infrastructure;
-using Shop.TestSupport;
 using Xunit;
 
 namespace Shop.Catalog.Tests;
@@ -13,10 +13,10 @@ namespace Shop.Catalog.Tests;
 /// <summary>The Catalog's four-project shape, and the kernel's own architecture rules applied to its assemblies.</summary>
 public sealed class CatalogArchitectureTests : ArchitectureRuleBase
 {
-    private static readonly ServiceShape Shape = new(
-        DependencyGraph.Load("Shop.Catalog.Tests"),
-        "Shop.Catalog"
+    private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load(
+        "Shop.Catalog.Tests"
     );
+    private static readonly ServiceShapeOptions Shape = new("Shop.Catalog");
 
     private static readonly Assembly DomainAssembly = typeof(Product).Assembly;
     private static readonly Assembly ApplicationAssembly = typeof(CreateProductCommand).Assembly;
@@ -25,27 +25,66 @@ public sealed class CatalogArchitectureTests : ArchitectureRuleBase
     private static readonly Assembly ApiAssembly = typeof(CatalogEndpoints).Assembly;
 
     [Fact]
-    public void ProjectReferences_FollowTheLayering() => Shape.ProjectReferencesFollowTheLayering();
+    public void ProjectReferences_FollowTheLayering() =>
+        ServiceShapeRules.AssertProjectReferencesFollowTheLayering(Graph, Shape);
 
     [Fact]
-    public void Domain_SeesFoundationAndModelOnly() => Shape.DomainSeesFoundationAndModelOnly();
+    public void Domain_SeesFoundationAndModelOnly() =>
+        ServiceShapeRules.AssertDomainSeesFoundationAndModelOnly(Graph, Shape);
 
     [Fact]
-    public void Application_SeesContractsOnly() => Shape.ApplicationSeesContractsOnly();
+    public void Application_SeesContractsOnly() =>
+        ServiceShapeRules.AssertApplicationSeesContractsOnly(Graph, Shape);
 
     [Fact]
     public void Infrastructure_SeesAdaptersButNoHost() =>
-        Shape.InfrastructureSeesAdaptersButNoHost();
+        ServiceShapeRules.AssertInfrastructureSeesAdaptersButNoHost(Graph, Shape);
 
     [Fact]
-    public void Api_IsTheCompositionRoot() => Shape.HostIsTheCompositionRoot();
+    public void Api_IsTheCompositionRoot() =>
+        ServiceShapeRules.AssertHostIsTheCompositionRoot(Graph, Shape);
 
     [Fact]
     public void Production_NeverReferencesTestingPackages() =>
-        Shape.ProductionNeverReferencesTestingPackages();
+        ServiceShapeRules.AssertProductionNeverReferencesTestingPackages(Graph, Shape);
 
     [Fact]
-    public void EveryKernelPackage_IsKnown() => Shape.EveryKernelPackageIsKnown();
+    public void EveryKernelPackage_IsKnown() =>
+        ServiceShapeRules.AssertEveryKernelPackageIsKnown(Graph, Shape);
+
+    [Fact]
+    public void Nothing_ReferencesTheApi() =>
+        ServiceShapeRules.AssertNothingReferencesTheHost(Graph, Shape);
+
+    private static readonly Assembly[] ServiceAssemblies =
+    [
+        DomainAssembly,
+        ApplicationAssembly,
+        InfrastructureAssembly,
+        ApiAssembly,
+    ];
+
+    // The placement rules the Catalog already satisfies. Its use cases and domain types sit in feature folders rather than
+    // one namespace per use case, so the use-case, domain-feature, event-handler, configuration and endpoint-module
+    // rules are not applied here.
+    private static readonly ServicePlacementOptions Placement = new("Shop.Catalog");
+
+    [Fact]
+    public void MiddlewareAndFilters_LiveInTheirFolders() =>
+        AssertRule(
+            ServicePlacementRules.MiddlewareAndFiltersLiveInTheirFolders(
+                ServiceAssemblies,
+                Placement
+            )
+        );
+
+    [Fact]
+    public void NoNamespace_UsesAGenericFolderName() =>
+        AssertRule(ServicePlacementRules.NoGenericFolderNames(ServiceAssemblies, Placement));
+
+    [Fact]
+    public void NoType_DerivesFromException() =>
+        AssertRule(ServicePlacementRules.NoExceptionTypes(ServiceAssemblies, Placement));
 
     [Fact]
     public void Domain_NeverReadsTheSystemClock() =>

@@ -6,7 +6,6 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\Shop.Catalog.Api\Shop.Catalog.Api.csproj" />
-    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using SharedKernel.Compression;
 using SharedKernel.Compression.Extensions;
 using SharedKernel.Contracts.Events;
@@ -20,7 +21,6 @@ using Shop.Billing.Api.Payments;
 using Shop.Billing.Api.Profiles;
 using Shop.Billing.Api.Security;
 using Shop.Contracts.Billing;
-using Shop.TestSupport;
 using Xunit;
 
 namespace Shop.Billing.Tests;
@@ -37,7 +37,9 @@ internal static class Tenants
 
 public sealed class BillingArchitectureTests
 {
-    private static readonly DependencyGraph Graph = DependencyGraph.Load("Shop.Billing.Tests");
+    private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load(
+        "Shop.Billing.Tests"
+    );
     private const string Service = "Shop.Billing.Api";
 
     [Fact]
@@ -48,7 +50,7 @@ public sealed class BillingArchitectureTests
     public void Billing_NeverReferencesTestingPackages() =>
         Graph
             .Closure(Service)
-            .Where(p => KernelPackageIndex.Instance.TierOf(p) == "Testing")
+            .Where(p => KernelPackageIndex.Instance.TierOf(p) == KernelTier.Testing)
             .Should()
             .BeEmpty();
 
@@ -58,7 +60,9 @@ public sealed class BillingArchitectureTests
             .Closure(Service)
             .Where(p => p.StartsWith("SharedKernel.", StringComparison.Ordinal))
             .Should()
-            .OnlyContain(p => KernelPackageIndex.Instance.TierOf(p) != "ThirdParty");
+            .OnlyContain(p =>
+                KernelPackageIndex.Instance.TierOf(p) != KernelPackageIndex.ThirdParty
+            );
 }
 
 public sealed class ApiKeyStoreTests

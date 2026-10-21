@@ -14,6 +14,7 @@
 // caller-anchored rule here so that regression cannot return.
 using SharedKernel.ArchitectureTests.Helpers;
 using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using System.Reflection;
 
 var assembly = Assembly.GetExecutingAssembly();
@@ -41,6 +42,32 @@ Execute(
     () => ContractsPurityRules.IntegrationEventImplementationsMustBeSealed(
         assembly,
         typeof(ILocalIntegrationEvent)));
+
+// Service placement rule: a ConditionList over this assembly, with no kernel type in sight (anchors are metadata names).
+Execute(
+    "ServicePlacementRules.NoExceptionTypes",
+    () => ServicePlacementRules.NoExceptionTypes([assembly], new ServicePlacementOptions("ArchTestConsumer")));
+
+// Service shape rule and the embedded package-tier index: both must work from the packed package, which is where the
+// embedded resource has to be present. The consumer's own deps.json has no service projects, so the rule reports
+// findings; what matters is that it runs to completion.
+try
+{
+    var graph = ServiceDependencyGraph.Load("ArchTestConsumer");
+    var findings = ServiceShapeRules.FindProjectReferencesFollowTheLayering(graph, new ServiceShapeOptions("ArchTestConsumer"));
+    var tier = KernelPackageIndex.Instance.TierOf("SharedKernel.Domain");
+    if (findings.Count == 0 || tier != KernelTier.Model)
+    {
+        throw new InvalidOperationException($"Unexpected result: {findings.Count} finding(s), SharedKernel.Domain is '{tier}'.");
+    }
+
+    Console.WriteLine("  OK      ServiceShapeRules + KernelPackageIndex");
+}
+catch (Exception ex)
+{
+    failures++;
+    Console.Error.WriteLine($"  FAILED  ServiceShapeRules + KernelPackageIndex: {ex.GetType().Name}: {ex.Message}");
+}
 
 if (failures > 0)
 {

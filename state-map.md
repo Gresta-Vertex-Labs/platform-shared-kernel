@@ -155,7 +155,7 @@ Service defaults always enable the OTLP exporter, so a host with no collector en
 - [ ] The release-note text for the warning and the opt-in is stated in the phase's acceptance so the release notes carry it.
 
 #### P-635 — Ship the service-shape and placement rules in `SharedKernel.ArchitectureTests` (B3)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 00.Governance
 **Depends on:** None
 **Phase key:** SK.00.ServiceShapeRules

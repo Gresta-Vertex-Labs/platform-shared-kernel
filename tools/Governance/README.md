@@ -30,7 +30,9 @@
   to error in `.editorconfig` when the codebase is clean.
 - **Whole-assembly rules as tests.** `SharedKernel.ArchitectureTests` gives rule factories (`DomainLayerPurityRules`,
   `PersistenceLayerProtectionRules`, `RedisTopologyRules`, …) that return a `ConditionList`, asserted through
-  `ArchitectureRuleBase.AssertRule` — domain purity, provider isolation, and what a method body does in IL.
+  `ArchitectureRuleBase.AssertRule` — domain purity, provider isolation, and what a method body does in IL. Opt-in
+  service-shape rules (`ServiceShapeRules`) and placement rules (`ServicePlacementRules`) hold a service's own projects
+  and folders to the four- or six-project layout.
 - **One format for every repository.** `SharedKernel.Linter` ships the shared `.editorconfig` and a pinned CSharpier
   check that fails CI builds on unformatted files; `dotnet build -t:SharedKernelLinterFormat` fixes them.
 - **Nothing reaches production.** All three are development dependencies: no runtime assembly, no API, nothing that
@@ -197,8 +199,8 @@ and format with `dotnet build -t:SharedKernelLinterFormat`. Full setup:
   `ArchitectureRuleBase` to pin the four-project shape and apply the kernel's own domain-purity rules to the Catalog's
   assemblies. Run it with `samples/Shop/build.sh --test`.
 - [**Shop Ordering**](../../samples/Shop/Ordering/) — `OrderingArchitectureTests` (in `Shop.Ordering.Tests`) asserts
-  the four-project shape against the real restore graph through `Shop.TestSupport`'s `ServiceShape`; every other Shop
-  service pins its own dependency graph the same way. The template to copy into a new service.
+  the four-project shape against the real restore graph through `ServiceShapeRules`; every other Shop service pins its
+  own dependency graph the same way. The template to copy into a new service.
 
 ## Guarantees
 

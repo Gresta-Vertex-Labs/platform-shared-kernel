@@ -12,8 +12,10 @@
 
 | You get | So that |
 | --- | --- |
-| 79 static rule factories in 29 classes, returning `ConditionList` | A prose architecture rule becomes a failing test |
+| 88 static rule factories in 30 classes, returning `ConditionList` | A prose architecture rule becomes a failing test |
 | `ArchitectureRuleBase.AssertRule`/`AssertRules` | A violation fails with every offending type named |
+| Service shape rules (`ServiceShapeRules`) and nine placement rules (`ServicePlacementRules`) | A service's own projects and folders are held to the same layout every other service has |
+| An embedded kernel package-tier index (`KernelPackageIndex`) | A test can ask which tier a package is without a copy of the list or a `docs/` folder |
 | Caller-supplied anchor types, validated | Rules work against your own markers and never pass vacuously on a wrong anchor |
 | IL assertion helpers (`SecureDefaultsAssertion`, `PipelineOrderAssertion`, …) | A secure default or a registration order cannot drift silently |
 | Observability assertions (EventId ownership, telemetry names, log templates, error codes, suppression audit) | You adopt a platform-wide standard that fails with a per-domain breakdown |
@@ -45,7 +47,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Target framework | `net10.0` |
 | Tier | Tooling — reference it from a **test project** only (it is a development dependency) |
 | Depends on | `NetArchTest.Rules`, `Mono.Cecil`, `Microsoft.Extensions.DependencyInjection.Abstractions`; no other SharedKernel package |
-| Namespaces | `SharedKernel.ArchitectureTests.Rules`, `.Helpers`, `.Predicates`, `SharedKernel.ArchitectureTests` (assertions) |
+| Namespaces | `SharedKernel.ArchitectureTests.Rules`, `.Helpers`, `.Predicates`, `.ServiceShape`, `SharedKernel.ArchitectureTests` (assertions) |
 
 Add a test runner yourself. The package ships its XML documentation, so each rule's offending and compliant patterns
 are in IntelliSense.
@@ -148,6 +150,64 @@ attributes and opcodes are reachable. `StringConstantsClassDetector` recognises 
 Add the violation, watch the test go red, remove it. A rule never seen failing may be passing because it inspected
 nothing.
 
+### 5. Hold a service to the four-project or six-project shape
+
+The shape rules read the restore graph of your test assembly (its `.deps.json`) and judge which tiers each of the
+service's own projects may reach. Every rule is opt-in: nothing runs until a test calls it, so adopting them changes
+no existing test.
+
+```csharp
+using SharedKernel.ArchitectureTests.ServiceShape;
+using Xunit;
+
+public sealed class OrderingShapeTests
+{
+    private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load("Acme.Ordering.Tests");
+
+    // Four projects: Acme.Ordering.Domain, .Application, .Infrastructure and .Api (HostSuffix = "Worker" for a worker).
+    private static readonly ServiceShapeOptions Shape = new("Acme.Ordering")
+    {
+        SharedProjects = ["Acme.Platform.Contracts"], // a project outside the service its projects may reference
+    };
+
+    [Fact]
+    public void Project_references_follow_the_layering() =>
+        ServiceShapeRules.AssertProjectReferencesFollowTheLayering(Graph, Shape);
+
+    [Fact]
+    public void Every_rule_holds() => ServiceShapeRules.AssertAll(Graph, Shape);
+}
+```
+
+Six projects add `Contracts` and `Client`. `AssertAll` then also runs `AssertContractsArePure` and
+`AssertClientSeesContractsAndRestOnly`:
+
+```csharp
+var sixProjects = new ServiceShapeOptions("Acme.Billing") { Variant = ServiceShapeVariant.SixProject };
+ServiceShapeRules.AssertAll(ServiceDependencyGraph.Load("Acme.Billing.Tests"), sixProjects);
+```
+
+Each rule also has a `Find…` form that returns the findings instead of throwing, for any assertion library. A project
+that is not in the graph (a mistyped prefix or suffix) is reported, never passed over.
+
+Placement rules judge where each kind of type lives, by namespace. They select types by what they implement, matched
+by metadata full name (`KernelTypeNames`), so the package references no kernel, MassTransit, EF Core or ASP.NET Core
+assembly:
+
+```csharp
+using System.Reflection;
+using SharedKernel.ArchitectureTests.Rules;
+
+Assembly[] service = [typeof(Order).Assembly, typeof(PlaceOrderCommand).Assembly, typeof(OrderEndpoints).Assembly];
+var placement = new ServicePlacementOptions("Acme.Ordering")
+{
+    PermittedExceptionBaseTypes = ["SharedKernel.Core.Exceptions.SharedKernelException"],
+};
+
+AssertRule(ServicePlacementRules.DomainTypesLiveInTheirFeature(service, placement));
+AssertRule(ServicePlacementRules.NoGenericFolderNames(service, placement));
+```
+
 ## Reference
 
 ### Portable and platform rules
@@ -194,6 +254,47 @@ fails with `SKTIER*` on a forbidden edge. The rules below cover only what the ti
 | `HealthCheckTagIntegrityRules` | `NoConflictingLivenessReadinessTags`, `DependencyHealthChecksCarryReadyNotLive` |
 | `HealthCheckConstantsUsageRules` | `NoBareHealthCheckLiteralWhereConstantsExist` |
 | `ReflectionGuardRules` | `NoMakeGenericMethodReflection` (exemptions via `ReflectionExemptionRegistry.IsExempt`) |
+
+### Service placement rules
+
+`ServicePlacementRules` (namespace `SharedKernel.ArchitectureTests.Rules`) checks a consuming service. Every factory takes
+the service's assemblies and a `ServicePlacementOptions`, which carries the service prefix, the project suffixes
+(`DomainSuffix`, `ApplicationSuffix`, `InfrastructureSuffix`, `HostSuffix`), every folder name and every anchor type
+name; the defaults are the kernel's conventions. Namespaces are compared by segment, never by prefix. All nine are
+opt-in.
+
+| Rule | Holds when |
+| --- | --- |
+| `DomainTypesLiveInTheirFeature` | Aggregate roots live in `Domain.{Feature}`, business rules in `.Rules`, specifications in `.Specifications`, domain events in `.Events` (`Common` and `Services` are not features) |
+| `UseCasesLiveInTheirOwnNamespace` | A `{UseCase}Command`/`{UseCase}Query` lives in `Application.{Feature}.Commands.{UseCase}`/`.Queries.{UseCase}`, one per namespace; its handler and validator live in its namespace |
+| `DomainEventHandlersLiveInEventHandlers` | Domain-event handlers live in `Application.{Feature}.EventHandlers` |
+| `EntityConfigurationsLiveInConfigurations` | EF Core `IEntityTypeConfiguration<>` implementations live in `Infrastructure.Persistence.Configurations` |
+| `ConsumersLiveInConsumers` | MassTransit `IConsumer<>` implementations live in `Infrastructure.Messaging.Consumers` |
+| `EndpointModulesLiveInEndpoints` | `IEndpointModule` implementations live in `Api.Endpoints` |
+| `MiddlewareAndFiltersLiveInTheirFolders` | Middleware (`IMiddleware`, or an `Invoke`/`InvokeAsync(HttpContext, …)` type) lives in `Api.Middleware`, endpoint filters in `Api.Filters` |
+| `NoGenericFolderNames` | No namespace segment is in `BannedSegments` (default `Managers`, `Helpers`, `Utils`, `Extensions`, `Exceptions`, `Shared`, `Misc`), interfaces included |
+| `NoExceptionTypes` | No type derives from `System.Exception`, except from a base listed in `PermittedExceptionBaseTypes` |
+
+### Service shape rules
+
+`ServiceShapeRules` (namespace `SharedKernel.ArchitectureTests.ServiceShape`) takes a `ServiceDependencyGraph` and a
+`ServiceShapeOptions`. Each rule is a `Find…` method returning the findings and an `Assert…` method throwing one
+`ArchitectureRuleViolationException`; `FindAll`/`AssertAll` run every rule that applies to the variant. The tier of a
+kernel package comes from the embedded `KernelPackageIndex`, generated from each package's declared tier for the version
+you reference.
+
+| Rule | Holds when |
+| --- | --- |
+| `ProjectReferencesFollowTheLayering` | Domain references no project; Application references Domain (and Contracts in the six-project variant); Infrastructure references Application; the host references Application and Infrastructure |
+| `DomainSeesFoundationAndModelOnly` | Everything Domain reaches is Foundation or Model tier |
+| `ContractsArePure` (six-project) | Contracts references no project and only `SharedKernel.Contracts`; Domain and Contracts never reach each other |
+| `ApplicationSeesContractsOnly` | Application reaches Foundation, Model and Abstractions only, and never MediatR |
+| `InfrastructureSeesAdaptersButNoHost` | Infrastructure's direct kernel packages are Adapter or Foundation; it reaches no Host package |
+| `HostIsTheCompositionRoot` | The host's direct kernel packages are Host tier |
+| `ClientSeesContractsAndRestOnly` (six-project) | Client references Contracts and `SharedKernel.Communication.Rest` only |
+| `NothingReferencesTheHost` | No other production project reaches the host |
+| `ProductionNeverReferencesTestingPackages` | No production project reaches a Testing-tier package |
+| `EveryKernelPackageIsKnown` | Every `SharedKernel.*` package in the production graph is in the package index |
 
 ### Assertion helpers
 
@@ -264,6 +365,10 @@ passes vacuously.
 your own marker interfaces.
 
 **Why IL assertions?** A secure default is only secure while nobody edits it; checking compiled bodies catches the edit.
+
+**Why are the service rules opt-in and name-based?** A service chooses to adopt them, so no existing test changes when
+you upgrade; matching kernel and third-party types by metadata name keeps the package free of every one of those
+assemblies.
 
 ---
 

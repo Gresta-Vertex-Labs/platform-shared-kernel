@@ -3,6 +3,7 @@ using MassTransit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Integration.Notifications.Abstractions.Delivery;
@@ -11,14 +12,15 @@ using SharedKernel.Testing.Execution;
 using SharedKernel.Testing.Notifications;
 using Shop.Contracts.Billing;
 using Shop.Notify.Worker;
-using Shop.TestSupport;
 using Xunit;
 
 namespace Shop.Notify.Tests;
 
 public sealed class NotifyArchitectureTests
 {
-    private static readonly DependencyGraph Graph = DependencyGraph.Load("Shop.Notify.Tests");
+    private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load(
+        "Shop.Notify.Tests"
+    );
     private const string Service = "Shop.Notify.Worker";
 
     [Fact]
@@ -29,7 +31,7 @@ public sealed class NotifyArchitectureTests
     public void Notify_NeverReferencesTestingPackages() =>
         Graph
             .Closure(Service)
-            .Where(p => KernelPackageIndex.Instance.TierOf(p) == "Testing")
+            .Where(p => KernelPackageIndex.Instance.TierOf(p) == KernelTier.Testing)
             .Should()
             .BeEmpty();
 }

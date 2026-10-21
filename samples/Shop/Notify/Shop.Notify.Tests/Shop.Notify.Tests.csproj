@@ -6,13 +6,13 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\Shop.Notify.Worker\Shop.Notify.Worker.csproj" />
-    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SharedKernel.Testing" />
     <PackageReference Include="SharedKernel.Integration.Testing" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="SharedKernel.ArchitectureTests" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="xunit" />

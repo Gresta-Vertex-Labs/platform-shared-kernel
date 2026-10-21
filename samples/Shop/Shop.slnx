@@ -36,5 +36,4 @@
   <Project Path="Shop.Contracts/Shop.Contracts.csproj" />
   <Project Path="Shop.Coverage.Tests/Shop.Coverage.Tests.csproj" />
   <Project Path="Shop.E2E/Shop.E2E.csproj" />
-  <Project Path="Shop.TestSupport/Shop.TestSupport.csproj" />
 </Solution>

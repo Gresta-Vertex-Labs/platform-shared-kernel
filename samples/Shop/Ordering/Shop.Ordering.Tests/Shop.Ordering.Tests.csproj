@@ -6,7 +6,6 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\Shop.Ordering.Api\Shop.Ordering.Api.csproj" />
-    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,6 +18,7 @@
     <PackageReference Include="SharedKernel.Caching.Redis.Testing" />
     <PackageReference Include="SharedKernel.Workflows.Testing" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="SharedKernel.ArchitectureTests" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="xunit" />

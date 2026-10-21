@@ -7,7 +7,6 @@ proven-by:
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogPipelineTests.cs
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogArchitectureTests.cs
   - samples/Shop/Inventory/Shop.Inventory.Tests/InventoryTests.cs
-  - samples/Shop/Shop.TestSupport/ServiceShape.cs
   - samples/Shop/Shop.E2E/Infrastructure/ShopPlatform.cs
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogTenantIsolationPostgresTests.cs
 ---

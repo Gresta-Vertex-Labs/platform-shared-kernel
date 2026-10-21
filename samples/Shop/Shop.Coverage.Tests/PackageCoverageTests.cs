@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 using FluentAssertions;
-using Shop.TestSupport;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -12,11 +12,7 @@ namespace Shop.Coverage.Tests;
 /// </summary>
 public sealed class PackageCoverageTests(ITestOutputHelper output)
 {
-    private static readonly string ShopRoot = Path.Combine(
-        KernelPackageIndex.RepositoryRoot,
-        "samples",
-        "Shop"
-    );
+    private static readonly string ShopRoot = FindShopRoot();
 
     /// <summary>
     /// Packages the Shop cannot prove with a local stand-in, and why. Each is a known gap, not a forgotten one: it is
@@ -73,6 +69,26 @@ public sealed class PackageCoverageTests(ITestOutputHelper output)
     [Fact]
     public void KnownGaps_AreReallyNotReferenced() =>
         KnownGaps.Keys.Where(ReferencedByShop().Contains).Should().BeEmpty();
+
+    /// <summary>The Shop folder, under the first folder above the test binaries that holds the repository solution.</summary>
+    private static string FindShopRoot()
+    {
+        for (
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            dir is not null;
+            dir = dir.Parent
+        )
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Platform.SharedKernel.slnx")))
+            {
+                return Path.Combine(dir.FullName, "samples", "Shop");
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"No Platform.SharedKernel.slnx above {AppContext.BaseDirectory}; Shop tests run from inside the repository."
+        );
+    }
 
     private static List<string> Missing(IReadOnlySet<string> referenced) =>
         KernelPackageIndex
