@@ -91,7 +91,9 @@ internal sealed class SchedulingHostedService : BackgroundService
         // method builder restores that caller's ambient context when the method first yields.
         using IDisposable loopScope = RequestContextScope.Begin(SchedulerCallers.ForLoop(_loopCorrelationId));
 
-        if (_lockService is null)
+        // The registry is filled at composition time, so the job count is final here. A host that adds
+        // the scheduler and no jobs fires nothing and is not warned.
+        if (_lockService is null && _registry.Definitions.Count > 0)
         {
             SchedulingLog.SingleReplicaWarning(_logger);
         }

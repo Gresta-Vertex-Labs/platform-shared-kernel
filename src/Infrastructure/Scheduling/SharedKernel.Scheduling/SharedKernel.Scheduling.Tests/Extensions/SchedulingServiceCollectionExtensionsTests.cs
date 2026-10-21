@@ -124,9 +124,44 @@ public sealed class SchedulingServiceCollectionExtensionsTests
 
         await harness.StartAsync();
 
+        harness.HostedServiceLogRecords.Count(r => r.EventId.Id == 19002).Should().Be(1);
         LogRecord record = harness.HostedServiceLogRecords.ShouldHaveLogged(
             new EventId(19002), LogLevel.Warning);
-        record.Message.Should().Contain("every job runs once per replica");
+        record.Message.Should().Contain("every job runs once per replica").And.Contain("AddRedisDistributedLocking");
+
+        await harness.StopAsync();
+    }
+
+    [Fact]
+    public async Task NoJobsRegisteredAndNoLockService_LogsNoSingleReplicaWarning()
+    {
+        await using SchedulingTestHarness harness = SchedulingTestHarness.Build(registerJobs: _ => { });
+
+        await harness.StartAsync();
+
+        harness.HostedServiceLogRecords.Should().NotContain(r => r.EventId.Id == 19002);
+
+        await harness.StopAsync();
+    }
+
+    [Fact]
+    public async Task LockServiceRegisteredWithJobs_LogsNoSingleReplicaWarning()
+    {
+        await using SchedulingTestHarness harness = SchedulingTestHarness.Build(
+            registerJobs: builder => builder.AddRecurring<RecordingCommand>(
+                "job-1",
+                "0 0 2 * * ?",
+                _ => new RecordingCommand(),
+                options =>
+                {
+                    options.MisfirePolicy = MisfirePolicy.Skip;
+                    options.OverlapPolicy = OverlapPolicy.Skip;
+                }),
+            lockService: new SharedKernel.Testing.Caching.FakeDistributedLockService());
+
+        await harness.StartAsync();
+
+        harness.HostedServiceLogRecords.Should().NotContain(r => r.EventId.Id == 19002);
 
         await harness.StopAsync();
     }

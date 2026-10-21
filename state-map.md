@@ -133,7 +133,7 @@ The EF Core idempotency store ships no migrations, and neither its README nor th
 - [ ] The in-memory fake and the Shop's use of the store are unaffected, and the Shop build and its consumer-skill `proven-by` still hold.
 
 #### P-633 — "Run on one replica only" routes to the distributed lock (B8)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 19.Scheduling
 **Depends on:** P-631
 **Phase key:** SK.19.OneReplicaGuidance

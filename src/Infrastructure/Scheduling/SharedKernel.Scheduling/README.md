@@ -127,8 +127,9 @@ sequenceDiagram
   fencing token reaches the command factory as `ScheduledJobExecutionContext.FencingToken`.
 - **An outage is not contention.** A `null` lease means another replica owns the occurrence. An unreachable lock
   store means no replica can prove ownership, so none runs it (EventId 19016).
-- **No lock service, no silence.** Without an `IDistributedLockService` the package still starts, logs a Warning
-  (EventId 19002), and every replica fires every occurrence.
+- **No lock service, no silence.** Without an `IDistributedLockService` the package still starts and every replica
+  fires every occurrence. When at least one job is registered it logs a Warning at start (EventId 19002) that names
+  the fix: register the lock, for example `AddRedisDistributedLocking()`. A host with no jobs is not warned.
 - **Who the job runs as.** Each run opens `RequestContextScope.Begin(new SystemRequestContext([], jobName,
   tenantId, CorrelationIds.New()))` — `ActorKind.System`, the job name, the job's tenant (none for
   `TenantScope.Global`), a new correlation id and **no permissions** — then a fresh DI scope. The caller is opened before the
@@ -279,7 +280,7 @@ and an exception event, never an error or exception message.
 | --- | --- | --- |
 | 19000 | Information | Scheduling started with `{RegisteredJobCount}` registered jobs. |
 | 19001 | Information | Scheduling is stopping. |
-| 19002 | Warning | No `IDistributedLockService` is registered, so every job runs once per replica. |
+| 19002 | Warning | No `IDistributedLockService` is registered and at least one job is, so every job runs once per replica. |
 | 19003 | Debug | Job `'{JobName}'` is firing the occurrence scheduled at `{ScheduledFireTimeUtc}`. |
 | 19004 | Debug | Job `'{JobName}'` running `'{RequestType}'` succeeded in `{ElapsedMilliseconds}` ms. |
 | 19005 | Warning | Job `'{JobName}'` running `'{RequestType}'` failed with `{ErrorType}` `'{ErrorCode}'`. |

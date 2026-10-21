@@ -43,7 +43,7 @@ public sealed class SchedulerLogContextTests
     [
         (19000, LogLevel.Information, "Scheduling started with {RegisteredJobCount} registered jobs."),
         (19001, LogLevel.Information, "Scheduling is stopping."),
-        (19002, LogLevel.Warning, "No IDistributedLockService is registered, so every job runs once per replica; register one before running more than one replica."),
+        (19002, LogLevel.Warning, "No IDistributedLockService is registered, so every job runs once per replica; to run each occurrence once across replicas, register one, for example with AddRedisDistributedLocking."),
         (19003, LogLevel.Debug, "Job '{JobName}' is firing the occurrence scheduled at {ScheduledFireTimeUtc}, observed at {ActualFireTimeUtc}."),
         (19004, LogLevel.Debug, "Job '{JobName}' running '{RequestType}' succeeded in {ElapsedMilliseconds} ms."),
         (19005, LogLevel.Warning, "Job '{JobName}' running '{RequestType}' failed in {ElapsedMilliseconds} ms with {ErrorType} '{ErrorCode}'."),
