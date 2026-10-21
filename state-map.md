@@ -10,8 +10,8 @@
 
 | Counter | Next free | Note |
 | --- | --- | --- |
-| Next phase id | P-638 | Highest used: P-637 (WO-090) |
-| Next work order | WO-091 | Highest used: WO-090 |
+| Next phase id | P-639 | Highest used: P-638 (WO-091) |
+| Next work order | WO-092 | Highest used: WO-091 |
 
 Phases written by `arch-lead` take the next phase id; a user-directed phase without a work order still takes one, so no id is ever reused.
 
@@ -46,7 +46,19 @@ Every package ships at one repo-wide version through the release train (`CONTRIB
 
 ## Open Work
 
-None.
+### WO-091 — Shop Catalog and Ordering on the service template's folder layout (1.2.0)
+
+Target 1.2.0. Kernel 1.1.0 ships the service template's nine `ServicePlacementRules`, but the Shop's Catalog and Ordering apply only three of them (middleware and filters, generic folder names, exception types): their use cases sit in feature files rather than one namespace per use case, and Ordering's consumer sits outside `Infrastructure.Messaging.Consumers`. Accept as a samples change; no kernel package or public API changes.
+
+#### P-638 — Restructure Shop Catalog and Ordering to the template's folder layout
+**Status:** `○` Pending
+**Domain:** samples
+**Depends on:** None
+**Phase key:** —
+Restructure Shop Catalog and Ordering to the service template's folder layout (one folder per use case, the template's "Where things go" table) so all nine `ServicePlacementRules` apply; then the recipes' `proven-by` snippets match the layout every service uses.
+- [ ] Catalog and Ordering follow the template's "Where things go" table: one namespace and folder per command or query use case, domain types under `Domain.{Feature}` (with `Rules`, `Specifications`), domain-event handlers under `Application.{Feature}.EventHandlers`, EF configurations under `Infrastructure.Persistence.Configurations`, consumers under `Infrastructure.Messaging.Consumers`, endpoint modules under `Api.Endpoints`.
+- [ ] `CatalogArchitectureTests` and `OrderingArchitectureTests` apply all nine `ServicePlacementRules` and pass; the other Shop tests and the E2E flows still pass.
+- [ ] Every consumer-skill recipe snippet and `proven-by` path that cites a moved Shop file matches it again; `generate-package-index.cs --check` and the consumer-skill checks stay green.
 
 ## Blocked
 
