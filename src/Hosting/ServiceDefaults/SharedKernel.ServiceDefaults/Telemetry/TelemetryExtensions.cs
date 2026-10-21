@@ -1,7 +1,10 @@
 using System.Reflection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -12,7 +15,8 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 
 /// <summary>
 /// OpenTelemetry composition for Platform.SharedKernel microservices: tracing, metrics, logging,
-/// and the OTLP exporter, configured from the standard OpenTelemetry environment variables.
+/// and the OTLP exporter, configured from the standard OpenTelemetry environment variables
+/// (<c>OTEL_EXPORTER_OTLP_*</c>, read from the host's configuration).
 /// </summary>
 public static class TelemetryExtensions
 {
@@ -26,9 +30,9 @@ public static class TelemetryExtensions
     /// <c>MeterProvider</c>, and a <see cref="BaggageLogRecordProcessor"/> in the logging pipeline
     /// so the platform's own <see cref="System.Diagnostics.Activity"/> baggage (the correlation id
     /// and the tenant id, nothing else) is copied onto every exported log record. An OTLP exporter
-    /// is registered for all three signals, with its endpoint and protocol read from the standard
-    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> / <c>OTEL_EXPORTER_OTLP_PROTOCOL</c> environment
-    /// variables.
+    /// is registered per signal, with its endpoint and protocol read from the standard
+    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> / <c>OTEL_EXPORTER_OTLP_PROTOCOL</c> variables; by default for all three
+    /// signals (<see cref="OtlpExporterMode.Always"/>), see <see cref="SharedKernelTelemetryOptions.OtlpExporter"/>.
     /// </summary>
     /// <param name="builder">The host application builder.</param>
     /// <param name="serviceName">
@@ -36,7 +40,7 @@ public static class TelemetryExtensions
     /// </param>
     /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
     /// <remarks>
-    /// Called internally by <see cref="Extensions.ServiceDefaultsExtensions.AddServiceDefaults"/>.
+    /// Called internally by <see cref="Extensions.ServiceDefaultsExtensions.AddServiceDefaults(Microsoft.Extensions.Hosting.IHostApplicationBuilder)"/>.
     /// Exposed independently for services that need a custom <paramref name="serviceName"/>
     /// distinct from the entry assembly name. EF Core instrumentation is registered
     /// unconditionally here — it no-ops at runtime when no EF Core activity source is present,
@@ -85,11 +89,46 @@ public static class TelemetryExtensions
     /// </remarks>
     public static IHostApplicationBuilder AddSharedKernelTelemetry(
         this IHostApplicationBuilder builder,
-        string serviceName)
+        string serviceName) =>
+        builder.AddSharedKernelTelemetry(serviceName, configure: null);
+
+    /// <summary>
+    /// <see cref="AddSharedKernelTelemetry(IHostApplicationBuilder, string)"/> with the telemetry options supplied in code.
+    /// </summary>
+    /// <param name="builder">The host application builder.</param>
+    /// <param name="serviceName">
+    /// The logical service name reported in the OpenTelemetry <see cref="ResourceBuilder"/>.
+    /// </param>
+    /// <param name="configure">
+    /// Sets <see cref="SharedKernelTelemetryOptions"/>; it wins over the <c>SharedKernel:ServiceDefaults:Telemetry</c>
+    /// configuration section. May be <see langword="null"/>.
+    /// </param>
+    /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>OTLP exporter mode.</b> With <see cref="OtlpExporterMode.Always"/> (the default) the exporter is registered for
+    /// traces, metrics and logs exactly as in 1.0.0; if no OTLP endpoint is configured at start-up, one warning (event 13002)
+    /// names the setting. With <see cref="OtlpExporterMode.WhenEndpointConfigured"/> the exporter is registered only when
+    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> holds an absolute URI in the host's configuration, which is what the
+    /// OpenTelemetry exporter itself reads; a blank value counts as unset. The mode and the variable are read now, from
+    /// <c>builder.Configuration</c> as it is at this call, because the exporter cannot be added once the providers are
+    /// being built.
+    /// </para>
+    /// <para>
+    /// The per-signal registration is kept (not <c>UseOtlpExporter()</c>, the only registration that reads the per-signal
+    /// <c>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT</c> family of variables), so the registrations and the
+    /// processor order, <see cref="BaggageLogRecordProcessor"/> before the log exporter, are as they were.
+    /// </para>
+    /// </remarks>
+    public static IHostApplicationBuilder AddSharedKernelTelemetry(
+        this IHostApplicationBuilder builder,
+        string serviceName,
+        Action<SharedKernelTelemetryOptions>? configure)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
+        var plan = AddTelemetryOptions(builder, configure);
         var serviceVersion = ResolveServiceVersion(Assembly.GetEntryAssembly());
 
         builder.Services
@@ -101,17 +140,22 @@ public static class TelemetryExtensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddEntityFrameworkCoreInstrumentation()
-                .AddOtlpExporter())
+                .AddOtlpExporterWhen(plan.Registered))
             .WithMetrics(metrics => metrics
                 .AddMeter(TelemetryNames.SharedKernelWildcard)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddOtlpExporter())
+                .AddOtlpExporterWhen(plan.Registered))
             .WithLogging(
-                logging => logging
-                    .AddProcessor<BaggageLogRecordProcessor>()
-                    .AddOtlpExporter(),
+                logging =>
+                {
+                    logging.AddProcessor<BaggageLogRecordProcessor>();
+                    if (plan.Registered)
+                    {
+                        logging.AddOtlpExporter();
+                    }
+                },
                 options =>
                 {
                     options.IncludeScopes = true;
@@ -139,6 +183,48 @@ public static class TelemetryExtensions
             static (_, _) => RequestBaggageRefusingPropagator.Install());
 
         return builder;
+    }
+
+    private static TracerProviderBuilder AddOtlpExporterWhen(this TracerProviderBuilder builder, bool register) =>
+        register ? builder.AddOtlpExporter() : builder;
+
+    private static MeterProviderBuilder AddOtlpExporterWhen(this MeterProviderBuilder builder, bool register) =>
+        register ? builder.AddOtlpExporter() : builder;
+
+    /// <summary>
+    /// Registers the options (bound from the section, then the delegate, validated at start-up) and the one start-up
+    /// warning, and returns which exporters this call registers.
+    /// </summary>
+    private static OtlpExporterPlan AddTelemetryOptions(
+        IHostApplicationBuilder builder,
+        Action<SharedKernelTelemetryOptions>? configure)
+    {
+        var services = builder.Services;
+        var optionsBuilder = services
+            .AddOptions<SharedKernelTelemetryOptions>()
+            .BindConfiguration(SharedKernelTelemetryOptions.SectionName);
+        if (configure is not null)
+        {
+            optionsBuilder.Configure(configure);
+        }
+
+        optionsBuilder.ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<SharedKernelTelemetryOptions>, SharedKernelTelemetryOptionsValidator>());
+
+        // The exporter can only be added while the builders are configured, so the mode is read now the way the options
+        // will bind: the section first, then the delegate. An undefined value fails start-up validation; until then it
+        // behaves as the default.
+        var effective = new SharedKernelTelemetryOptions();
+        builder.Configuration.GetSection(SharedKernelTelemetryOptions.SectionName).Bind(effective);
+        configure?.Invoke(effective);
+        var plan = OtlpExporterPlan.Resolve(
+            Enum.IsDefined(effective.OtlpExporter) ? effective.OtlpExporter : OtlpExporterMode.Always,
+            builder.Configuration);
+
+        services.AddSingleton(plan);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, OtlpEndpointWarningService>());
+        return plan;
     }
 
     /// <summary>

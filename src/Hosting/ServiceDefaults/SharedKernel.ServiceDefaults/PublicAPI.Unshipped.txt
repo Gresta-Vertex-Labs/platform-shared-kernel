@@ -1,0 +1,11 @@
+#nullable enable
+SharedKernel.ServiceDefaults.Telemetry.OtlpExporterMode
+SharedKernel.ServiceDefaults.Telemetry.OtlpExporterMode.Always = 0 -> SharedKernel.ServiceDefaults.Telemetry.OtlpExporterMode
+SharedKernel.ServiceDefaults.Telemetry.OtlpExporterMode.WhenEndpointConfigured = 1 -> SharedKernel.ServiceDefaults.Telemetry.OtlpExporterMode
+SharedKernel.ServiceDefaults.Telemetry.SharedKernelTelemetryOptions
+SharedKernel.ServiceDefaults.Telemetry.SharedKernelTelemetryOptions.OtlpExporter.get -> SharedKernel.ServiceDefaults.Telemetry.OtlpExporterMode
+SharedKernel.ServiceDefaults.Telemetry.SharedKernelTelemetryOptions.OtlpExporter.set -> void
+SharedKernel.ServiceDefaults.Telemetry.SharedKernelTelemetryOptions.SharedKernelTelemetryOptions() -> void
+const SharedKernel.ServiceDefaults.Telemetry.SharedKernelTelemetryOptions.SectionName = "SharedKernel:ServiceDefaults:Telemetry" -> string!
+static SharedKernel.ServiceDefaults.Extensions.ServiceDefaultsExtensions.AddServiceDefaults(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.ServiceDefaults.Telemetry.SharedKernelTelemetryOptions!>? configureTelemetry) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.ServiceDefaults.Telemetry.TelemetryExtensions.AddSharedKernelTelemetry(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, string! serviceName, System.Action<SharedKernel.ServiceDefaults.Telemetry.SharedKernelTelemetryOptions!>? configure) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!

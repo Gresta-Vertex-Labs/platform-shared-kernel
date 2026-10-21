@@ -9,7 +9,7 @@ namespace SharedKernel.ServiceDefaults.Probes;
 /// <remarks>
 /// Tagged <c>"ready"</c> only — startup gating must never affect <c>/health/live</c>, since a
 /// pod that is alive but still warming up should not be killed and restarted by Kubernetes.
-/// Registered automatically and unconditionally by <see cref="Extensions.ServiceDefaultsExtensions.AddServiceDefaults"/>.
+/// Registered automatically and unconditionally by <see cref="Extensions.ServiceDefaultsExtensions.AddServiceDefaults(Microsoft.Extensions.Hosting.IHostApplicationBuilder)"/>.
 /// Depends only on <see cref="StartupGate"/> — no provider-specific coupling.
 /// </remarks>
 public sealed class StartupGateHealthCheck(StartupGate startupGate) : IHealthCheck

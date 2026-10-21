@@ -12,7 +12,7 @@ public static class ServiceDefaultsExtensions
 {
     /// <summary>
     /// Wires OpenTelemetry (tracing, metrics, and the OTLP exporter via
-    /// <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/>) and the base health check
+    /// <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/>) and the base health check
     /// infrastructure (<see cref="HealthCheckExtensions.AddSharedKernelHealthChecks"/>) — the
     /// always-on <c>StartupGateHealthCheck</c> plus the registrations needed to map
     /// <c>/health/live</c> and <c>/health/ready</c> via
@@ -37,13 +37,28 @@ public static class ServiceDefaultsExtensions
     /// <c>AddSharedKernelRestCommunication()</c> concern.
     /// </para>
     /// </remarks>
-    public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder) =>
+        builder.AddServiceDefaults(configureTelemetry: null);
+
+    /// <summary>
+    /// <see cref="AddServiceDefaults(IHostApplicationBuilder)"/> with the telemetry options supplied in code, for example
+    /// <c>builder.AddServiceDefaults(o =&gt; o.OtlpExporter = OtlpExporterMode.WhenEndpointConfigured)</c>.
+    /// </summary>
+    /// <param name="builder">The host application builder.</param>
+    /// <param name="configureTelemetry">
+    /// Sets <see cref="SharedKernelTelemetryOptions"/>; it wins over the <c>SharedKernel:ServiceDefaults:Telemetry</c>
+    /// configuration section. May be <see langword="null"/>.
+    /// </param>
+    /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
+    public static IHostApplicationBuilder AddServiceDefaults(
+        this IHostApplicationBuilder builder,
+        Action<SharedKernelTelemetryOptions>? configureTelemetry)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         var serviceName = Assembly.GetEntryAssembly()?.GetName().Name ?? "sharedkernel-service";
 
-        builder.AddSharedKernelTelemetry(serviceName);
+        builder.AddSharedKernelTelemetry(serviceName, configureTelemetry);
         builder.Services.AddSharedKernelHealthChecks();
 
         return builder;

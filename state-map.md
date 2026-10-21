@@ -144,7 +144,7 @@ A request to run a job on one replica used the scheduler correctly but skipped t
 - [ ] No existing registration or job behavior changes; consumer-skill checks stay green.
 
 #### P-634 — OTLP exporter mode in service defaults (B9, upgraded)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 13.ServiceDefaults
 **Depends on:** None
 **Phase key:** SK.13.OtlpExporterMode

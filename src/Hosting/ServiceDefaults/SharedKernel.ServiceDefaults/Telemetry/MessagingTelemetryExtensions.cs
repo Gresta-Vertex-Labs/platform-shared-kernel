@@ -12,7 +12,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// </summary>
 /// <remarks>
 /// The kernel's own messaging telemetry (<c>SharedKernel.Messaging</c> and any sub-source) is exported by the
-/// <c>SharedKernel.*</c> wildcard of <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/> and needs no call.
+/// <c>SharedKernel.*</c> wildcard of <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/> and needs no call.
 /// </remarks>
 public static class MessagingTelemetryExtensions
 {

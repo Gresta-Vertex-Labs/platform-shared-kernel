@@ -18,7 +18,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// <see cref="PersistenceTelemetryExtensions.WithPersistenceTelemetry"/> and
 /// <see cref="WorkflowTelemetryExtensions.WithWorkflowTelemetry"/>), each wiring third-party instrumentation only:
 /// the kernel's own <c>SharedKernel.*</c> sources and meters are exported by the wildcard of
-/// <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/>. <c>11.Communication</c> owns no
+/// <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/>. <c>11.Communication</c> owns no
 /// kernel <see cref="System.Diagnostics.ActivitySource"/>/<see cref="System.Diagnostics.Metrics.Meter"/>
 /// pair to wire by name. This method activates two independent third-party diagnostics sources:
 /// </para>
@@ -28,7 +28,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// with RPC semantic-convention tags (<c>rpc.system</c>, <c>rpc.service</c>, <c>rpc.method</c>,
 /// <c>rpc.grpc.status_code</c>) in place of the under-specified generic-HTTP span that
 /// <c>OpenTelemetry.Instrumentation.Http</c> alone produces today (already wired unconditionally
-/// inside <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/> — this method is strictly
+/// inside <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/> — this method is strictly
 /// additive to that, never a replacement). This is the family's first member requiring a genuine
 /// instrumentation-extension-method call rather than a bare <c>AddSource(string)</c>/
 /// <c>AddMeter(string)</c> call, and consequently the first requiring its own new
@@ -102,7 +102,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// <para>
 /// REST's baseline HTTP spans remain covered by the pre-existing generic
 /// <c>OpenTelemetry.Instrumentation.Http</c> wiring inside
-/// <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/> — this method is additive to that,
+/// <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/> — this method is additive to that,
 /// never a replacement.
 /// </para>
 /// <para>

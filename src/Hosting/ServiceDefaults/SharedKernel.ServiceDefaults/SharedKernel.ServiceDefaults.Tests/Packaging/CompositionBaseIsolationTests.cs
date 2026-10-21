@@ -40,7 +40,8 @@ public sealed class CompositionBaseIsolationTests
     private const string ProjectFileName = "SharedKernel.ServiceDefaults.csproj";
 
     /// <summary>
-    /// The only third-party packages the base may carry. Every one is OpenTelemetry, and none brings
+    /// The only third-party packages the base may carry. Every one is OpenTelemetry (plus the build-time public API analyzer,
+    /// which has <c>PrivateAssets="all"</c> and never reaches a consumer), and none brings
     /// a heavy transitive graph: the EF Core instrumentation observes EF Core's
     /// <c>DiagnosticSource</c> without depending on EF Core, and the gRPC client instrumentation
     /// depends on <c>OpenTelemetry</c> alone. Anything else belongs in an integration package.
@@ -54,6 +55,7 @@ public sealed class CompositionBaseIsolationTests
         "OpenTelemetry.Instrumentation.Runtime",
         "OpenTelemetry.Exporter.OpenTelemetryProtocol",
         "OpenTelemetry.Instrumentation.GrpcNetClient",
+        "Microsoft.CodeAnalysis.PublicApiAnalyzers",
     ];
 
     /// <summary>The tier every SharedKernel project the base references must declare.</summary>

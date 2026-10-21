@@ -16,4 +16,7 @@ internal static class ServiceDefaultsLoggingEventIds
 
     /// <summary>A readiness probe threw instead of reporting.</summary>
     internal const int ReadinessProbeThrew = Base + 1;
+
+    /// <summary>An OTLP exporter is registered but no OTLP endpoint is configured.</summary>
+    internal const int OtlpEndpointNotConfigured = Base + 2;
 }
