@@ -78,7 +78,8 @@ Recipes decide packages and APIs; the service's own project guidance decides fol
    </Project>
    ```
 
-   Or raise the rules you rely on to `error` in `.editorconfig`. Map `SharedKernel.*` to the kernel's feed (`NuGet.Config`).
+   Or raise the rules you rely on to `error` in `.editorconfig`. Map `SharedKernel.*` to the kernel's feed (`NuGet.Config`): CI reads it with the
+   job's own token (`permissions: packages: read`, no secret to create); a local build needs a `gh` token with `read:packages`, because GitHub's feed asks for sign-in even for public packages.
 
 2. **Domain.** References `SharedKernel.Domain` only. An aggregate takes `IClock`, checks business rules and returns
    `Result` for expected failures:
@@ -246,5 +247,4 @@ Application no adapter, host package or MediatR, Infrastructure no host package,
 
 ## Read next
 
-`SharedKernel.ServiceDefaults`, `SharedKernel.Application.Pipeline`, `SharedKernel.Application`,
-`SharedKernel.Domain`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Analyzers`.
+`SharedKernel.ServiceDefaults`, `SharedKernel.Application.Pipeline`, `SharedKernel.Application`, `SharedKernel.Domain`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Analyzers`.

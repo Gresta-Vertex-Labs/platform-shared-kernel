@@ -46,21 +46,6 @@ Every package ships at one repo-wide version through the release train (`CONTRIB
 
 ## Open Work
 
-### WO-089 — Consumer feed-access docs after the 1.0.0 release
-
-Kernel 1.0.0 is released and all 104 packages are public on GitHub Packages, so a consuming service's CI reads the feed with its own job token (`permissions: packages: read`) and needs no personal token or repository secret; only local development still needs a `gh` token with `read:packages`, because GitHub's NuGet feed requires authentication even for public packages. Accept: documentation only, executed through `/devops` (the docs span `CONTRIBUTING.md`, the sample and consumer guides and one recipe, none of which has a domain planner).
-
-#### P-626 — Consumer docs: CI reads the feed with the job token
-**Status:** `○` Pending
-**Domain:** eng
-**Depends on:** None
-**Phase key:** —
-Every place that tells a consumer how to authenticate to the kernel feed states the same, current truth, and none asks for a personal token or a CI secret. The places to check are the consuming-service section of `CONTRIBUTING.md`, `samples/README.md`, `consumer/README.md` and the `new-service` recipe of the consumer skill. A place that is already correct (for example the local greenfield-eval token in `consumer/README.md`) stays untouched.
-- [ ] CI guidance says the job token with `packages: read` is enough, with a minimal workflow permissions snippet where a snippet exists today.
-- [ ] Local-development guidance says a `gh` token with `read:packages` is required (`gh auth refresh -h github.com -s read:packages`) and why it is still needed for public packages.
-- [ ] No tracked doc or recipe instructs creating a personal access token for CI or adding a repository secret for the feed.
-- [ ] The shipped consumer skill stays in consumer vocabulary (no repository paths); the markdown-link and consumer-skill checks stay green.
-
 ### WO-090 — Kernel 1.1.0 from service-template feedback (`docs/proposals/v1.1.0-service-template-feedback.md`, Part B)
 
 Accept, with one upgrade (B9). Every item targets 1.1.0 and must leave a 1.0.0 consumer source- and behavior-compatible: each public-API change is additive and reviewed against the `PublicAPI` baseline, a changed default is opt-in or warned about rather than flipped, and shipped data shapes do not change. The items are observed defects or gaps from building the service template and running the consumer-skill acceptance tasks; none breaks a tier or purity rule, and none needs a new package, a new declared adapter edge or a root `CLAUDE.md` change. Upgrade (B9): the proposal's "register the OTLP exporter only when an endpoint is configured" would stop exporting for a deployment that relies on the implicit `localhost:4317`, which is a behavior break; 1.1.0 instead adds an explicit exporter mode whose default preserves 1.0.0, warns once at startup when the exporter is on with no endpoint configured, and lets a host (the template's test hosts, a pod without a collector) choose "only when an endpoint is configured". Flipping the default is a 2.0.0 candidate and is recorded as such. B2 note: the paged lists already carry a `JsonConstructor` on a non-public constructor, which a source-generated context in a consumer assembly cannot call; the planner confirms the actual failure before choosing the fix. Entries are ordered producers before consumers by tier, then folder. Edits to the consumer skill's needs table serialize through the `Depends on` chain below. The two `eng` entries are executed through `/devops`, not `/dispatch-phase`. Out of scope, as in the proposal: template changes, a smart-enum base type, a second thin template.

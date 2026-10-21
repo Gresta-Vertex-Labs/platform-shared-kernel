@@ -341,9 +341,9 @@ A consuming service pins **one** version property in its `Directory.Packages.pro
 </Project>
 ```
 
-Packages are published to GitHub Packages, which requires authentication to read. Map
-`SharedKernel.*` to that feed so no other source can supply a package of that name, and read the
-credentials from the environment:
+Packages are published to GitHub Packages and are public, but GitHub's NuGet feed asks for credentials even to
+read a public package. Map `SharedKernel.*` to that feed so no other source can supply a package of that name, and
+read the credentials from the environment:
 
 ```xml
 <!-- NuGet.Config (the consuming service) -->
@@ -366,10 +366,36 @@ credentials from the environment:
 </configuration>
 ```
 
-Locally, `GITHUB_TOKEN` is a personal access token with `read:packages`; in GitHub Actions it is the
-job token with `permissions: packages: read`. Never pin one `SharedKernel.*` package to a different
-version from the rest, and never float the version. [`samples/README.md`](samples/README.md) shows
-which package goes into which project of a service.
+**In CI** the workflow's own job token is enough: grant it `packages: read` and pass it to the restore step. There is
+no personal access token to create and no repository secret to add (`secrets.GITHUB_TOKEN` is issued per run;
+`GITHUB_ACTOR` is set by Actions):
+
+```yaml
+# .github/workflows/ci.yml (the consuming service)
+permissions:
+  contents: read
+  packages: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<pinned commit SHA>
+      - run: dotnet restore
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+**Locally** the restore needs a GitHub token with the `read:packages` scope, because the feed requires
+authentication even for public packages. With the GitHub CLI:
+
+```bash
+gh auth refresh -h github.com -s read:packages
+export GITHUB_ACTOR=$(gh api user --jq .login)
+export GITHUB_TOKEN=$(gh auth token)
+```
+
+Never pin one `SharedKernel.*` package to a different version from the rest, and never float the version.
+[`samples/README.md`](samples/README.md) shows which package goes into which project of a service.
 
 **Inside this repository** the samples and harnesses use the same shape with the repository's own
 files: `Directory.Packages.props` points every `SharedKernel.*` package at
