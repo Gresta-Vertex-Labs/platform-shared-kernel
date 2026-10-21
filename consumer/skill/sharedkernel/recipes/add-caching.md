@@ -5,6 +5,7 @@ proven-by:
   - samples/Shop/Catalog/Shop.Catalog.Infrastructure/CatalogInfrastructure.cs
   - samples/Shop/Catalog/Shop.Catalog.Infrastructure/Pricing/RedisPriceChanges.cs
   - samples/Shop/Catalog/Shop.Catalog.Api/Program.cs
+  - samples/Shop/Catalog/Shop.Catalog.Api/appsettings.json
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogPipelineTests.cs
   - samples/Shop/Ordering/Shop.Ordering.Infrastructure/OrderingInfrastructure.cs
   - samples/Shop/Ordering/Shop.Ordering.Infrastructure/RedisTotpGuards.cs
@@ -99,8 +100,25 @@ package; Redis rows are opt-in.
    }
    ```
 
-3. **Infrastructure: register the cache and the Redis connection once.** `AddRedisConnection` comes first and is
-   shared by L2, locking, hashes and pub/sub.
+3. **Infrastructure: set the required settings, then register the cache and the Redis connection once.**
+   `AddRedisConnection` comes first and is shared by L2, locking, hashes and pub/sub. The host does not start until
+   the two settings in the table below are present.
+
+   | Setting | Package | Rule | Example |
+   | --- | --- | --- | --- |
+   | `SharedKernel:Caching:ServiceName` | `SharedKernel.Caching.FusionCache` | 1-64 lowercase letters, digits, `.`, `_` or `-`, starting with a letter or digit | `catalog` |
+   | `SharedKernel:Caching:Redis:ConnectionString` | `SharedKernel.Caching.Redis.Core` (needed by every Redis package) | A valid Redis connection string that names an endpoint | `redis:6379` |
+
+   L2, locking, hashes and pub/sub need no setting of their own. Keep the service name in `appsettings.json` and
+   supply the connection string from the environment (a secret store or the orchestrator), never from a committed file.
+
+   ```json
+   { "SharedKernel": { "Caching": { "ServiceName": "catalog" } } }
+   ```
+
+   ```text
+   SharedKernel__Caching__Redis__ConnectionString=redis:6379
+   ```
 
    ```csharp
    using SharedKernel.Caching.FusionCache.Extensions;
@@ -176,8 +194,9 @@ package; Redis rows are opt-in.
    builder.Services.AddHealthChecks().AddSharedKernelReadiness(); // includes the Redis probe
    ```
 
-6. **Configuration:** `SharedKernel:Caching` (the cache), `SharedKernel:Caching:Redis` (the connection),
-   `SharedKernel:Caching:Redis:L2` (the second level). The keys are in each package README.
+6. **Configuration:** `SharedKernel:Caching` (the cache; `ServiceName` is required), `SharedKernel:Caching:Redis`
+   (the connection; `ConnectionString` is required), `SharedKernel:Caching:Redis:L2` (the second level, all optional).
+   The other keys are in each package README.
 
 ## Test it
 
@@ -197,6 +216,9 @@ package; Redis rows are opt-in.
 - `SK0007` flags `IRedisChannelService` used where a command or event belongs on the message bus.
 - `SK0022` flags a raw literal used as a cross-cutting key; keep channel names and key prefixes in constants.
 - Host start fails when `WithCaching()` finds no `ICacheService` (register `AddSharedKernelCaching`).
+- A missing or malformed `ServiceName` or Redis `ConnectionString` fails host start with an
+  `OptionsValidationException` that names the setting and never echoes the connection string. It surfaces when the
+  host starts, not when `AddSharedKernelCaching` or `AddRedisConnection` runs.
 - Registration throws when a Redis package is added before `AddRedisConnection`, or when `AddRedisConnection` is
   called twice.
 - An Application project referencing a Redis or FusionCache package breaks the four-project rule; the service's

@@ -89,7 +89,7 @@ The offset-paged list cannot be read through a consumer-assembly `JsonSerializer
 - [ ] The Contracts README documents how a service registers the lists in its context; the consumer skill is updated where it tells a client to use reflection for paged results.
 
 #### P-629 — Caching recipe: name every required setting (B6)
-**Status:** `◐` Dispatched
+**Status:** `●` Done
 **Domain:** 02.Caching
 **Depends on:** None
 **Phase key:** SK.02.RecipeRequiredSettings
