@@ -57,7 +57,12 @@ public sealed class PubSubLoggingTests
         await channels.PublishAsync(channel, "{\"Kind\":\"ok\",\"Sequence\":1}");
         await handled.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        var records = loggers.Loggers.Values.SelectMany(l => l.Records).ToList();
+        // The two subscriptions dispatch independently, so the typed handler finishing says nothing about whether the
+        // text handler has thrown and been logged yet: wait for both statements instead of assuming an order.
+        var records = await WaitForRecordsAsync(
+            loggers,
+            r => r.Any(x => x.EventId.Id == PubSubLoggingEventIds.HandlerFailed)
+                && r.Any(x => x.EventId.Id == PubSubLoggingEventIds.MessageNotDeserialized));
         var failed = records.ShouldHaveLoggedWithException(PubSubLoggingEventIds.HandlerFailed, typeof(InvalidOperationException));
         Assert.Equal(LogLevel.Error, failed.LogLevel);
         records.ShouldHaveLoggedTemplate(
@@ -86,6 +91,23 @@ public sealed class PubSubLoggingTests
             var method = typeof(PubSubLog).GetMethod(name)!;
             Assert.Contains(method.GetParameters(), p => p.ParameterType == typeof(Exception));
             Assert.Equal(typeof(Exception), method.GetParameters()[^1].ParameterType);
+        }
+    }
+
+    private static async Task<List<LogRecord>> WaitForRecordsAsync(
+        InMemoryLoggerFactory loggers,
+        Func<List<LogRecord>, bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (true)
+        {
+            var records = loggers.Loggers.Values.SelectMany(l => l.Records).ToList();
+            if (condition(records) || DateTime.UtcNow >= deadline)
+            {
+                return records;
+            }
+
+            await Task.Delay(25);
         }
     }
 
