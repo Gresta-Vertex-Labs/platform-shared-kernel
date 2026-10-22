@@ -26,7 +26,7 @@ internal sealed class ObservabilityHarness : IDisposable
 
     public ObservabilityHarness(IQdrantClient client, bool tenanted = false, string? name = null)
     {
-        Name = name ?? $"obs-{Guid.NewGuid():N}";
+        Name = name ?? UniqueNames.Of("obs");
         Client = client;
         Logger = new InMemoryLogger<QdrantVectorCollection<TestVectorRecord>>();
         Activities = ActivityRecorder.StartRecording(IntelligenceWellKnown.ActivitySourceName);

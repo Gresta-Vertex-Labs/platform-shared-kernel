@@ -237,5 +237,13 @@ it, so the control is a check with a manual remedy.
   container-free test project; runs with default settings.
 - **Integration lane** (`Platform.SharedKernel.Integration.slnf`): the Testcontainers suites; always
   run with `-s eng/testsettings/integration.runsettings`.
+- **Test runner pin.** xUnit v2 projects run under `xunit.runner.visualstudio` 3.1.5 or later. Versions
+  before 3.1.4 could dispose the VSTest source-information provider twice for a v2 project, which crashes
+  the test host after all tests pass (`NullReferenceException` in
+  `PortableSymbolReader.Dispose`, reported as "Catastrophic failure" and a failed lane). Do not pin the
+  runner below 3.1.4.
+- Log-assertion tests wait for the condition they assert (poll with a generous timeout), never a fixed delay.
+  Leak assertions that forbid a numeric token (a port) must not run over random hex names: collection names in
+  the Qdrant tests come from `UniqueNames.Of`, which is letters only.
 - The full build always covers the whole `.slnx`; only test execution is split. A solution filter
   lists entry projects only, and their `ProjectReference`s resolve automatically.

@@ -30,7 +30,7 @@ public sealed class QdrantContainerObservabilityTests : IAsyncLifetime
     private const string SentinelFilter = "sentinel-filter-value";
 
     private readonly QdrantContainerFixture _fixture;
-    private readonly string _name = $"obs-{Guid.NewGuid():N}";
+    private readonly string _name = UniqueNames.Of("obs");
     private QdrantClient _client = null!;
     private QdrantCollectionProvisioner _provisioner = null!;
     private ObservabilityHarness _harness = null!;
@@ -181,7 +181,7 @@ public sealed class QdrantContainerObservabilityTests : IAsyncLifetime
     [Fact]
     public async Task ARealMissingCollection_IsANotFoundResult_WithAFailedSpan_AndNoEngineText()
     {
-        var missing = new ObservabilityHarness(_client, name: $"missing-{Guid.NewGuid():N}");
+        var missing = new ObservabilityHarness(_client, name: UniqueNames.Of("missing"));
         using (missing)
         {
             var result = await missing.Collection.CountAsync(null, TenantScope.Global);
