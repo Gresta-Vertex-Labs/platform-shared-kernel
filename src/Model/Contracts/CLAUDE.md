@@ -36,8 +36,8 @@ No DI registration and no configuration section. Members, factories and samples:
 4. **One rule set, two exception types.** A `[JsonConstructor]` validates exactly like the public factory and throws
    `JsonException`; the factory throws `ArgumentException`-family exceptions. The envelope shares one `FindProblem`
    check between `Wrap` and its JSON constructor. No state a factory rejects may be reachable by deserialization or `with`.
-5. **`EventEnvelope.Wrap` is the only construction path** — the generic record has internal constructors and get-only
-   properties. `Wrap` requires `typeof(TEvent) == evt.GetType()` (serializing as a base type drops members).
+5. **`EventEnvelope.Wrap` is the only supported construction path** — the generic record has get-only properties; its public
+   constructor exists only as the serializer entry point (rule 19) and validates exactly like `Wrap`. `Wrap` requires `typeof(TEvent) == evt.GetType()` (serializing as a base type drops members).
 6. **Deserialization checks identity:** `type` must equal `IntegrationEventDescriptor.For<TEvent>().Name`, and `id`/`time`
    must match `Data`. Do **not** add a `dataversion` equality check — consumers must read older versions during a rollout.
 7. **Absent attributes are omitted**, not `null` (`JsonIgnoreCondition.WhenWritingNull`) — CloudEvents rule.
@@ -58,6 +58,10 @@ No DI registration and no configuration section. Members, factories and samples:
 17. Every public API change goes in `PublicAPI.Unshipped.txt` with XML docs (`CS1591` and the PublicAPI analyzer rules are
     errors). XML comments never contain work-order ids or change history.
 18. Keep `README.md` sample outputs real — produced by running the snippets.
+19. **The JSON constructors of `PagedList<T>`, `CursorPagedList<T>` and `EventEnvelope<TEvent>` are public**
+    (`[EditorBrowsable(Never)]`, same parameters and same validation as the factories/`Wrap`, throwing `JsonException`),
+    because a source-generated context in a consumer assembly cannot call an internal constructor. Their wire shape is
+    unchanged. Application code never calls them; a new `[JsonConstructor]` on a wire type follows this rule.
 
 ## Decisions
 
@@ -67,11 +71,12 @@ No DI registration and no configuration section. Members, factories and samples:
 | Event identity from a required `[IntegrationEvent(name, Version)]` | A class rename must not break consumers; no class-name fallback |
 | CloudEvents 1.0 structured JSON | Interop; properties are `Type`/`Source`/`Data`, not platform-specific names |
 | No response envelope (`Envelope<T>`/`ApiResponse<T>`) | ProblemDetails for errors, raw bodies for success; the REST client maps to `Result<T>` itself. Decline if proposed again |
-| Reflection-based `System.Text.Json`, no `JsonSerializerContext` | A source-generated context could not cover consumers' generic types and fought naming policies. Not trim-safe; accepted |
+| Reflection-based `System.Text.Json`; the package ships no `JsonSerializerContext` | The envelope and pages are generic over the consumer's types, so only the consumer can close them. Consumers declare a context in their own assembly (README recipe 7); without one the reflection path applies and is not trim-safe. Not trim-safe by default; accepted |
 | `EventEnvelope.TenantId` is `Guid?`, not `TenantId?` | Keeps the wire contract free of `SharedKernel.Execution`; publishers convert, consumers use `TenantId.FromNullable` |
 | `TotalCount` is `long` | Large tables and search engines exceed `int` |
 | Cursor is unsigned, versioned, strictly decoded | Signing would need key management in every service; queries must still apply tenant and authorization filters |
 | No `MoneyDto` or other domain-value DTOs | Added only when a real cross-service need appears; services map `Money` themselves |
+| Paged lists and the envelope expose a public JSON constructor | An internal `[JsonConstructor]` makes a consumer-assembly source-generated context throw `NotSupportedException` on read (verified for `PagedList<T>`, `CursorPagedList<T>` and `EventEnvelope<TEvent>`); a public one is additive and keeps one rule set. A `[JsonConverter]` was rejected: it would re-implement member matching and change the reflection path. `Wrap` stays the only supported way to build an envelope; the constructor is the serializer entry point only |
 | Propagation header/baggage constants never live here | `Presentation.Grpc`/`Communication.Grpc` may not reference Contracts; they are `WellKnownHeaders` in `SharedKernel.Primitives` |
 
 ## Logging
@@ -107,7 +112,7 @@ EventId block `4000`–`4999` (`LoggingEventIdRanges.Contracts`) is reserved but
 
 ## Known Limitations
 
-- Reflection-based serialization: the package is not trimming- or native-AOT-safe for generic envelopes and pages.
+- Reflection-based serialization by default: without a consumer-assembly source-generated context the package is not trimming- or native-AOT-safe for generic envelopes and pages.
 - Cursors are not signed; a client can forge a position, so every keyset query must still apply its own tenant and
   authorization filters.
 - `PagedList<T>.TotalCount` may disagree with the items under concurrent writes; this is tolerated by design.

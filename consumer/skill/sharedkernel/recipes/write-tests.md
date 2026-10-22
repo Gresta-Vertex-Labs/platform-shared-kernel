@@ -7,7 +7,6 @@ proven-by:
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogPipelineTests.cs
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogArchitectureTests.cs
   - samples/Shop/Inventory/Shop.Inventory.Tests/InventoryTests.cs
-  - samples/Shop/Shop.TestSupport/ServiceShape.cs
   - samples/Shop/Shop.E2E/Infrastructure/ShopPlatform.cs
   - samples/Shop/Catalog/Shop.Catalog.Tests/CatalogTenantIsolationPostgresTests.cs
 ---
@@ -180,10 +179,21 @@ Testing packages go only into Tests projects. A production project that referenc
    }
    ```
 
-   Add a project-shape test of your own over the test project's restore graph (`obj/project.assets.json`): Domain
-   reaches only Foundation and Model packages, Application adds only Abstractions and no MediatR, Infrastructure no
-   Host package, the Api only Host packages directly, and no production project a Testing package. The tier of
-   each package is in the skill's package catalog.
+   Assert the project shape with the shipped `ServiceShapeRules` over the test project's restore graph (Domain
+   reaches only Foundation and Model packages, Application only Abstractions, Infrastructure no Host package, the
+   Api is the composition root, no production project takes a Testing package); `ServicePlacementRules` add folder
+   placement, opt-in rule by rule:
+
+   ```csharp
+   using SharedKernel.ArchitectureTests.ServiceShape;
+
+   private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load("Shop.Catalog.Tests");
+   private static readonly ServiceShapeOptions Shape = new("Shop.Catalog");
+
+   [Fact]
+   public void Domain_SeesFoundationAndModelOnly() =>
+       ServiceShapeRules.AssertDomainSeesFoundationAndModelOnly(Graph, Shape);
+   ```
 
 5. **Tests: integration against real containers.** Keep these in a separate test project that is skipped unless an
    environment variable turns it on. The reference platform starts its whole Aspire AppHost once per run with

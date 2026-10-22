@@ -9,7 +9,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// </summary>
 /// <remarks>
 /// The kernel's own workflow telemetry, if any, is exported by the <c>SharedKernel.*</c> wildcard of
-/// <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/> and needs no call.
+/// <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/> and needs no call.
 /// </remarks>
 public static class WorkflowTelemetryExtensions
 {

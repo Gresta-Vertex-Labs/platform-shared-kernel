@@ -28,6 +28,12 @@
     <Compile Remove="SharedKernel.ArchitectureTests.Tests\**\*" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The kernel package-tier index (package id, tab, tier). Checked in so the package builds before
+         eng/generate-package-index.cs regenerates it; the generator check mode keeps it current. Read by
+         ServiceShape/KernelPackageIndex.cs under this logical name. -->
+    <EmbeddedResource Include="Data\kernel-package-tiers.tsv" LogicalName="kernel-package-tiers.tsv" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="NetArchTest.Rules" />
     <PackageReference Include="Mono.Cecil" />
     <!-- Required to resolve IServiceCollection/ServiceDescriptor for PipelineOrderAssertion

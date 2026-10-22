@@ -2,6 +2,7 @@
 SharedKernel.Contracts.Events.CloudEventAttributeNames
 SharedKernel.Contracts.Events.EventEnvelope
 SharedKernel.Contracts.Events.EventEnvelope<TEvent>
+SharedKernel.Contracts.Events.EventEnvelope<TEvent>.EventEnvelope(string! specVersion, System.Guid id, string! source, string! type, int dataVersion, System.DateTimeOffset time, string? subject, string! dataContentType, System.Guid? tenantId, string? correlationId, string? causationId, TEvent! data) -> void
 SharedKernel.Contracts.Events.EventEnvelope<TEvent>.CausationId.get -> string?
 SharedKernel.Contracts.Events.EventEnvelope<TEvent>.CorrelationId.get -> string?
 SharedKernel.Contracts.Events.EventEnvelope<TEvent>.Data.get -> TEvent!
@@ -33,6 +34,7 @@ SharedKernel.Contracts.Pagination.CursorPageRequest.Equals(SharedKernel.Contract
 SharedKernel.Contracts.Pagination.CursorPageRequest.IsFirstPage.get -> bool
 SharedKernel.Contracts.Pagination.CursorPageRequest.Limit.get -> int
 SharedKernel.Contracts.Pagination.CursorPagedList<T>
+SharedKernel.Contracts.Pagination.CursorPagedList<T>.CursorPagedList(System.Collections.Generic.IReadOnlyList<T>! items, string? nextCursor) -> void
 SharedKernel.Contracts.Pagination.CursorPagedList<T>.<Clone>$() -> SharedKernel.Contracts.Pagination.CursorPagedList<T>!
 SharedKernel.Contracts.Pagination.CursorPagedList<T>.Equals(SharedKernel.Contracts.Pagination.CursorPagedList<T>? other) -> bool
 SharedKernel.Contracts.Pagination.CursorPagedList<T>.HasMore.get -> bool
@@ -56,6 +58,7 @@ SharedKernel.Contracts.Pagination.PageRequest.Offset.get -> int
 SharedKernel.Contracts.Pagination.PageRequest.Page.get -> int
 SharedKernel.Contracts.Pagination.PageRequest.PageSize.get -> int
 SharedKernel.Contracts.Pagination.PagedList<T>
+SharedKernel.Contracts.Pagination.PagedList<T>.PagedList(System.Collections.Generic.IReadOnlyList<T>! items, int page, int pageSize, long totalCount) -> void
 SharedKernel.Contracts.Pagination.PagedList<T>.<Clone>$() -> SharedKernel.Contracts.Pagination.PagedList<T>!
 SharedKernel.Contracts.Pagination.PagedList<T>.Equals(SharedKernel.Contracts.Pagination.PagedList<T>? other) -> bool
 SharedKernel.Contracts.Pagination.PagedList<T>.HasNextPage.get -> bool

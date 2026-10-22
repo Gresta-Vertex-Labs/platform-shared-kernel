@@ -1,5 +1,6 @@
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.BusinessRules;
+using SharedKernel.Domain.Internal;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.Exceptions;
@@ -7,7 +8,8 @@ namespace SharedKernel.Domain.Exceptions;
 /// <summary>The exception thrown when a business rule is broken, carrying the rule and its error code.</summary>
 /// <remarks>
 /// <para>
-/// <b>Usage.</b> <c>CheckRule</c> on an aggregate, value object or domain service throws it; construct it
+/// <b>Usage.</b> <c>CheckRule</c> on an aggregate, value object or domain service throws it (its
+/// non-throwing counterpart <c>TryCheckRule</c> returns the same error in a failed result); construct it
 /// directly only when enforcing a rule outside those bases.
 /// </para>
 /// <para>
@@ -34,9 +36,5 @@ public sealed class BusinessRuleViolationException : DomainException
     /// <summary>Gets the rule that was broken.</summary>
     public IBusinessRule Rule { get; }
 
-    private static Error CreateError(IBusinessRule rule)
-    {
-        ArgumentNullException.ThrowIfNull(rule);
-        return Error.BusinessRule(rule.Code, rule.Message);
-    }
+    private static Error CreateError(IBusinessRule rule) => DomainInvariants.BusinessRuleError(rule);
 }

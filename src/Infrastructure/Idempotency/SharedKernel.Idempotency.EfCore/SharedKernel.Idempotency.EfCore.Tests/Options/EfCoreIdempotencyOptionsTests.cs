@@ -12,6 +12,15 @@ public sealed class EfCoreIdempotencyOptionsTests
     }
 
     [Fact]
+    public void MigrateOnStartup_DefaultsToFalse_AndTheLockTimeoutToTheDefault()
+    {
+        var options = new EfCoreIdempotencyOptions();
+
+        Assert.False(options.MigrateOnStartup);
+        Assert.Null(options.MigrationLockTimeout);
+    }
+
+    [Fact]
     public void SectionName_IsTheDocumentedPath() =>
         Assert.Equal("SharedKernel:Idempotency:EfCore", EfCoreIdempotencyOptions.SectionName);
 }

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -41,8 +42,20 @@ namespace SharedKernel.Contracts.Pagination;
 /// </example>
 public sealed record CursorPagedList<T>
 {
+    /// <summary>
+    /// The serializer entry point: creates a page from a JSON document. Not for application code; use
+    /// <see cref="Create(IReadOnlyList{T}, string?)"/> or <see cref="FromLookahead"/>.
+    /// </summary>
+    /// <param name="items">The items on the page.</param>
+    /// <param name="nextCursor">The cursor for the next page, or <see langword="null"/> on the last page.</param>
+    /// <remarks>
+    /// Public only so a source-generated <see cref="JsonSerializerContext"/> declared in another assembly can call it.
+    /// It applies the same rules as the factories and throws <see cref="JsonException"/> instead.
+    /// </remarks>
+    /// <exception cref="JsonException">The values break a paging rule.</exception>
     [JsonConstructor]
-    internal CursorPagedList(IReadOnlyList<T> items, string? nextCursor)
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public CursorPagedList(IReadOnlyList<T> items, string? nextCursor)
     {
         if (FindProblem(items, nextCursor) is { } problem)
             throw new JsonException($"Invalid cursor paged list: {problem.Message}");

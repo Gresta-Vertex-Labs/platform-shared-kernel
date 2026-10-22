@@ -1,7 +1,7 @@
 namespace SharedKernel.ServiceDefaults.Telemetry;
 
 /// <summary>
-/// The telemetry names <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/> subscribes to, declared once.
+/// The telemetry names <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/> subscribes to, declared once.
 /// </summary>
 /// <remarks>
 /// <para>

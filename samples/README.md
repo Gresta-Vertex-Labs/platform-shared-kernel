@@ -51,7 +51,7 @@ Application because it implements the Application's ports. Nothing references th
 | **Tests** | `SharedKernel.Testing` (fakes: `FakeClock`, `TestRequestContext`, fakers) and the per-capability `*.Testing` package of what the test touches — `Application.Testing` (pipeline harness), `Persistence.Testing`, `Messaging.Testing`, `Storage.Testing`, `Idempotency.Testing`, … | being referenced by a production project |
 
 Catalog and Ordering are this shape exactly, and their tests assert it against the real restore graph through
-[`Shop.TestSupport`](Shop/Shop.TestSupport/)'s `ServiceShape` (for example `OrderingArchitectureTests` in
+[`SharedKernel.ArchitectureTests`](../tools/Governance/SharedKernel.ArchitectureTests/)' service-shape rules (for example `OrderingArchitectureTests` in
 [`Shop.Ordering.Tests`](Shop/Ordering/Shop.Ordering.Tests/)). Copy those tests into a new service and fill in its
 project names. The other Shop services are single-project hosts on purpose: each is about a few families of packages,
 and the split would add projects without adding anything Catalog and Ordering do not already show.
@@ -82,7 +82,9 @@ train publishes every package at every version, so the set can never be mixed):
 
 Map `SharedKernel.*` to the kernel's feed with `packageSourceMapping`, so no other source can supply a
 package of that name. The full `NuGet.Config`, with the GitHub Packages credentials read from the
-environment, is in [`CONTRIBUTING.md` → Consuming the packages](../CONTRIBUTING.md#consuming-the-packages). Never pin one
+environment, is in [`CONTRIBUTING.md` → Consuming the packages](../CONTRIBUTING.md#consuming-the-packages): CI reads the feed
+with the job's own token (`permissions: packages: read`, no secret to create), and a local build needs a `gh` token with
+`read:packages`, because the feed requires authentication even for public packages. Never pin one
 `SharedKernel.*` package to a different version from the rest, and never float the version.
 
 **Inside this repository** the Shop does the same thing with the repository's own files: the root

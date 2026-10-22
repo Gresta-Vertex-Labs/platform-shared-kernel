@@ -12,7 +12,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// </summary>
 /// <remarks>
 /// The kernel's own persistence telemetry (<c>SharedKernel.Persistence</c> and its sub-sources) is exported by the
-/// <c>SharedKernel.*</c> wildcard of <see cref="TelemetryExtensions.AddSharedKernelTelemetry"/> and needs no call.
+/// <c>SharedKernel.*</c> wildcard of <see cref="TelemetryExtensions.AddSharedKernelTelemetry(Microsoft.Extensions.Hosting.IHostApplicationBuilder, string)"/> and needs no call.
 /// </remarks>
 public static class PersistenceTelemetryExtensions
 {

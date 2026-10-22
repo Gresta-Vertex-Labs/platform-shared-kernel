@@ -41,6 +41,29 @@ internal static class DomainInvariants
     }
 
     /// <summary>
+    /// Returns a successful result when <paramref name="rule"/> holds, or a failed result carrying the same
+    /// <see cref="Error"/> a <see cref="BusinessRuleViolationException"/> for it would carry. Throws
+    /// <see cref="ArgumentNullException"/> when it is <see langword="null"/>.
+    /// </summary>
+    internal static Result TryCheckRule(IBusinessRule rule)
+    {
+        ArgumentNullException.ThrowIfNull(rule);
+
+        return rule.IsBroken() ? Result.Failure(BusinessRuleError(rule)) : Result.Success();
+    }
+
+    /// <summary>
+    /// The single builder of a broken rule's error, shared by <see cref="BusinessRuleViolationException"/> and
+    /// <see cref="TryCheckRule"/> so the throwing and result paths cannot drift. Reads the rule's code and
+    /// message once.
+    /// </summary>
+    internal static Error BusinessRuleError(IBusinessRule rule)
+    {
+        ArgumentNullException.ThrowIfNull(rule);
+        return Error.BusinessRule(rule.Code, rule.Message);
+    }
+
+    /// <summary>
     /// Runs <paramref name="factory"/>, returning every error of a <see cref="ValidationException"/> or the
     /// single error of any other <see cref="DomainException"/> as a failed result; other exceptions propagate.
     /// </summary>

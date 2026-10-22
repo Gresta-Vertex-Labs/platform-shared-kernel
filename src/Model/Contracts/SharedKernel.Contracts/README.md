@@ -287,6 +287,44 @@ Over your own query (Dapper, a search engine), decode the position with `PageCur
 failure is `pagination.cursor.invalid`), fetch `limit + 1` rows after it, and build the page with
 `CursorPagedList<T>.FromLookahead(rows, limit, last => PageCursor.Encode(last.CreatedOn, last.Id.Value))`.
 
+### 7. Read and write envelopes and pages through a source-generated context
+
+Declare the context in your service, listing each closed type you send or receive. The generator runs in your
+assembly; the package's public JSON constructors are what it calls.
+
+```csharp
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using SharedKernel.Contracts.Events;
+using SharedKernel.Contracts.Pagination;
+
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
+[JsonSerializable(typeof(PagedList<OrderSummary>))]
+[JsonSerializable(typeof(CursorPagedList<OrderSummary>))]
+[JsonSerializable(typeof(EventEnvelope<OrderPlaced>))]
+internal sealed partial class ServiceJsonContext : JsonSerializerContext;
+
+var page = PagedList<OrderSummary>.Create(summaries, page: 1, pageSize: 20, totalCount: 1);
+string json = JsonSerializer.Serialize(page, ServiceJsonContext.Default.PagedListOrderSummary);
+PagedList<OrderSummary>? read = JsonSerializer.Deserialize(json, ServiceJsonContext.Default.PagedListOrderSummary);
+```
+
+```json
+{"items":[{"id":"11111111-1111-1111-1111-111111111111","status":"Paid"}],"page":1,"pageSize":20,"totalCount":1,"totalPages":1,"hasNextPage":false,"hasPreviousPage":false}
+```
+
+`read` equals `page`, and the JSON is identical to what reflection writes. A document that breaks a rule fails the
+same way as on the reflection path:
+
+```csharp
+JsonSerializer.Deserialize("""{"items":[],"page":0,"pageSize":20,"totalCount":0}""", ServiceJsonContext.Default.PagedListOrderSummary);
+// JsonException: Invalid paged list: Page must be at least 1 but was 0.
+```
+
+The same context serves `EventEnvelope<OrderPlaced>` (`ServiceJsonContext.Default.EventEnvelopeOrderPlaced`). Build
+envelopes with `EventEnvelope.Wrap` and pages with the factories, never with the constructors. To let a REST client
+read a page through the context, pass the `JsonTypeInfo` to the client's JSON call instead of relying on reflection.
+
 ## Reference
 
 ### Namespaces
@@ -354,7 +392,8 @@ Envelopes compare by value, including `Data`.
 - `TotalCount` may disagree slightly with `Items`: the count and the page are usually separate queries, so the
   only item-count rule is `Items.Count ≤ PageSize`.
 - JSON member names are fixed. Computed members (`totalPages`, `hasNextPage`, `hasPreviousPage`, `hasMore`) are
-  written and ignored on read. An invalid document throws `JsonException`.
+  written and ignored on read. An invalid document throws `JsonException`, through reflection and through a
+  source-generated context alike (recipe 7).
 
 ### Page requests
 
@@ -428,6 +467,7 @@ it as `EventEnvelope<TEvent>` — a missing `[IntegrationEvent]` or a duplicate 
 | Fetch exactly `limit` rows for a cursor page | Fetch `limit + 1` and call `FromLookahead` | Without the extra row you cannot tell whether a next page exists |
 | Trust a decoded cursor for authorization | Filter by tenant and permissions in the query | The cursor is unsigned |
 | Reuse a cursor across sort orders | Keep one sort per endpoint | A cursor from another sort decodes and starts in the wrong place |
+| Call the public `PagedList<T>`, `CursorPagedList<T>` or `EventEnvelope<TEvent>` constructor yourself | Use `Create`/`FromLookahead`/`EventEnvelope.Wrap` | The constructors are the serializer's entry point; they throw `JsonException`, not `ArgumentException` |
 | Wrap responses in an `{ isSuccess, value, error }` envelope | Return the body, and ProblemDetails for errors | The platform has one error format, RFC 9457 |
 
 ## Design decisions
@@ -443,9 +483,13 @@ consumers or routing, so there is no class-name fallback.
 
 **Why is `TotalCount` a `long`?** Large tables and search engines exceed `int`.
 
-**Why reflection-based `System.Text.Json`, not a `JsonSerializerContext`?** A source-generated context cannot cover
-consumers' generic envelopes and pages and fights naming policies. The package is therefore not trim- or
-NativeAOT-safe for generic envelopes and pages.
+**Why does the package ship no `JsonSerializerContext`?** The envelope and the pages are generic over your types, so
+only your service can close them. Declare the context in your own assembly (recipe 7): `EventEnvelope<TEvent>`,
+`PagedList<T>` and `CursorPagedList<T>` read and write through it with the same rules and wire shape as the
+reflection path. Their JSON constructors are public (hidden from IntelliSense) for exactly that reason: a generator
+running in your assembly cannot call an internal one. Build values with `EventEnvelope.Wrap` and the `Create`
+factories; the constructors are the serializer's entry point, not a second construction API. Without a context the
+package falls back to reflection and is not trim- or NativeAOT-safe.
 
 **Why is the cursor not signed?** Signing would need key management in every service, and tampering can only move a
 page's start position; filtering is the query's job. A new cursor format goes behind a new prefix (`v2.`), and `v1.`

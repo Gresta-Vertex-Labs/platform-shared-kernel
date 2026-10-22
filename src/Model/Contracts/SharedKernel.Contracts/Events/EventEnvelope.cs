@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -10,8 +11,9 @@ namespace SharedKernel.Contracts.Events;
 /// <typeparam name="TEvent">The concrete integration event type carried as <see cref="Data"/>.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>Construction.</b> Create one with <see cref="EventEnvelope.Wrap{TEvent}"/>. There is no public constructor
-/// and no settable property, so an envelope cannot be assembled with missing or inconsistent metadata.
+/// <b>Construction.</b> Create one with <see cref="EventEnvelope.Wrap{TEvent}"/>, the only supported way. The public
+/// constructor exists solely as the serializer entry point and validates exactly like <c>Wrap</c>; there is no
+/// settable property, so an envelope cannot hold missing or inconsistent metadata.
 /// </para>
 /// <para>
 /// <b>Wire shape.</b> Every member has a fixed JSON name from <see cref="CloudEventAttributeNames"/>, so the output
@@ -46,8 +48,31 @@ namespace SharedKernel.Contracts.Events;
 public sealed record EventEnvelope<TEvent>
     where TEvent : class, IIntegrationEvent
 {
+    /// <summary>
+    /// The serializer entry point: creates an envelope from a JSON document. Not for application code; use
+    /// <see cref="EventEnvelope.Wrap{TEvent}"/>, the only supported way to build an envelope.
+    /// </summary>
+    /// <param name="specVersion">The CloudEvents specification version, which must be <c>1.0</c>.</param>
+    /// <param name="id">The event identifier, which must equal the data's event identifier.</param>
+    /// <param name="source">The logical name of the producing service.</param>
+    /// <param name="type">The event's wire name, which must equal the name <typeparamref name="TEvent"/> declares.</param>
+    /// <param name="dataVersion">The schema version of the data, at least 1.</param>
+    /// <param name="time">The time the fact occurred, which must equal the data's occurrence time.</param>
+    /// <param name="subject">The resource the event is about, or <see langword="null"/>.</param>
+    /// <param name="dataContentType">The media type of the data, which must be a JSON media type.</param>
+    /// <param name="tenantId">The tenant the event belongs to, or <see langword="null"/>.</param>
+    /// <param name="correlationId">The flow's correlation identifier, or <see langword="null"/>.</param>
+    /// <param name="causationId">The identifier of the causing command or event, or <see langword="null"/>.</param>
+    /// <param name="data">The integration event.</param>
+    /// <remarks>
+    /// Public only so a source-generated <see cref="JsonSerializerContext"/> declared in another assembly can call it.
+    /// It applies the same rules as <see cref="EventEnvelope.Wrap{TEvent}"/> and the wire checks, and throws
+    /// <see cref="JsonException"/> instead.
+    /// </remarks>
+    /// <exception cref="JsonException">The values break an envelope rule.</exception>
     [JsonConstructor]
-    internal EventEnvelope(
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public EventEnvelope(
         string specVersion,
         Guid id,
         string source,

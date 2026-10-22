@@ -1,9 +1,13 @@
+using System.Reflection;
 using FluentAssertions;
 using Grpc.Core;
 using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using SharedKernel.ArchitectureTests.Helpers;
+using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
@@ -26,41 +30,76 @@ using Shop.Ordering.Domain;
 using Shop.Ordering.Infrastructure;
 using Shop.Ordering.Infrastructure.Fulfilment;
 using Shop.Ordering.Infrastructure.Inventory;
-using Shop.TestSupport;
 using Xunit;
 
 namespace Shop.Ordering.Tests;
 
-public sealed class OrderingArchitectureTests
+public sealed class OrderingArchitectureTests : ArchitectureRuleBase
 {
-    private static readonly ServiceShape Shape = new(
-        DependencyGraph.Load("Shop.Ordering.Tests"),
-        "Shop.Ordering"
+    private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load(
+        "Shop.Ordering.Tests"
     );
+    private static readonly ServiceShapeOptions Shape = new("Shop.Ordering")
+    {
+        SharedProjects = ["Shop.Contracts"],
+    };
 
     [Fact]
     public void ProjectReferences_FollowTheLayering() =>
-        Shape.ProjectReferencesFollowTheLayering("Shop.Contracts");
+        ServiceShapeRules.AssertProjectReferencesFollowTheLayering(Graph, Shape);
 
     [Fact]
-    public void Domain_SeesFoundationAndModelOnly() => Shape.DomainSeesFoundationAndModelOnly();
+    public void Domain_SeesFoundationAndModelOnly() =>
+        ServiceShapeRules.AssertDomainSeesFoundationAndModelOnly(Graph, Shape);
 
     [Fact]
-    public void Application_SeesContractsOnly() => Shape.ApplicationSeesContractsOnly();
+    public void Application_SeesContractsOnly() =>
+        ServiceShapeRules.AssertApplicationSeesContractsOnly(Graph, Shape);
 
     [Fact]
     public void Infrastructure_SeesAdaptersButNoHost() =>
-        Shape.InfrastructureSeesAdaptersButNoHost();
+        ServiceShapeRules.AssertInfrastructureSeesAdaptersButNoHost(Graph, Shape);
 
     [Fact]
-    public void Api_IsTheCompositionRoot() => Shape.HostIsTheCompositionRoot();
+    public void Api_IsTheCompositionRoot() =>
+        ServiceShapeRules.AssertHostIsTheCompositionRoot(Graph, Shape);
 
     [Fact]
     public void Production_NeverReferencesTestingPackages() =>
-        Shape.ProductionNeverReferencesTestingPackages();
+        ServiceShapeRules.AssertProductionNeverReferencesTestingPackages(Graph, Shape);
 
     [Fact]
-    public void EveryKernelPackage_IsKnown() => Shape.EveryKernelPackageIsKnown();
+    public void Nothing_ReferencesTheApi() =>
+        ServiceShapeRules.AssertNothingReferencesTheHost(Graph, Shape);
+
+    private static readonly Assembly[] ServiceAssemblies =
+    [
+        typeof(Order).Assembly,
+        typeof(PlaceOrderCommand).Assembly,
+        typeof(OrderingInfrastructure).Assembly,
+        typeof(OrderEndpoints).Assembly,
+    ];
+
+    // The placement rules Ordering already satisfies. Its use cases, domain types and endpoint module sit in feature
+    // files rather than one namespace per use case, so the use-case, domain-feature, endpoint-module and consumer rules are not applied.
+    private static readonly ServicePlacementOptions Placement = new("Shop.Ordering");
+
+    [Fact]
+    public void MiddlewareAndFilters_LiveInTheirFolders() =>
+        AssertRule(
+            ServicePlacementRules.MiddlewareAndFiltersLiveInTheirFolders(
+                ServiceAssemblies,
+                Placement
+            )
+        );
+
+    [Fact]
+    public void NoNamespace_UsesAGenericFolderName() =>
+        AssertRule(ServicePlacementRules.NoGenericFolderNames(ServiceAssemblies, Placement));
+
+    [Fact]
+    public void NoType_DerivesFromException() =>
+        AssertRule(ServicePlacementRules.NoExceptionTypes(ServiceAssemblies, Placement));
 }
 
 public sealed class OrderingPipelineTests : IDisposable

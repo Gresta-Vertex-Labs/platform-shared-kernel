@@ -19,10 +19,7 @@
 
 ## Phase Key Registry
 
-| Phase key | Phase | Status |
-| --- | --- | --- |
-
-Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -34,4 +31,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open.
+- **Outbound to 18.Idempotency (P-632):** `AddMigrationOnStartup<TContext>(TimeSpan? lockTimeout = null)` is available (`where TContext : DbContext`, namespace `SharedKernel.Persistence`, in `Persistence.EfCore`). `Idempotency.EfCore` must call it behind its own opt-in (default off), register `IdempotencyDbContext` with `AddDbContext` (non-pooled, not a `SharedKernelDbContext`), supply a non-default history table and the package's migrations and design-time factory, and never call `Database.MigrateAsync` itself. Migrations run on the migration data source when `MigrationConnectionString` is configured (the context's own connection otherwise), one replica at a time under `IMigrationLock` keyed by the context's full name; a lock timeout or failed migration fails host start and faults `IPersistenceStartup`. Grants are the canonical role script's (default privileges of `app_migrator`); add no DDL grants to the runtime role.

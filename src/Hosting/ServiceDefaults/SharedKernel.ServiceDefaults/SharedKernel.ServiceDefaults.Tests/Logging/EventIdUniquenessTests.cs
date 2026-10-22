@@ -38,8 +38,8 @@ public sealed class EventIdUniquenessTests
     [Fact]
     public void EveryLoggerMessage_IsFound()
     {
-        // 13000, 13001, 13100, 13101, 13200, 13201, 13300, 13301, 13302, 13303 and 13400.
-        Assert.True(Messages().Count == 11, "Expected the domain's 11 [LoggerMessage] methods to be discoverable.");
+        // 13000, 13001, 13002, 13100, 13101, 13200, 13201, 13300, 13301, 13302, 13303 and 13400.
+        Assert.True(Messages().Count == 12, "Expected the domain's 12 [LoggerMessage] methods to be discoverable.");
     }
 
     [Fact]

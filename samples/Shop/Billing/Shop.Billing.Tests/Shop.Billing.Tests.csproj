@@ -7,13 +7,13 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\Shop.Billing.Api\Shop.Billing.Api.csproj" />
-    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SharedKernel.Testing" />
     <PackageReference Include="SharedKernel.Cryptography.Testing" />
     <PackageReference Include="SharedKernel.Integration.Testing" />
+    <PackageReference Include="SharedKernel.ArchitectureTests" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="xunit" />

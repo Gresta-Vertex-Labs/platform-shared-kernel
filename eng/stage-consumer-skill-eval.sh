@@ -17,7 +17,7 @@
 # this repository (<out-dir> must be outside the repository and empty or missing in both modes):
 #
 #   <out-dir>/<Service>/ ...                  the Shop service's projects (bin/obj excluded)
-#   <out-dir>/Shop.Contracts/, Shop.TestSupport/   the Shop projects it references, if any
+#   <out-dir>/Shop.Contracts/ ...                  the Shop projects it references, if any
 #   <out-dir>/packages/                       a local feed with the packed SharedKernel nupkgs
 #   <out-dir>/Directory.Build.props|Packages.props, NuGet.Config, global.json, <Service>.slnx
 #                                             consumer-shaped build files: one pinned SharedKernelVersion
@@ -197,7 +197,7 @@ copy_project_tree() {
 }
 
 copy_project_tree "$service"
-# Shop projects outside the service that it references (Shop.Contracts, Shop.TestSupport, ...).
+# Shop projects outside the service that it references (Shop.Contracts, ...).
 # The patterns match literal backslashes in csproj paths (..\..\Shop.Contracts\), not quote escapes.
 # shellcheck disable=SC1003
 mapfile -t siblings < <(grep -rhoE 'Include="\.\.\\\.\.\\[^\\"]+\\' "$out_dir/$service" --include='*.csproj' \

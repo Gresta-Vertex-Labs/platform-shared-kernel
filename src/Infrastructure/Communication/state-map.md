@@ -20,8 +20,7 @@ Test kit: `src/Infrastructure/Communication/SharedKernel.Communication.Testing` 
 
 ## Phase Key Registry
 
-| Phase key | Phase | Status |
-| --- | --- | :---: |
+No open phase keys.
 
 Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 

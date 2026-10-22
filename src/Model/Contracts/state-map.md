@@ -10,7 +10,7 @@
 
 | Package | Tier | Status | Notes |
 | --- | --- | --- | --- |
-| `SharedKernel.Contracts` | Model | ● | Cross-service wire contracts: `IIntegrationEvent` + `[IntegrationEvent]`, CloudEvents `EventEnvelope<TEvent>` (built only by `EventEnvelope.Wrap`), `PagedList<T>`, `CursorPagedList<T>`, `PageRequest`/`CursorPageRequest`, `PageCursor`. Never references `SharedKernel.Domain`. Ships with the repo-wide release train. |
+| `SharedKernel.Contracts` | Model | ● | Cross-service wire contracts: `IIntegrationEvent` + `[IntegrationEvent]`, CloudEvents `EventEnvelope<TEvent>` (built only by `EventEnvelope.Wrap`), `PagedList<T>`, `CursorPagedList<T>` (readable through a consumer-assembly source-generated context), `PageRequest`/`CursorPageRequest`, `PageCursor`. Never references `SharedKernel.Domain`. Ships with the repo-wide release train. |
 
 ## Phase Key Registry
 
@@ -18,7 +18,7 @@ No open phase keys. Closed keys live in `git log`: check a new key is unused wit
 
 ## Open Work
 
-None — every phase in this domain is complete. The first public release ships with root P-577 (release train).
+None — every phase in this domain is complete.
 
 ## Blocked
 
@@ -26,4 +26,4 @@ None.
 
 ## Cross-Domain Dependencies
 
-None open.
+- **Note for 11.Communication consumers:** REST clients can pass a source-generated `JsonTypeInfo` for paged results and envelopes (the Contracts README, recipe 7); no package change needed there.

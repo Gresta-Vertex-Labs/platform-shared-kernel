@@ -14,10 +14,7 @@
 
 ## Phase Key Registry
 
-| Phase key | Phase | Status |
-| --- | --- | --- |
-
-Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
+No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 

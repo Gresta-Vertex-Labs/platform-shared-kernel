@@ -8,6 +8,7 @@ using SharedKernel.Idempotency.EfCore.Diagnostics;
 using SharedKernel.Idempotency.EfCore.Internal;
 using SharedKernel.Idempotency.EfCore.Options;
 using SharedKernel.Idempotency.EfCore.Store;
+using SharedKernel.Persistence;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Idempotency.EfCore.Extensions;
@@ -41,8 +42,10 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
     /// meter, so a host that never configured metrics still resolves the store.
     /// </para>
     /// <para>
-    /// This package ships no EF Core migrations. See <c>README.md</c> for the design-time factory recipe and the
-    /// cleanup job that bounds table growth.
+    /// <paramref name="configureOptions"/> runs once, here, not when the options are first resolved. With
+    /// <see cref="EfCoreIdempotencyOptions.MigrateOnStartup"/> the package creates its table through its shipped
+    /// migration on the migration connection (see <c>README.md</c>); otherwise it creates nothing. Neither path runs
+    /// a cleanup: <c>README.md</c> carries the job that bounds table growth.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddEfCoreIdempotency(
@@ -57,15 +60,37 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
 
         var selected = IdempotencyServiceCollectionExtensions.SelectPurposes(purposes);
 
+        // The migration flag decides what is registered, so the delegate runs once, here, on a snapshot; the same
+        // values then back the IOptions registration (the delegate never runs a second time).
+        var snapshot = new EfCoreIdempotencyOptions();
+        configureOptions?.Invoke(snapshot);
+        if (snapshot.MigrationLockTimeout is { } lockTimeout)
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lockTimeout, TimeSpan.Zero, nameof(configureOptions));
+
+        var migrateOnStartup = snapshot.MigrateOnStartup;
+
         services.AddDbContext<IdempotencyDbContext>(options =>
         {
             configureDbContext(options);
             IdempotencyDbContextOptions.DisableRetry(options);
+
+            // A 1.0.0 consumer may run its own migration for this context against EF's default history table, so the
+            // table of its own is applied only when the package migrates the context.
+            if (migrateOnStartup)
+                IdempotencyDbContextOptions.UseHistoryTable(options);
         });
 
         services
             .AddOptions<EfCoreIdempotencyOptions>()
-            .Configure(o => configureOptions?.Invoke(o));
+            .Configure(o =>
+            {
+                o.AllowExecutionOnStoreUnavailable = snapshot.AllowExecutionOnStoreUnavailable;
+                o.MigrateOnStartup = snapshot.MigrateOnStartup;
+                o.MigrationLockTimeout = snapshot.MigrationLockTimeout;
+            });
+
+        if (migrateOnStartup)
+            services.AddMigrationOnStartup<IdempotencyDbContext>(snapshot.MigrationLockTimeout);
 
         foreach (var purpose in selected)
             services.AddIdempotencyStore<EfCoreIdempotencyStore>(purpose);

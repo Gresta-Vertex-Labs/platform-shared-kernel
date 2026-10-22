@@ -3,6 +3,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 ![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
 > **The composition base every service starts from: one call wires OpenTelemetry, a startup gate and the health-check
 > infrastructure; one more maps every dependency's readiness probe onto `/health/ready`.**
@@ -24,6 +25,7 @@
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [Recipes](#recipes)
+- [Configuration](#configuration)
 - [Reference](#reference)
 - [Testing](#testing)
 - [Pitfalls](#pitfalls)
@@ -70,7 +72,7 @@ app.Services.GetRequiredService<StartupGate>().MarkReady();
 app.Run();
 ```
 
-The OTLP exporter reads the standard `OTEL_EXPORTER_OTLP_*` environment variables; the service name is the entry
+The OTLP exporter is configured by the standard `OTEL_EXPORTER_OTLP_*` variables, read from the host configuration (environment variables included; see [Configuration](#configuration)); the service name is the entry
 assembly's name.
 
 ## How it works
@@ -138,6 +140,30 @@ builder.AddSharedKernelRateLimiting(o => { /* adjust RateLimiterOptions */ });
 app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authentication);
 ```
 
+## Configuration
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:ServiceDefaults:Telemetry:OtlpExporter` (environment: `SharedKernel__ServiceDefaults__Telemetry__OtlpExporter`) | `Always` · `WhenEndpointConfigured` | `Always` | `Always` registers the OTLP exporter for traces, metrics and logs whether or not an endpoint is set, exactly as 1.0.0 did. `WhenEndpointConfigured` registers it only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, so a host with no collector exports nothing and shuts down without waiting for the exporter timeout. `AddServiceDefaults(o => o.OtlpExporter = …)` overrides the key. An undefined value fails host start-up |
+
+The OTLP endpoint is the standard `OTEL_EXPORTER_OTLP_ENDPOINT` variable (with `OTEL_EXPORTER_OTLP_PROTOCOL` and the other
+`OTEL_EXPORTER_OTLP_*` settings the exporter reads). It counts as set when the host configuration (environment variables,
+`appsettings` or the command line) holds an absolute URI; a blank value or a value that is not a URI counts as unset, as it
+does for the exporter itself. The per-signal variants (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and its metrics and logs
+siblings) are not read by the per-signal exporter registration this package uses, so they do not count. The mode and the
+endpoint are read when `AddServiceDefaults()` runs, from the configuration as it is then; a configuration source added
+afterwards is not seen.
+
+With `Always` and no endpoint the host logs one warning at start-up (event 13002) that names the setting. To silence it,
+point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector, or choose `WhenEndpointConfigured` for hosts that run without one. A host
+launched by .NET Aspire has the endpoint set by the AppHost and behaves the same in either mode.
+
+```csharp
+using SharedKernel.ServiceDefaults.Telemetry;
+
+builder.AddServiceDefaults(o => o.OtlpExporter = OtlpExporterMode.WhenEndpointConfigured);
+```
+
 ## Reference
 
 ### Registration
@@ -145,6 +171,8 @@ app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authenticati
 | Method | Registers |
 | --- | --- |
 | `IHostApplicationBuilder.AddServiceDefaults()` | `AddSharedKernelTelemetry(serviceName)` + `AddSharedKernelHealthChecks()` |
+| `IHostApplicationBuilder.AddServiceDefaults(Action<SharedKernelTelemetryOptions>?)` | The same, with the telemetry options (the OTLP exporter mode) set in code |
+| `IHostApplicationBuilder.AddSharedKernelTelemetry(serviceName, Action<SharedKernelTelemetryOptions>?)` | The same, with the telemetry options set in code |
 | `IHostApplicationBuilder.AddSharedKernelTelemetry(serviceName)` | OpenTelemetry tracing, metrics and logs (called by `AddServiceDefaults`) |
 | `IServiceCollection.AddSharedKernelHealthChecks()` | `StartupGate` and the `startup` check (called by `AddServiceDefaults` — never call it again) |
 | `IHealthChecksBuilder.AddSharedKernelReadiness(Action<ReadinessHealthCheckOptions>?)` | One `ready` check per `IReadinessProbe` |
@@ -213,10 +241,9 @@ Kernel probe names: `messaging`, `redis`, `cache`, `encryption-key-provider`, `f
 | --- | --- | --- |
 | 13000 | Information | Registered the health check `'{HealthCheckName}'` with the tags `'{Tags}'` |
 | 13001 | Error | The readiness probe `'{ProbeName}'` threw an exception instead of reporting its state (the exception is passed to the logger) |
+| 13002 | Warning | No OTLP endpoint is configured, so the OTLP exporters send to the exporter's local default address: set `'OTEL_EXPORTER_OTLP_ENDPOINT'` to your collector, or set `'SharedKernel:ServiceDefaults:Telemetry:OtlpExporter'` to `'WhenEndpointConfigured'` to export nothing without one (once at start-up, only while an exporter is registered) |
 
 This package owns the sub-block 13000-13099 of the ServiceDefaults EventId block (13000-13999); every `[LoggerMessage]` of the domain stays inside its package's sub-block. Loggers are required dependencies: resolving health checks in a host without logging services throws.
-
-Event ids before this release: 13002 → 13000, 13005 → 13001.
 
 ## Testing
 

@@ -60,7 +60,7 @@ Other top-level locations:
 
 | Path | What |
 | --- | --- |
-| `samples/` | `Shop`: one reference platform on the packed packages under a .NET Aspire AppHost — Catalog and Ordering (the four-project shape, architecture tests over `Shop.TestSupport`'s `ServiceShape`), Inventory, Billing, Merchant, Notify, Reports; `Shop.E2E` flows against real containers; `Shop.Coverage.Tests` keeps every package referenced. `samples/README.md` is the "how to consume the kernel" guide. |
+| `samples/` | `Shop`: one reference platform on the packed packages under a .NET Aspire AppHost — Catalog and Ordering (the four-project shape, architecture tests over `SharedKernel.ArchitectureTests`' `ServiceShapeRules`), Inventory, Billing, Merchant, Notify, Reports; `Shop.E2E` flows against real containers; `Shop.Coverage.Tests` keeps every package referenced. `samples/README.md` is the "how to consume the kernel" guide. |
 | `eng/` | Build internals: `SharedKernelTiers.targets` (tier check), `PackageInventory.proj`, `verify-*.sh` scripts, test settings. See [`eng/README.md`](eng/README.md). |
 | `docs/` | [`packages.md`](docs/packages.md) (generated: every package by tier and the service project that references it), [`dependency-graph.md`](docs/dependency-graph.md) (generated Mermaid graphs), `package-readme-standard.md` (the shape every package `README.md` follows). |
 | `consumer/` | The `sharedkernel` Claude Code skill that ships with every release for consuming services: `skill/sharedkernel/SKILL.md` (needs table + generated package catalog) and `recipes/`, each proven by a Shop file. Consumer vocabulary only. Rules, release and eval in [`consumer/README.md`](consumer/README.md). |
@@ -105,7 +105,7 @@ A new edge is a csproj declaration reviewed like any API change; sibling role pa
 - Testing-tier packages are never referenced by production code, including the packable ones.
 - Plus the topology, cryptography-isolation, persistence, pipeline-order and health-tag rules in `tools/Governance/CLAUDE.md`.
 
-**What a consuming service references** (enforced for the Shop's Catalog and Ordering by `OrderingArchitectureTests`/`CatalogArchitectureTests` over `Shop.TestSupport`): **Domain** → `SharedKernel.Domain`; **Application** → `SharedKernel.Application` (+ `Idempotency.Abstractions`/`Caching.Abstractions` when it uses those markers); **Infrastructure** → adapters; **Api/Worker** → Host packages plus its own Application and Infrastructure projects.
+**What a consuming service references** (enforced for the Shop's Catalog and Ordering by `OrderingArchitectureTests`/`CatalogArchitectureTests` over `SharedKernel.ArchitectureTests`' `ServiceShapeRules`): **Domain** → `SharedKernel.Domain`; **Application** → `SharedKernel.Application` (+ `Idempotency.Abstractions`/`Caching.Abstractions` when it uses those markers); **Infrastructure** → adapters; **Api/Worker** → Host packages plus its own Application and Infrastructure projects.
 
 ---
 

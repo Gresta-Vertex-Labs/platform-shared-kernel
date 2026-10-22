@@ -1,0 +1,49 @@
+#nullable enable
+SharedKernel.ServiceDefaults.Extensions.ServiceDefaultsExtensions
+SharedKernel.ServiceDefaults.HealthChecks.HealthCheckExtensions
+SharedKernel.ServiceDefaults.HealthChecks.HealthCheckNames
+SharedKernel.ServiceDefaults.HealthChecks.HealthCheckRegistrationLogging
+SharedKernel.ServiceDefaults.HealthChecks.HealthCheckTags
+SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckExtensions
+SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions
+SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions.Exclude(string! probeName) -> SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions!
+SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions.ExcludedProbes.get -> System.Collections.Generic.IReadOnlySet<string!>!
+SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions.ReadinessHealthCheckOptions() -> void
+SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions.Timeout.get -> System.TimeSpan?
+SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions.Timeout.set -> void
+SharedKernel.ServiceDefaults.Probes.StartupGate
+SharedKernel.ServiceDefaults.Probes.StartupGate.IsReady.get -> bool
+SharedKernel.ServiceDefaults.Probes.StartupGate.MarkReady() -> void
+SharedKernel.ServiceDefaults.Probes.StartupGate.StartupGate() -> void
+SharedKernel.ServiceDefaults.Probes.StartupGateHealthCheck
+SharedKernel.ServiceDefaults.Probes.StartupGateHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+SharedKernel.ServiceDefaults.Probes.StartupGateHealthCheck.StartupGateHealthCheck(SharedKernel.ServiceDefaults.Probes.StartupGate! startupGate) -> void
+SharedKernel.ServiceDefaults.RateLimiting.RateLimitPolicyNames
+SharedKernel.ServiceDefaults.RateLimiting.RateLimitingExtensions
+SharedKernel.ServiceDefaults.Telemetry.BaggageLogRecordProcessor
+SharedKernel.ServiceDefaults.Telemetry.BaggageLogRecordProcessor.BaggageLogRecordProcessor() -> void
+SharedKernel.ServiceDefaults.Telemetry.CommunicationTelemetryExtensions
+SharedKernel.ServiceDefaults.Telemetry.MessagingTelemetryExtensions
+SharedKernel.ServiceDefaults.Telemetry.PersistenceTelemetryExtensions
+SharedKernel.ServiceDefaults.Telemetry.TelemetryExtensions
+SharedKernel.ServiceDefaults.Telemetry.WorkflowTelemetryExtensions
+const SharedKernel.ServiceDefaults.HealthChecks.HealthCheckNames.DapperDatabase = "database-dapper" -> string!
+const SharedKernel.ServiceDefaults.HealthChecks.HealthCheckNames.Database = "database" -> string!
+const SharedKernel.ServiceDefaults.HealthChecks.HealthCheckNames.PersistenceStartup = "persistence-startup" -> string!
+const SharedKernel.ServiceDefaults.HealthChecks.HealthCheckNames.Startup = "startup" -> string!
+const SharedKernel.ServiceDefaults.HealthChecks.HealthCheckTags.Db = "db" -> string!
+const SharedKernel.ServiceDefaults.HealthChecks.HealthCheckTags.Live = "live" -> string!
+const SharedKernel.ServiceDefaults.HealthChecks.HealthCheckTags.Ready = "ready" -> string!
+const SharedKernel.ServiceDefaults.RateLimiting.RateLimitPolicyNames.Authentication = "authentication" -> string!
+override SharedKernel.ServiceDefaults.Telemetry.BaggageLogRecordProcessor.OnEnd(OpenTelemetry.Logs.LogRecord! data) -> void
+static SharedKernel.ServiceDefaults.Extensions.ServiceDefaultsExtensions.AddServiceDefaults(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.ServiceDefaults.HealthChecks.HealthCheckExtensions.AddSharedKernelHealthChecks(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static SharedKernel.ServiceDefaults.HealthChecks.HealthCheckExtensions.MapDefaultHealthCheckEndpoints(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, bool requireAuthorization = false) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!
+static SharedKernel.ServiceDefaults.HealthChecks.HealthCheckRegistrationLogging.LogRegistration(Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! name, System.Collections.Generic.IReadOnlyCollection<string!>! tags) -> void
+static SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckExtensions.AddSharedKernelReadiness(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<SharedKernel.ServiceDefaults.HealthChecks.ReadinessHealthCheckOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static SharedKernel.ServiceDefaults.RateLimiting.RateLimitingExtensions.AddSharedKernelRateLimiting(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<Microsoft.AspNetCore.RateLimiting.RateLimiterOptions!>? configure = null) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.ServiceDefaults.Telemetry.CommunicationTelemetryExtensions.WithCommunicationTelemetry(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.ServiceDefaults.Telemetry.MessagingTelemetryExtensions.WithMessagingTelemetry(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.ServiceDefaults.Telemetry.PersistenceTelemetryExtensions.WithPersistenceTelemetry(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.ServiceDefaults.Telemetry.TelemetryExtensions.AddSharedKernelTelemetry(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, string! serviceName) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static SharedKernel.ServiceDefaults.Telemetry.WorkflowTelemetryExtensions.WithWorkflowTelemetry(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!

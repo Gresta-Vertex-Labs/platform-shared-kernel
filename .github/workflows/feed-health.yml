@@ -1,0 +1,144 @@
+name: Feed health
+
+# Scheduled checks of the PUBLISHED package feed (P-636, P-637). Nothing here gates a merge or a
+# release: verify.yml audits the packed set on every pull request and release tag, and release.yml
+# checks visibility right after publish. This workflow catches what changes afterwards, with no
+# commit involved:
+#   - a vulnerability advisory published for a dependency of a shipped package (a consuming
+#     service's restore starts failing overnight; this is the only place that sees it first);
+#   - a package that is missing from the feed or was made private again.
+#
+# Both checks run against the NEWEST RELEASE, not the tip of main: the package list is taken from
+# the newest v* tag's tree (a package added on main since is not published yet and must not fail
+# here), and the audit restores that tag's version from the feed exactly as a consuming service
+# does: with the job's own token (permissions: packages: read), no personal token, no secret.
+#
+# Whether the job token can read ORGANISATION package metadata (visibility) is decided by GitHub,
+# not by this file: it can for packages linked to this repository, which a publish from release.yml
+# does. If the visibility step reports every package "not readable by this token", the packages are
+# not linked (Package settings > Manage Actions access) or a token with read:packages is needed.
+#
+# A red run opens or updates one tracking issue and closes it when the run is green again, the way
+# the Integration lane is kept visible in ci.yml: a scheduled run nobody looks at is worth nothing.
+#
+# Every third-party action is pinned to a full commit SHA with a trailing version comment.
+
+on:
+  schedule:
+    - cron: '43 4 * * *' # 04:43 UTC daily, off the top of the hour and after the 03:17 nightly CI.
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: feed-health
+  cancel-in-progress: false
+
+jobs:
+  feed-health:
+    name: Published feed is public and free of known vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DOTNET_CLI_UI_LANGUAGE: en
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      # The newest release by SemVer precedence (a pre-release sorts below its release), and the
+      # packable set of that tag's tree, asked of MSBuild like every other package list.
+      - name: Resolve the newest release and its package set
+        id: release
+        run: |
+          set -euo pipefail
+          tag="$(git -c versionsort.suffix=- tag --list 'v[0-9]*' --sort=-version:refname | head -n1)"
+          if [ -z "$tag" ]; then
+            echo "::error::No v* release tag exists, so there is no published feed to check."
+            exit 1
+          fi
+          git worktree add --detach "$RUNNER_TEMP/release-src" "$tag"
+          (cd "$RUNNER_TEMP/release-src" && dotnet msbuild eng/PackageInventory.proj -nologo -v:q \
+            -p:InventoryFile="$RUNNER_TEMP/expected-packages.txt")
+          echo "Newest release: $tag ($(grep -c . "$RUNNER_TEMP/expected-packages.txt") packages)."
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      # The same restore a consuming service runs in its CI: the job token, packages: read.
+      - name: Consumer-view NuGet audit of the published feed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_PACKAGES_FILE: ${{ runner.temp }}/expected-packages.txt
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: bash eng/verify-consumer-audit.sh "$FEED_URL" "$RELEASE_VERSION"
+
+      # Existence and visibility only (no version): the newest release was verified at its own
+      # publish; what can change later is a visibility or a deleted package.
+      - name: Every package is on the feed and public
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_PACKAGES_FILE: ${{ runner.temp }}/expected-packages.txt
+        run: bash eng/verify-feed-visibility.sh
+
+  # ---------------------------------------------------------------------------------------------
+  # Keeps exactly one tracking issue open while the scheduled check is red and closes it once it is
+  # green. issues: write on this job only; it never checks out the repository, and uses the
+  # preinstalled gh CLI, so there is no action to pin.
+  # ---------------------------------------------------------------------------------------------
+  tracking-issue:
+    name: Track feed health
+    needs: [feed-health]
+    if: ${{ always() && github.event_name == 'schedule' && needs.feed-health.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HEALTH_RESULT: ${{ needs.feed-health.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TRACKING_TITLE: 'CI: Published package feed check is failing'
+    steps:
+      - name: Find the open tracking issue
+        run: |
+          set -e
+          # $t is a jq --arg variable, not a bash expansion.
+          # shellcheck disable=SC2016
+          number=$(gh issue list --state open --search "in:title \"$TRACKING_TITLE\"" --json number,title \
+            | jq -r --arg t "$TRACKING_TITLE" '[.[] | select(.title == $t)] | .[0].number // empty')
+          echo "EXISTING_ISSUE=$number" >> "$GITHUB_ENV"
+
+      - name: Open or update the tracking issue (check is red)
+        if: env.HEALTH_RESULT == 'failure'
+        run: |
+          set -e
+          body=$(printf '%s\n\n%s' \
+            "feed-health failed on $(date -u '+%Y-%m-%dT%H:%M:%SZ'). Run: $RUN_URL" \
+            "The published feed has a package that is private or missing, or a shipped package restores a dependency with a known vulnerability (NU1901-NU1904). Consuming services restore from this feed, so fix it before they notice: make a private package public in its Package settings (Change visibility > Public); fix a vulnerable transitive with an explicit patched reference in the owning packable project and cut a patch release.")
+          if [ -n "$EXISTING_ISSUE" ]; then
+            gh issue comment "$EXISTING_ISSUE" --body "$body"
+          else
+            gh issue create --title "$TRACKING_TITLE" --body "$body"
+          fi
+
+      - name: Close the tracking issue (check is green again)
+        if: env.HEALTH_RESULT == 'success' && env.EXISTING_ISSUE != ''
+        run: |
+          set -e
+          gh issue comment "$EXISTING_ISSUE" --body "feed-health passed on $(date -u '+%Y-%m-%dT%H:%M:%SZ'). Run: $RUN_URL"
+          gh issue close "$EXISTING_ISSUE"

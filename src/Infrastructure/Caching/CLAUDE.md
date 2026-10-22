@@ -126,6 +126,7 @@ services.AddHealthChecks().AddSharedKernelReadiness();           // host: maps "
 | No lock key prefix option, no lock metrics | Resource names already carry the service |
 | Lock-unavailable code is `caching.lock_unavailable` | One flat `{domain}.{snake_reason}` code with the reason word `unavailable`; the resource stays out of the client-visible message |
 | Cache meter created through `IMeterFactory`, hit/miss tag is `caching.result` | Gold standard T1; `outcome` is reserved for success / failure / exception / canceled |
+| The consumer recipe `add-caching` lists every required setting | Required today: `SharedKernel:Caching:ServiceName` and `SharedKernel:Caching:Redis:ConnectionString`, both validated by `ValidateOnStart` (failure at host start, not at registration); L2, locking, hash store and pub/sub add none. A new required setting in any package must be added to that recipe in the same change |
 
 ## Logging
 

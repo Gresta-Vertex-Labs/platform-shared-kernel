@@ -10,8 +10,8 @@
 
 | Counter | Next free | Note |
 | --- | --- | --- |
-| Next phase id | P-626 | Highest used: P-625 (WO-088) |
-| Next work order | WO-089 | Highest used: WO-088 |
+| Next phase id | P-639 | Highest used: P-638 (WO-091) |
+| Next work order | WO-092 | Highest used: WO-091 |
 
 Phases written by `arch-lead` take the next phase id; a user-directed phase without a work order still takes one, so no id is ever reused.
 
@@ -46,37 +46,19 @@ Every package ships at one repo-wide version through the release train (`CONTRIB
 
 ## Open Work
 
-### P-577 — First release train (WO-086)
+### WO-091 — Shop Catalog and Ordering on the service template's folder layout (1.2.0)
 
-**Status:** `○` Not started
-**Domain:** cross-domain (every packable project)
-**Depends on:** P-562–P-576, P-579 (all ●), P-580–P-618 (WO-087: wire-visible renames land before the first release)
+Target 1.2.0. Kernel 1.1.0 ships the service template's nine `ServicePlacementRules`, but the Shop's Catalog and Ordering apply only three of them (middleware and filters, generic folder names, exception types): their use cases sit in feature files rather than one namespace per use case, and Ordering's consumer sits outside `Infrastructure.Messaging.Consumers`. Accept as a samples change; no kernel package or public API changes.
 
-**What is needed**
-
-Cut the first release of the WO-086 package set: `git tag vX.Y.Z` on `main`, letting `release.yml` run every gate (tier check, full build, Unit and Integration suites, every consumer-verify harness and sample), pack all packages at that one version, check the set against every packable project, and publish them together to GitHub Packages.
-
-**Acceptance**
-
-- One tag, one version on every published package; no `<Version>` in any `.csproj`.
-- The published set equals the set of packable projects (including the per-capability `*.Testing` packages and the Tooling packages).
-- `06.Persistence` and the other never-published or re-shaped packages (`SharedKernel.Execution`, `Application.Pipeline`/`.Pipeline.Caching`/`.Mediator.MediatR`, the MassTransit satellites, `Presentation.Core`, `Idempotency.*`) appear on the feed for the first time.
-- This supersedes every per-package "publish pending" task left in older records (P-557's P-17, P-563's PUB, P-544's cross-domain follow-ups).
-
-### P-578 — Retire old package IDs (WO-086)
-
-**Status:** `○` Not started — approved by the user 2026-09-26: delete them after the release
-**Domain:** cross-domain (feed housekeeping)
-**Depends on:** P-577
-
-**What is needed**
-
-After P-577 is on the feed, delete the package IDs that WO-086 and the pre-publish passes replaced (for example `SharedKernel.Application.Abstractions`, `SharedKernel.Application.Behaviors`, `SharedKernel.Application.Behaviors.Caching`, `SharedKernel.Guards`, `SharedKernel.Persistence.PostgreSQL`, the probe-only `SharedKernel.ServiceDefaults.*` packages). Confirm the exact list with the user before deleting anything.
-
-**Acceptance**
-
-- Every retired ID is either deleted from the feed or explicitly kept by the user's decision.
-- No retired ID is still referenced by any project, sample or README.
+#### P-638 — Restructure Shop Catalog and Ordering to the template's folder layout
+**Status:** `○` Pending
+**Domain:** samples
+**Depends on:** None
+**Phase key:** —
+Restructure Shop Catalog and Ordering to the service template's folder layout (one folder per use case, the template's "Where things go" table) so all nine `ServicePlacementRules` apply; then the recipes' `proven-by` snippets match the layout every service uses.
+- [ ] Catalog and Ordering follow the template's "Where things go" table: one namespace and folder per command or query use case, domain types under `Domain.{Feature}` (with `Rules`, `Specifications`), domain-event handlers under `Application.{Feature}.EventHandlers`, EF configurations under `Infrastructure.Persistence.Configurations`, consumers under `Infrastructure.Messaging.Consumers`, endpoint modules under `Api.Endpoints`.
+- [ ] `CatalogArchitectureTests` and `OrderingArchitectureTests` apply all nine `ServicePlacementRules` and pass; the other Shop tests and the E2E flows still pass.
+- [ ] Every consumer-skill recipe snippet and `proven-by` path that cites a moved Shop file matches it again; `generate-package-index.cs --check` and the consumer-skill checks stay green.
 
 ## Blocked
 

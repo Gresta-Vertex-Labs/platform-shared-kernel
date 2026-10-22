@@ -87,6 +87,7 @@ Overloads, options and defaults: each package's `README.md`.
 | Rest reaches its logger through `HttpRequestMessage.Options` (set by the per-client propagation handler), `NullLogger` when the response did not come through a registered client | The `Result` verbs are static extensions over `HttpClient`/`HttpResponseMessage` and hold no container; a documented, narrow exception to L8 |
 | A missing keyed `IAccessTokenProvider` is an options-validation failure (reads the keyed registration without resolving it); the request-time arm is `UnreachableException` | Startup fails with the client name and the remedy instead of the first request; the provider may have dependencies that must not be built by a check |
 | All `Error`s are built by the internal `CommunicationErrors` factory (one `ErrorType` switch) | One place per code and message; messages are fixed sentences with no amounts, hosts or remote text beyond a service's own ProblemDetails/`ErrorInfo` |
+| A foreign client or event type is consumed behind the consumer's own port: the port lives in Application, the client class and its registration in Infrastructure; the kernel ships no shared "service client" base and no generated client | Callers own their failure mapping and test seam; the Shop's Ordering → Billing (`IPayments`/`RestPayments`) and Ordering → Inventory shapes are the proof. Application may reference the contracts project (event and DTO types), never a Communication package |
 
 ## Logging
 

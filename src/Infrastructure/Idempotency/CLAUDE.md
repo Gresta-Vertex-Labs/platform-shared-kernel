@@ -16,7 +16,7 @@
 (`IdempotencyTelemetry`, `IdempotencyTagKeys`), registration helpers. References only `SharedKernel.Execution` and
 `SharedKernel.Core` (the exception's base) |
 | `SharedKernel.Idempotency.Redis` | Adapter (→ `Caching.Redis.Core`) | `RedisIdempotencyStore` (one class, every purpose) — each operation is one Lua script; `RedisIdempotencyMetrics` |
-| `SharedKernel.Idempotency.EfCore` | Adapter (→ `Persistence.EfCore`) | `EfCoreIdempotencyStore` (one class, every purpose) over its own `IdempotencyDbContext`, table `idempotency_keys`; `EfCoreIdempotencyMetrics` |
+| `SharedKernel.Idempotency.EfCore` | Adapter (→ `Persistence.EfCore`) | `EfCoreIdempotencyStore` (one class, every purpose) over its own `IdempotencyDbContext`, table `idempotency_keys`; the opt-in shipped initial migration (`Migrations/`); `EfCoreIdempotencyMetrics` |
 | `SharedKernel.Idempotency.Testing` | Testing | `FakeIdempotencyStore` implementing the same protocol, with an outage switch |
 
 ## Public Entry Points
@@ -38,8 +38,8 @@ API detail and recipes: each package's `README.md`.
   `services.AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => …)`; throws when no Redis connection is
   registered.
 - **EfCore** — `services.AddEfCoreIdempotency(db => db.UsePostgres(dataSource), p => p.ForRequests(), o => …)`; requires
-  an `IClock`; registers `IdempotencyDbContext` and the store, both scoped. Ships no migrations (the README gives the
-  design-time factory and cleanup `BackgroundService` recipes).
+  an `IClock`; registers `IdempotencyDbContext` and the store, both scoped. `o.MigrateOnStartup = true` (default off; with `MigrationLockTimeout`) also calls `AddMigrationOnStartup<IdempotencyDbContext>`; `configureOptions` runs once, at registration. Without it nothing creates the table (the README gives the manual DDL, the
+  manual-fallback design-time factory and cleanup `BackgroundService` recipes).
 - Both providers `TryAdd` `IRequestContextAccessor`, call `AddMetrics()` and `TryAdd` their singleton
   `{Provider}IdempotencyMetrics` (the store's constructor takes it, so the type is public).
 - `FakeIdempotencyStore.SimulateStoreUnavailable()` / `RestoreStore()` / `StoreUnavailable` — the fake's outage switch.
@@ -93,6 +93,12 @@ API detail and recipes: each package's `README.md`.
     outage as a stackless `IdempotencyStoreUnavailableException` copy (the provider text names the key).
 16. **One purpose guard.** `IdempotencyPurposes.ThrowIfUndefined` runs first in every provider and fake member; no
     provider validates the purpose lazily.
+17. **Schema creation is opt-in and never the store's.** The EF Core provider
+    creates its table only through the shipped migration applied by `06.Persistence`'s `AddMigrationOnStartup<IdempotencyDbContext>`
+    behind `EfCoreIdempotencyOptions.MigrateOnStartup` (default `false`); it never calls `Database.MigrateAsync`, never
+    migrates on the runtime connection and never adds DDL grants for the runtime role. The migration's `Up` is a no-op when
+    `idempotency_keys` already exists, and its table shape equals the rule 3 layout; changing that layout is a stored-format
+    change with its own migration.
 
 ## Decisions
 
@@ -109,6 +115,10 @@ API detail and recipes: each package's `README.md`.
 | One code, `idempotency.store_unavailable`, for connectivity and timeout; no `IdempotencyErrorCodes` class | The caller's remedy is the same (retry); `ErrorCodes.Idempotency` in Primitives is already the shared public home |
 | A fail-open outage is counted and recorded on the span, not only logged | The `fail_open` counter is the alert signal for duplicate-execution risk |
 | The metrics singleton is a public class (`RedisIdempotencyMetrics`, `EfCoreIdempotencyMetrics`) | The public store constructor takes it, and a per-scope instrument set would leak instruments on the shared meter; a public `MeterName` const is also what the observability scanner needs per assembly |
+| The history table `__ef_migrations_history_idempotency` is applied only when `MigrateOnStartup` is on | A 1.0.0 consumer may run its own migration for this context against EF's default history table; forcing the new name unconditionally would make that migration run twice. The name is a stored format of an opted-in database |
+| The opt-in is an option read at registration, not a separate extension | The flag decides whether a hosted service is registered, so `AddEfCoreIdempotency` evaluates `configureOptions` once on a snapshot; configuration binding (a Known Limitation) cannot flip it |
+| The shipped initial migration guards with `to_regclass`, not `CREATE ... IF NOT EXISTS` | PostgreSQL checks schema `CREATE` and table ownership before the existence test, so a hand-made table owned by another role would fail the migrator; the guard touches nothing when the table exists. A drifted hand-made shape is not inspected |
+| The design-time factory is internal and maintainer-only (connection from `SK_IDEMPOTENCY_DESIGN_CONNECTION`); regenerate with `dotnet ef migrations add {Name} --context IdempotencyDbContext` from the package folder; the initial migration's `Up` is hand-written (the generated `CreateTable` was replaced by the guarded block), later model changes generate normal incremental migrations | The migration is part of the package; consumers keep the README's own-factory recipe only as the manual fallback |
 | The span source and meter are shared by both providers, not per provider | Rule 10 duplicates the helper, not the names; identical instrument definitions plus the `idempotency.provider` tag keep a host that registers both unambiguous (proven by `MixedProviderTelemetryTests`) |
 
 ## Logging
@@ -148,6 +158,7 @@ class under `Diagnostics/`, and uses one single-sentence template with quoted `'
   is not evidence for an atomicity claim. Each provider covers all four statuses, foreign/stale tokens,
   release-after-complete, fail-open and fail-closed against an unreachable endpoint, and DI registration (duplicate
   purpose, missing Redis connection, a host without `AddMetrics()`).
+- The shipped migration is proved against real PostgreSQL under the canonical roles (`PostgresTestDatabase` from `SharedKernel.Persistence.Testing`): table equals the model (catalog comparison plus `HasPendingModelChanges`), `app_migrator` owns the schema while the store runs as `app_runtime`, an existing table (hand-made, runtime-owned, consumer-migrated) is left byte-identical, the default registers nothing, and two hosts starting together migrate once (`EfCoreIdempotencyMigrationPostgresTests`, `EfCoreIdempotencyMigrationConcurrencyTests`; registration in `EfCoreIdempotencyMigrationRegistrationTests`).
 - Telemetry, logs and outage classification are asserted through the `SharedKernel.Testing` capture helpers
   (`ActivityRecorder`, `MetricRecorder`, `LoggerAssertions`) against real Redis/PostgreSQL and unreachable endpoints; the
   telemetry and fail-open classes join the container collection so a recorder on the shared names sees one test at a
@@ -163,7 +174,8 @@ class under `Diagnostics/`, and uses one single-sentence template with quoted `'
 - The exception passed to the fail-open Warning (L4) carries the provider's own text, and StackExchange.Redis names the
   command and key in it; sinks that print exceptions must be trusted like the store itself. Spans and metrics never carry
   it (rule 15).
-- `.EfCore` ships no migrations and no cleanup job; expired rows accumulate until the consumer runs the README recipe.
+- `.EfCore` ships no cleanup job; expired rows accumulate until the consumer runs the README recipe.
+- The opt-in migration is the initial one only: its hand-written guarded `Up` is never regenerated, a drifted hand-made table is not inspected, and a caller-set `MigrationsAssembly` replaces it. The option is read at registration (see Decisions), so configuration binding cannot flip it.
 - A multi-tenant service that skips the inbound adapters (`UseSharedKernelRequestContext()`, the MassTransit consume
   filter, the job runner) puts every entry in the `no-tenant` scope; anonymous callers of one tenant share a scope, so
   Request keys must be unguessable.

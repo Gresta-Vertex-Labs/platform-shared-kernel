@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Streaming;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
@@ -18,14 +19,15 @@ using Shop.Contracts.Inventory;
 using Shop.Inventory.Api.Reconciliation;
 using Shop.Inventory.Api.Security;
 using Shop.Inventory.Api.Stock;
-using Shop.TestSupport;
 using Xunit;
 
 namespace Shop.Inventory.Tests;
 
 public sealed class InventoryArchitectureTests
 {
-    private static readonly DependencyGraph Graph = DependencyGraph.Load("Shop.Inventory.Tests");
+    private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load(
+        "Shop.Inventory.Tests"
+    );
     private const string Service = "Shop.Inventory.Api";
 
     [Fact]
@@ -36,7 +38,7 @@ public sealed class InventoryArchitectureTests
     public void Inventory_NeverReferencesTestingPackages() =>
         Graph
             .Closure(Service)
-            .Where(p => KernelPackageIndex.Instance.TierOf(p) == "Testing")
+            .Where(p => KernelPackageIndex.Instance.TierOf(p) == KernelTier.Testing)
             .Should()
             .BeEmpty();
 
@@ -46,7 +48,9 @@ public sealed class InventoryArchitectureTests
             .Closure(Service)
             .Where(p => p.StartsWith("SharedKernel.", StringComparison.Ordinal))
             .Should()
-            .OnlyContain(p => KernelPackageIndex.Instance.TierOf(p) != "ThirdParty");
+            .OnlyContain(p =>
+                KernelPackageIndex.Instance.TierOf(p) != KernelPackageIndex.ThirdParty
+            );
 }
 
 public sealed class ServiceHeaderTenantResolutionStrategyTests

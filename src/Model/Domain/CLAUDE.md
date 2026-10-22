@@ -27,7 +27,7 @@ static factory. Members and examples: `SharedKernel.Domain/README.md`.
 | `Entities` | `Entity<TId>`, `AuditableEntity<TId>`, `SoftDeletableEntity<TId>`, `AuditableSoftDeletableEntity<TId>`, `FullAuditableEntity<TId>` |
 | `Events` | `IDomainEvent`, `DomainEvent`, `DomainEvent<TPayload>`, `DomainEventVersionAttribute`, `DomainEventVersionHelper` |
 | `BusinessRules` | `IBusinessRule` (`Code`, `Message`, `IsBroken`), `AndBusinessRule`/`OrBusinessRule`/`NotBusinessRule`, `BusinessRuleExtensions` |
-| `ValueObjects` | `ValueObject` (`EnsureValid`, `TryCreate<T>`, `CheckRule`), `SingleValueObject<TValue>` |
+| `ValueObjects` | `ValueObject` (`EnsureValid`, `TryCreate<T>`, `CheckRule`, `TryCheckRule`), `SingleValueObject<TValue>` |
 | `StronglyTypedIds` | `StronglyTypedId<TValue>`; `.Serialization`: `StronglyTypedIdJsonConverterFactory`, `StronglyTypedIdJsonConverter<TId, TValue>` |
 | `Specifications` | `ISpecification<T>`, `Specification<T>` (+ `Specification<T>.Create(criteria)`), `Spec.For<T>()` → `SpecificationBuilder<T>` / `IncludableSpecificationBuilder<T, TProperty>` (typed `ThenInclude`; `.Select` → projection), `ProjectionSpecification<T, TResult>`/`IProjectionSpecification<T, TResult>`, `AllSpecification<T>`, `EmptySpecification<T>`, `AndSpecification<T>`/`OrSpecification<T>`/`NotSpecification<T>`, `SpecificationExtensions` |
 | `Policies` | `IPolicy<in T>` (`Explain`), `AndPolicy<T>`/`OrPolicy<T>`/`NotPolicy<T>`, `PolicyExtensions` (`And`, `Or`, `Not`, `ToRule`) |
@@ -35,7 +35,7 @@ static factory. Members and examples: `SharedKernel.Domain/README.md`.
 | (root `SharedKernel.Domain`) | `DomainErrorCodes` (groups `Currency`, `Money`; constants only) |
 | `Monetary` | `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `CurrencyMismatchRule`, `IExchangeRateProvider`, `MoneyExtensions` (`ConvertAsync`) |
 | `Exceptions` | `BusinessRuleViolationException`, `DomainNotFoundException` |
-| `Internal` (internal) | `DomainInvariants` (the only `CheckRule`/`TryCreate`/`NotNull` implementation), `DomainErrors` (factory for the owned error codes), `SoftDeletion` |
+| `Internal` (internal) | `DomainInvariants` (the only `CheckRule`/`TryCheckRule`/`TryCreate`/`NotNull` implementation), `DomainErrors` (factory for the owned error codes), `SoftDeletion` |
 
 Base-class matrix (closed — do not add combinations; a consumer needing another extends `AggregateRoot<TId>` and
 implements the interfaces, which is all persistence reads):
@@ -84,6 +84,11 @@ implements the interfaces, which is all persistence reads):
     requires its own code and message.
 13. `CheckRule`/`TryCreate` on `AggregateRoot`, `ValueObject` and (`CheckRule` only) `DomainService` delegate to
     `Internal.DomainInvariants`. Never reimplement them.
+    `TryCheckRule` on the same three bases returns `Result` carrying the same `Error` as the
+    `BusinessRuleViolationException` for that rule; it delegates to `DomainInvariants` and shares the exception's error
+    builder (`DomainInvariants.BusinessRuleError`), so the two paths cannot drift. A null rule throws
+    `ArgumentNullException`. Constructors and factories use `CheckRule`; `Result`-returning behavior methods use
+    `TryCheckRule`.
 14. `TryCreate<T>` returns `ValidationResult<T>`: `ValidationException` → all its errors; any `DomainException` → its
     single error; anything else rethrows. Never catch broader.
 15. `DomainNotFoundException` message is `"{TypeName} '{id}' was not found."`, both arguments null-checked, code
@@ -155,6 +160,7 @@ implements the interfaces, which is all persistence reads):
 | Abstract classes + `GetEqualityComponents()` for value objects, not records | Records' generated equality and `with` bypass validation |
 | Loaded aggregates get their clock attached via `IHasClock`; `Now` throws when absent | Aggregate methods need no time parameter; a null clock would produce silent wrong data |
 | `TryCreate` returns `ValidationResult<T>` | Keeps every error; `Result<T>` holds one |
+| `TryCheckRule` is the non-throwing `CheckRule` (named like `TryCreate` and `ResultTry.Try`: returns a result instead of throwing) | Behavior methods that return `Result` need the rule's `Error` without a `ResultTry` wrapper or a hand-mapped error; one shared error builder keeps parity |
 | `IBusinessRule.Code` is required | Clients branch on codes and localization looks messages up by them |
 | Explicit conversions only on ids and single value objects | Implicit operators let an `OrderId` flow into any `Guid` |
 | `IHasVersion` is the event sequence, not a concurrency token | Concurrency is `xmin`/`EntityVersion` in 06.Persistence |
@@ -184,7 +190,7 @@ Changes here that silently break another domain:
 | Specification shape (`Skip`/`Take`, includes, flags, ordering) | `06.Persistence` `SpecificationEvaluator`, `PagingGuard`, `BulkSpecificationGuard`; keyset seek flips both comparisons when descending |
 | `CurrencyCatalog` codes or minor units | `01.Core` `SharedKernel.Validation` has a second ISO 4217 table (`CurrencyCode`, `Internal/IsoData`) — keep them consistent |
 | `Money`/`Currency` factories or the private persistence constructor | `06.Persistence` `MoneyMapping`/`CurrencyValueConverter`; `16.Testing` `MoneyFaker`; `00.Governance` SK0034 |
-| `IBusinessRule`, `ValueObject` validation or `TryCreate` | `16.Testing` domain assertions; the Shop's `Shop.Ordering.Domain` (`samples/Shop`); `00.Governance` SK0037 and `AggregateFactoriesMustCreateValidationResults` |
+| `IBusinessRule`, `ValueObject` validation, `TryCreate` or `TryCheckRule` | `16.Testing` domain assertions; the Shop's `Shop.Ordering.Domain` (`samples/Shop`); `00.Governance` SK0037 and `AggregateFactoriesMustCreateValidationResults` |
 | `IDomainEventDispatcher` | `05.Application` `SharedKernel.Application.Pipeline` `DomainEventDispatcher`; 06.Persistence dispatches before each save |
 | Any public API | `PublicAPI.Unshipped.txt`, `SharedKernel.Domain.ConsumerVerify`, the package README |
 

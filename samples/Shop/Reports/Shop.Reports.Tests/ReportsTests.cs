@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using SharedKernel.ArchitectureTests.ServiceShape;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Reporting;
@@ -12,14 +13,15 @@ using SharedKernel.Testing.Execution;
 using SharedKernel.Testing.Reporting;
 using SharedKernel.Testing.ServiceDefaults;
 using Shop.Reports.Api.Sales;
-using Shop.TestSupport;
 using Xunit;
 
 namespace Shop.Reports.Tests;
 
 public sealed class ReportsArchitectureTests
 {
-    private static readonly DependencyGraph Graph = DependencyGraph.Load("Shop.Reports.Tests");
+    private static readonly ServiceDependencyGraph Graph = ServiceDependencyGraph.Load(
+        "Shop.Reports.Tests"
+    );
     private const string Service = "Shop.Reports.Api";
 
     [Fact]
@@ -30,7 +32,7 @@ public sealed class ReportsArchitectureTests
     public void Reports_NeverReferencesTestingPackages() =>
         Graph
             .Closure(Service)
-            .Where(p => KernelPackageIndex.Instance.TierOf(p) == "Testing")
+            .Where(p => KernelPackageIndex.Instance.TierOf(p) == KernelTier.Testing)
             .Should()
             .BeEmpty();
 }

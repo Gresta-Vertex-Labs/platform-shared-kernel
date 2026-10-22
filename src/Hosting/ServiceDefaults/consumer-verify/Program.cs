@@ -48,6 +48,19 @@ HealthCheckRegistrationLogging.LogRegistration(builder.Services, "ledger", [Heal
 builder.Services.AddHealthChecks().AddCheck("ledger", () => HealthCheckResult.Healthy(), [HealthCheckTags.Ready]);
 Console.WriteLine("Surface 2c PASS: HealthCheckRegistrationLogging.LogRegistration(services, name, tags)");
 
+// ── Surface 2d: the OTLP exporter mode, set in code and bound from SharedKernelTelemetryOptions.SectionName ──
+var tuned = WebApplication.CreateBuilder();
+tuned.AddServiceDefaults(o => o.OtlpExporter = OtlpExporterMode.WhenEndpointConfigured);
+tuned.AddSharedKernelTelemetry("consumer-verify", o => o.OtlpExporter = OtlpExporterMode.WhenEndpointConfigured);
+using (var tunedApp = tuned.Build())
+{
+    var telemetryOptions = tunedApp.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SharedKernelTelemetryOptions>>().Value;
+    Verify(telemetryOptions.OtlpExporter == OtlpExporterMode.WhenEndpointConfigured, "SharedKernelTelemetryOptions.OtlpExporter resolves from the delegate");
+    Verify(SharedKernelTelemetryOptions.SectionName == "SharedKernel:ServiceDefaults:Telemetry", "SharedKernelTelemetryOptions.SectionName");
+}
+
+Console.WriteLine("Surface 2d PASS: AddServiceDefaults(o => …), AddSharedKernelTelemetry(name, o => …), OtlpExporterMode");
+
 var app = builder.Build();
 
 // ── Surface 3: core ServiceDefaults services resolve without exception ──────

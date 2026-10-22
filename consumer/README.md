@@ -1,8 +1,8 @@
 # consumer/
 
 Maintainer notes for the **`sharedkernel` Claude Code skill**, the guidance a consuming service's AI
-assistant uses to pick, place and wire SharedKernel packages. The design is in
-[`docs/proposals/consumer-skill.md`](../docs/proposals/consumer-skill.md).
+assistant uses to pick, place and wire SharedKernel packages. The original design proposal
+(`docs/proposals/consumer-skill.md`) is in the git history.
 
 | Path | What |
 | --- | --- |

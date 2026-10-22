@@ -354,11 +354,13 @@ override sealed SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.ToS
 override sealed SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.GetEqualityComponents() -> System.Collections.Generic.IEnumerable<object?>!
 override sealed SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.ToString() -> string!
 static SharedKernel.Domain.Aggregates.AggregateRoot<TId>.CheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Domain.Aggregates.AggregateRoot<TId>.TryCheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> SharedKernel.Primitives.Results.Result
 static SharedKernel.Domain.Aggregates.AggregateRoot<TId>.TryCreate<T>(System.Func<T>! factory) -> SharedKernel.Primitives.Results.ValidationResult<T>!
 static SharedKernel.Domain.BusinessRules.BusinessRuleExtensions.And(this SharedKernel.Domain.BusinessRules.IBusinessRule! left, SharedKernel.Domain.BusinessRules.IBusinessRule! right) -> SharedKernel.Domain.BusinessRules.AndBusinessRule!
 static SharedKernel.Domain.BusinessRules.BusinessRuleExtensions.Not(this SharedKernel.Domain.BusinessRules.IBusinessRule! rule, string! code, string! message) -> SharedKernel.Domain.BusinessRules.NotBusinessRule!
 static SharedKernel.Domain.BusinessRules.BusinessRuleExtensions.Or(this SharedKernel.Domain.BusinessRules.IBusinessRule! left, SharedKernel.Domain.BusinessRules.IBusinessRule! right) -> SharedKernel.Domain.BusinessRules.OrBusinessRule!
 static SharedKernel.Domain.DomainServices.DomainService.CheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Domain.DomainServices.DomainService.TryCheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> SharedKernel.Primitives.Results.Result
 static SharedKernel.Domain.Entities.Entity<TId>.operator !=(SharedKernel.Domain.Entities.Entity<TId>? left, SharedKernel.Domain.Entities.Entity<TId>? right) -> bool
 static SharedKernel.Domain.Entities.Entity<TId>.operator ==(SharedKernel.Domain.Entities.Entity<TId>? left, SharedKernel.Domain.Entities.Entity<TId>? right) -> bool
 static SharedKernel.Domain.Events.DomainEvent.operator !=(SharedKernel.Domain.Events.DomainEvent? left, SharedKernel.Domain.Events.DomainEvent? right) -> bool
@@ -409,6 +411,7 @@ static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.operator !=(
 static SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.operator ==(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? left, SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? right) -> bool
 static SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>.explicit operator TValue(SharedKernel.Domain.ValueObjects.SingleValueObject<TValue>! valueObject) -> TValue
 static SharedKernel.Domain.ValueObjects.ValueObject.CheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Domain.ValueObjects.ValueObject.TryCheckRule(SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> SharedKernel.Primitives.Results.Result
 static SharedKernel.Domain.ValueObjects.ValueObject.TryCreate<T>(System.Func<T>! factory) -> SharedKernel.Primitives.Results.ValidationResult<T>!
 static SharedKernel.Domain.ValueObjects.ValueObject.operator !=(SharedKernel.Domain.ValueObjects.ValueObject? left, SharedKernel.Domain.ValueObjects.ValueObject? right) -> bool
 static SharedKernel.Domain.ValueObjects.ValueObject.operator ==(SharedKernel.Domain.ValueObjects.ValueObject? left, SharedKernel.Domain.ValueObjects.ValueObject? right) -> bool

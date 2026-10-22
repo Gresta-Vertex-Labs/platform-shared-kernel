@@ -29,7 +29,7 @@ internal static partial class SchedulingLog
     [LoggerMessage(
         EventId = SchedulingLoggingEventIds.SingleReplicaWarning,
         Level = LogLevel.Warning,
-        Message = "No IDistributedLockService is registered, so every job runs once per replica; register one before running more than one replica.")]
+        Message = "No IDistributedLockService is registered, so every job runs once per replica; to run each occurrence once across replicas, register one, for example with AddRedisDistributedLocking.")]
     public static partial void SingleReplicaWarning(ILogger logger);
 
     [LoggerMessage(

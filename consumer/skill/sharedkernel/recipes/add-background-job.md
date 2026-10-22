@@ -11,7 +11,9 @@ unproven:
 # Add a background job
 
 **Use when:** one unit of work must run on a time trigger (a cron schedule, or once at a given time) and run once per
-occurrence across every replica of the service.
+occurrence across every replica of the service. That guarantee comes from the per-occurrence lease in
+`IDistributedLockService`: register the Redis lock (`AddRedisConnection(configuration).AddRedisDistributedLocking()`)
+or every replica runs every occurrence.
 **Not when:** the work has several steps, waits for signals or must resume after a crash (add-long-running-workflow.md;
 a job may start a workflow); something should happen because an event occurred (add-messaging.md); you only need a
 distributed lock in a request (add-caching.md).
@@ -29,7 +31,20 @@ distributed lock in a request (add-caching.md).
 
 ## Steps
 
-1. **Application: the command the job sends.** A job never contains logic; each fire builds a command and sends it
+1. **Infrastructure: the lock that makes the job run once.** Register the Redis lock before the scheduler. Running on
+   one replica only is this lock, not the scheduler: without an `IDistributedLockService` the scheduler still starts
+   and every replica fires every occurrence.
+
+   ```csharp
+   using SharedKernel.Caching.Redis.Core.Extensions;
+   using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
+   using SharedKernel.Scheduling.Extensions;
+
+   services.AddRedisConnection(configuration).AddRedisDistributedLocking();
+   ISchedulingBuilder scheduling = services.AddSharedKernelScheduling();
+   ```
+
+2. **Application: the command the job sends.** A job never contains logic; each fire builds a command and sends it
    through `ISender`, so validation, transactions and auditing apply as they do for an HTTP request. Each run has a
    system caller and a new correlation id. A job that reads every tenant enters an explicit cross-tenant scope.
 
@@ -57,7 +72,7 @@ distributed lock in a request (add-caching.md).
    }
    ```
 
-2. **Infrastructure: register the job.** Keep the registration in one method that takes `IScheduledJobRegistry`,
+3. **Infrastructure: register the job.** Keep the registration in one method that takes `IScheduledJobRegistry`,
    so the host and the tests call the same code. `MisfirePolicy` and `OverlapPolicy` have no default: decide what
    happens after downtime and when a run is still going at the next tick. Cron is Quartz syntax, seconds first, in UTC.
 
@@ -85,22 +100,11 @@ distributed lock in a request (add-caching.md).
    ```
 
    A one-shot job is `registry.AddDeferred<TCommand>(jobName, fireAtUtc, factory, configure)` with the same
-   mandatory policies. A job for a single tenant sets `options.TenantScope`.
-
-3. **Infrastructure: single execution across replicas.** The scheduler takes a per-occurrence lease from
-   `IDistributedLockService`. Without one, every replica runs every occurrence; with more than one replica, register
-   the Redis lock.
+   mandatory policies. A job for a single tenant sets `options.TenantScope`. Call `Register` with the builder from
+   step 1:
 
    ```csharp
-   using SharedKernel.Caching.Redis.Core.Extensions;
-   using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
-   using SharedKernel.Scheduling.Extensions;
-
-   services.AddRedisConnection(configuration).AddRedisDistributedLocking();
-
-   InventoryJobs.Register(
-       services.AddSharedKernelScheduling(),
-       configuration["Inventory:Reconciliation:Cron"]);
+   InventoryJobs.Register(scheduling, configuration["Inventory:Reconciliation:Cron"]);
    ```
 
 4. **Api/Worker: the pipeline and readiness.** The scheduler needs `ISender` (a mediator adapter) and an `IClock`
@@ -151,6 +155,8 @@ Proving once-per-occurrence across replicas needs two real hosts and a real Redi
 - `SK0001` flags `DateTime.UtcNow` in the handler; use the fire time from the command or an injected `IClock`.
 - `SK0030` flags a `Result` the handler drops.
 - `/health/ready` stays unhealthy while the scheduler loop is not running.
+- With jobs registered and no `IDistributedLockService`, the host logs a Warning at start (EventId 19002) that every
+  job runs once per replica; register the Redis lock to get one run per occurrence.
 
 ## Read next
 
